@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="pending-card text-center">
+
+            <div class="pending-icon">
+                <i class="fas fa-hourglass-half"></i>
+            </div>
+
+            <h2 class="pending-title">Запрос отправлен</h2>
+
+            <p class="pending-text">
+                Скоро с Вами свяжется менеджер и активирует профиль.
+            </p>
+
+            <p class="pending-hint">
+                Обычно это занимает от 15 минут до 2 часов в рабочее время.
+            </p>
+
+            <a href="/login" class="btn btn-outline-primary mt-3">
+                <i class="fas fa-arrow-left me-2"></i>Вернуться ко входу
+            </a>
+
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,6 +1,7 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
+*.py[cod]
 *$py.class
 
 # C extensions
@@ -153,6 +154,7 @@ activemq-data/
 .venv
 env/
 venv/
+.venv/
 ENV/
 env.bak/
 venv.bak/
@@ -216,3 +218,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+*.db
+*.sqlite3
+app/static/uploads/*
+!app/static/uploads/.gitkeep
+.idea/
+.vscode/
+.DS_Store

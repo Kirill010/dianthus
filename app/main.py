@@ -1,0 +1,118 @@
+"""Сборка приложения и общие маршруты."""
+import logging
+from pathlib import Path
+
+from fastapi import Depends, FastAPI, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy.orm import Session
+from starlette.middleware.sessions import SessionMiddleware
+
+from .auth import router as auth_router
+from .bootstrap import ensure_default_admin
+from .config import config
+from .database import Base, engine, get_db
+from .deps import get_current_user
+from .templating import render
+from .routers import admin, cart, catalog
+
+
+# ═══════ ЛОГИРОВАНИЕ ════════════════════════════════════════
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+
+# ═══════ БАЗА ДАННЫХ ════════════════════════════════════════
+
+try:
+    Base.metadata.create_all(bind=engine)
+    # Не логируем URL целиком — в нём может быть пароль
+    db_name = config.DATABASE_URL.split("@")[-1] if "@" in config.DATABASE_URL \
+        else config.DATABASE_URL
+    logger.info("✅ Схема БД готова (%s)", db_name)
+except Exception as e:
+    logger.error("❌ Не удалось подключиться к БД: %s", e)
+    logger.error("Проверьте DATABASE_URL в .env и что сервер БД запущен.")
+    raise
+
+
+# ═══════ ПРИЛОЖЕНИЕ ═════════════════════════════════════════
+
+app = FastAPI(title="Диантус — оптовый магазин цветов")
+
+
+# ═══════ MIDDLEWARE ═════════════════════════════════════════
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=config.SECRET_KEY,
+    max_age=60 * 60 * 24 * 14,     # 2 недели
+    same_site="lax",
+    https_only=(config.ENV == "prod"),
+)
+
+
+# ═══════ СТАТИКА ════════════════════════════════════════════
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+STATIC_DIR.mkdir(parents=True, exist_ok=True)
+(STATIC_DIR / "uploads").mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+# ═══════ РОУТЕРЫ ════════════════════════════════════════════
+
+app.include_router(auth_router)
+app.include_router(catalog.router)
+app.include_router(cart.router)
+app.include_router(admin.router)
+
+
+# ═══════ АДМИН ПО УМОЛЧАНИЮ ════════════════════════════════
+
+ensure_default_admin()
+
+
+# ═══════ ОБЩИЕ МАРШРУТЫ ═════════════════════════════════════
+
+@app.get("/", response_class=HTMLResponse)
+async def root(request: Request, db: Session = Depends(get_db)):
+    if get_current_user(request, db):
+        return RedirectResponse(url="/catalog", status_code=303)
+    return RedirectResponse(url="/login", status_code=303)
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request, db: Session = Depends(get_db)):
+    if get_current_user(request, db):
+        return RedirectResponse(url="/catalog", status_code=303)
+
+    register_errors = request.session.pop("register_errors", None)
+    register_data = request.session.pop("register_data", {})
+    login_error = request.session.pop("login_error", None)
+
+    return render(
+        request, "login.html", db,
+        register_errors=register_errors,
+        register_data=register_data,
+        login_error=login_error,
+    )
+
+
+@app.get("/registration_pending", response_class=HTMLResponse)
+async def registration_pending(request: Request, db: Session = Depends(get_db)):
+    if get_current_user(request, db):
+        return RedirectResponse(url="/catalog", status_code=303)
+    return render(request, "registration_pending.html", db)
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "env": config.ENV}
+
+
+logger.info("🌸 Диантус готов (%s)", config.ENV)

@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-7 col-lg-6">
+
+        <div class="text-center mb-4">
+            <h1 class="brand text-primary-custom">
+                <i class="fas fa-seedling me-2"></i>Диантус
+            </h1>
+            <p class="text-muted mb-1">Оптовый магазин цветов</p>
+            <span class="badge bg-success">Только для оптовых покупателей</span>
+        </div>
+
+        <div class="card p-4">
+
+            <!-- ВХОД -->
+            <form action="/login" method="post" class="mb-4">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <h5 class="mb-3">Вход для клиентов</h5>
+
+                {% if login_error %}
+                <div class="alert alert-danger py-2 px-3 small mb-3">
+                    <i class="fas fa-exclamation-circle me-1"></i>{{ login_error }}
+                </div>
+                {% endif %}
+
+                <div class="mb-3">
+                    <input type="email" name="email" class="form-control"
+                           placeholder="Email" autocomplete="email" required>
+                </div>
+                <div class="mb-3">
+                    <input type="password" name="password" class="form-control"
+                           placeholder="Пароль" autocomplete="current-password" required>
+                </div>
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="fas fa-sign-in-alt me-2"></i>Войти
+                </button>
+            </form>
+
+            <hr class="my-4">
+
+            <!-- РЕГИСТРАЦИЯ -->
+            <form action="/register" method="post" novalidate>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <h5 class="mb-2">Регистрация оптового клиента</h5>
+                <p class="text-muted small mb-3">
+                    Работаем только с юрлицами и ИП: цветочные магазины,
+                    салоны, флористы, корпоративные клиенты.
+                </p>
+                <div class="alert alert-info py-2 px-3 small mb-3">
+                    <i class="fas fa-info-circle me-1"></i>
+                    После регистрации профиль проверяет менеджер.
+                    Вход откроется после подтверждения.
+                </div>
+
+                {% if register_errors %}
+                <div class="alert alert-danger py-2 px-3 small">
+                    <strong>
+                        <i class="fas fa-exclamation-triangle me-1"></i>
+                        Исправьте ошибки:
+                    </strong>
+                    <ul class="mb-0 mt-1 ps-3">
+                        {% for err in register_errors %}
+                            <li>{{ err }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">Название компании *</label>
+                    <input type="text" name="company_name" class="form-control"
+                           placeholder="ООО «Ромашка»" maxlength="200"
+                           value="{{ register_data.company_name or '' }}" required>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">ФИО контактного лица *</label>
+                    <input type="text" name="full_name" class="form-control"
+                           placeholder="Иванов Иван Иванович"
+                           pattern="[А-Яа-яЁёA-Za-z\- ]{2,120}"
+                           title="Только буквы, пробел и дефис"
+                           maxlength="120"
+                           value="{{ register_data.full_name or '' }}" required>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">Телефон *</label>
+                    <input type="tel" name="phone" class="form-control"
+                           placeholder="+7 (999) 123-45-67"
+                           maxlength="20"
+                           value="{{ register_data.phone or '' }}" required>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">Email *</label>
+                    <input type="email" name="email" class="form-control"
+                           placeholder="ivan@company.ru"
+                           autocomplete="email" maxlength="120"
+                           value="{{ register_data.email or '' }}" required>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">Пароль *</label>
+                    <input type="password" name="password" class="form-control"
+                           placeholder="Минимум 8 символов"
+                           autocomplete="new-password"
+                           minlength="8" maxlength="72" required>
+                    <div class="form-text">
+                        Минимум 8 символов, обязательно буква и цифра
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-outline-primary w-100">
+                    <i class="fas fa-user-plus me-2"></i>Зарегистрироваться
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

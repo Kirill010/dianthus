@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="mb-4">Мои заказы</h2>
+
+{% if orders %}
+<div class="table-responsive">
+    <table class="table table-hover align-middle">
+        <thead><tr><th>№</th><th>Дата</th><th>Сумма</th><th>Статус</th><th>Комментарий</th></tr></thead>
+        <tbody>
+        {% for order in orders %}
+            <tr>
+                <td><strong>#{{ order.id }}</strong></td>
+                <td>{{ order.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+                <td><strong>{{ "%.0f"|format(order.total_price) }} ₽</strong></td>
+                <td>
+                    {% if order.status == "Выполнен" %}<span class="badge bg-success">{{ order.status }}</span>
+                    {% elif order.status == "Отменён" %}<span class="badge bg-danger">{{ order.status }}</span>
+                    {% elif order.status == "В работе" %}<span class="badge bg-warning text-dark">{{ order.status }}</span>
+                    {% elif order.status == "Отправлен" %}<span class="badge bg-primary">{{ order.status }}</span>
+                    {% else %}<span class="badge bg-secondary">{{ order.status }}</span>{% endif %}
+                </td>
+                <td><small class="text-muted">{{ order.comment or "—" }}</small></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="text-center py-5">
+    <i class="fas fa-box-open fa-4x text-muted mb-3"></i>
+    <h4 class="text-muted">У вас пока нет заказов</h4>
+    <p class="text-muted">Самое время выбрать цветы!</p>
+    <a href="/catalog" class="btn btn-primary mt-2">
+        <i class="fas fa-store me-2"></i>Перейти в каталог
+    </a>
+</div>
+{% endif %}
+
+{% endblock %}

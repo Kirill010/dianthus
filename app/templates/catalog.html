@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% if active_supplies %}
+<div class="supplies-panel mb-4">
+    <h5 class="mb-3">
+        <i class="fas fa-truck-fast me-2 text-primary-custom"></i>Сейчас в пути
+    </h5>
+    <div class="row g-3">
+        {% for s in active_supplies %}
+        <div class="col-md-6 col-lg-4">
+            <div class="supply-card">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div class="supply-card__country">
+                        <i class="fas fa-map-marker-alt me-1"></i>{{ s.country }}
+                    </div>
+                    <span class="badge {% if s.status == 'В пути' %}bg-primary{% else %}bg-warning text-dark{% endif %}">
+                        {{ s.status }}
+                    </span>
+                </div>
+                <div class="supply-card__dates">
+                    {% if s.departure_date %}
+                        <div><i class="fas fa-sign-out-alt me-1"></i>
+                            Выехала: <strong>{{ s.departure_date.strftime('%d.%m.%Y') }}</strong></div>
+                    {% endif %}
+                    {% if s.arrival_date %}
+                        <div><i class="fas fa-flag-checkered me-1"></i>
+                            Прибытие: <strong>{{ s.arrival_date.strftime('%d.%m.%Y') }}</strong></div>
+                    {% endif %}
+                </div>
+                {% if s.notes %}
+                    <div class="supply-card__notes">{{ s.notes }}</div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0">Каталог цветов</h2>
+    <span class="text-muted">Найдено: {{ total_items }}</span>
+</div>
+
+<form class="filter-panel mb-4" method="get" action="/catalog">
+    <div class="row g-2">
+        <div class="col-md-4">
+            <label class="form-label small text-muted mb-1">Поиск</label>
+            <input type="text" name="q" class="form-control"
+                   placeholder="Название или описание..." value="{{ current_filters.q }}">
+        </div>
+        <div class="col-md-2">
+            <label class="form-label small text-muted mb-1">Страна</label>
+            <select name="country" class="form-select">
+                <option value="">Все</option>
+                {% for c in countries %}
+                    <option value="{{ c }}" {% if current_filters.country == c %}selected{% endif %}>{{ c }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label small text-muted mb-1">Цена, ₽</label>
+            <div class="d-flex gap-1">
+                <input type="number" name="min_price" class="form-control" placeholder="от" min="0"
+                       value="{{ current_filters.min_price or '' }}">
+                <input type="number" name="max_price" class="form-control" placeholder="до" min="0"
+                       value="{{ current_filters.max_price or '' }}">
+            </div>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label small text-muted mb-1">Длина, см</label>
+            <div class="d-flex gap-1">
+                <input type="number" name="min_length" class="form-control" placeholder="от" min="0"
+                       value="{{ current_filters.min_length or '' }}">
+                <input type="number" name="max_length" class="form-control" placeholder="до" min="0"
+                       value="{{ current_filters.max_length or '' }}">
+            </div>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label small text-muted mb-1">Сортировка</label>
+            <select name="sort" class="form-select">
+                {% for key, label in sort_options %}
+                    <option value="{{ key }}" {% if current_filters.sort == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-12 d-flex gap-2 mt-2">
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-search me-1"></i>Применить
+            </button>
+            {% if has_filters %}
+                <a href="/catalog" class="btn btn-outline-secondary">
+                    <i class="fas fa-times me-1"></i>Сбросить
+                </a>
+            {% endif %}
+        </div>
+    </div>
+</form>
+
+{% if products %}
+<div class="row g-4">
+    {% for product in products %}
+    <div class="col-md-6 col-lg-4">
+        <div class="card h-100">
+            <a href="/product/{{ product.id }}" class="text-decoration-none">
+                {% if product.image_url %}
+                    <img src="{{ product.image_url }}" class="card-img-top" alt="{{ product.name }}">
+                {% else %}
+                    <div class="card-img-top bg-light d-flex align-items-center justify-content-center">
+                        <i class="fas fa-seedling fa-4x text-muted"></i>
+                    </div>
+                {% endif %}
+            </a>
+            <div class="card-body d-flex flex-column">
+                <h5 class="card-title">
+                    <a href="/product/{{ product.id }}" class="text-decoration-none text-dark">{{ product.name }}</a>
+                </h5>
+
+                <div class="d-flex flex-wrap gap-2 mb-2">
+                    {% if product.country %}
+                        <span class="badge-country"><i class="fas fa-globe me-1"></i>{{ product.country }}</span>
+                    {% endif %}
+                    {% if product.length_cm %}
+                        <span class="badge-country"><i class="fas fa-ruler-vertical me-1"></i>{{ product.length_cm }} см</span>
+                    {% endif %}
+                    <span class="badge-country"><i class="fas fa-box me-1"></i>{{ product.package_size }} шт</span>
+                </div>
+
+                {% if product.supply and product.supply.is_active %}
+                    <div class="supply-hint mb-2">
+                        <i class="fas fa-truck me-1"></i>
+                        В пути из {{ product.supply.country }}
+                        {% if product.supply.arrival_date %}
+                            · {{ product.supply.arrival_date.strftime('%d.%m') }}
+                        {% endif %}
+                    </div>
+                {% endif %}
+
+                <p class="text-muted small flex-grow-1">
+                    {{ product.description[:100] }}{% if product.description|length > 100 %}…{% endif %}
+                </p>
+
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <span class="price-tag">{{ "%.0f"|format(product.price) }} ₽</span>
+                        <small class="text-muted">/ {{ product.unit }}</small>
+                    </div>
+                    {% if product.stock > 0 %}
+                        <span class="badge bg-success">{{ product.stock }} {{ product.unit }}.</span>
+                    {% else %}
+                        <span class="badge bg-danger">Нет</span>
+                    {% endif %}
+                </div>
+
+                {% if product.stock > 0 %}
+                <form action="/add_to_cart" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="product_id" value="{{ product.id }}">
+                    <input type="hidden" name="quantity" value="{{ product.min_quantity }}">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-cart-plus me-2"></i>В корзину
+                    </button>
+                </form>
+                {% else %}
+                <button class="btn btn-secondary w-100" disabled>
+                    <i class="fas fa-ban me-2"></i>Нет в наличии
+                </button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% if total_pages > 1 %}
+<nav class="mt-5">
+    <ul class="pagination justify-content-center">
+        <li class="page-item {% if page == 1 %}disabled{% endif %}">
+            <a class="page-link" href="{{ page_url(page - 1) if page > 1 else '#' }}">
+                <i class="fas fa-chevron-left"></i>
+            </a>
+        </li>
+        {% if page_range[0] > 1 %}
+            <li class="page-item"><a class="page-link" href="{{ page_url(1) }}">1</a></li>
+            {% if page_range[0] > 2 %}
+                <li class="page-item disabled"><span class="page-link">…</span></li>
+            {% endif %}
+        {% endif %}
+        {% for p in page_range %}
+            <li class="page-item {% if p == page %}active{% endif %}">
+                <a class="page-link" href="{{ page_url(p) }}">{{ p }}</a>
+            </li>
+        {% endfor %}
+        {% if page_range[-1] < total_pages %}
+            {% if page_range[-1] < total_pages - 1 %}
+                <li class="page-item disabled"><span class="page-link">…</span></li>
+            {% endif %}
+            <li class="page-item">
+                <a class="page-link" href="{{ page_url(total_pages) }}">{{ total_pages }}</a>
+            </li>
+        {% endif %}
+        <li class="page-item {% if page == total_pages %}disabled{% endif %}">
+            <a class="page-link" href="{{ page_url(page + 1) if page < total_pages else '#' }}">
+                <i class="fas fa-chevron-right"></i>
+            </a>
+        </li>
+    </ul>
+</nav>
+{% endif %}
+
+{% else %}
+<div class="text-center py-5">
+    <i class="fas fa-search fa-4x text-muted mb-3"></i>
+    <h4 class="text-muted">Ничего не найдено</h4>
+    {% if has_filters %}
+        <p class="text-muted">Попробуй изменить фильтры.</p>
+        <a href="/catalog" class="btn btn-primary mt-2">
+            <i class="fas fa-times me-2"></i>Сбросить
+        </a>
+    {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="mb-4">
+    {% if supply %}<i class="fas fa-edit me-2"></i>Редактировать поставку
+    {% else %}<i class="fas fa-truck-fast me-2"></i>Добавить поставку{% endif %}
+</h2>
+
+<form method="post"
+      action="{% if supply %}/admin/supplies/{{ supply.id }}/edit{% else %}/admin/supplies/new{% endif %}">
+
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <div class="card p-4">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label fw-bold">Страна отправки *</label>
+                <input type="text" name="country" class="form-control"
+                       placeholder="Голландия" maxlength="100"
+                       value="{{ supply.country if supply else '' }}" required>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label fw-bold">Статус *</label>
+                <select name="status" class="form-select">
+                    {% for s in supply_statuses %}
+                        <option value="{{ s }}"
+                            {% if supply and supply.status == s %}selected{% endif %}>{{ s }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label fw-bold">Дата отправки</label>
+                <input type="date" name="departure_date" class="form-control"
+                       value="{{ supply.departure_date.strftime('%Y-%m-%d') if supply and supply.departure_date else '' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label fw-bold">Ожидаемое прибытие</label>
+                <input type="date" name="arrival_date" class="form-control"
+                       value="{{ supply.arrival_date.strftime('%Y-%m-%d') if supply and supply.arrival_date else '' }}">
+            </div>
+            <div class="col-12">
+                <label class="form-label fw-bold">Заметка</label>
+                <textarea name="notes" class="form-control" rows="4"
+                          placeholder="Например: тюльпаны, нарциссы, гиацинты. Машина из Амстердама.">{{ supply.notes if supply else '' }}</textarea>
+            </div>
+        </div>
+        <hr>
+        <div class="d-flex justify-content-between">
+            <a href="/admin" class="btn btn-secondary">
+                <i class="fas fa-times me-1"></i>Отмена
+            </a>
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-save me-1"></i>Сохранить
+            </button>
+        </div>
+    </div>
+</form>
+
+{% endblock %}

@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="mb-4">
+    {% if product %}<i class="fas fa-edit me-2"></i>Редактировать товар
+    {% else %}<i class="fas fa-plus me-2"></i>Добавить товар{% endif %}
+</h2>
+
+<form method="post" enctype="multipart/form-data"
+      action="{% if product %}/admin/products/{{ product.id }}/edit{% else %}/admin/products/new{% endif %}">
+
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <div class="card p-4">
+        <div class="row g-3">
+            <div class="col-md-8">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Название *</label>
+                    <input type="text" name="name" class="form-control"
+                           maxlength="200"
+                           value="{{ product.name if product else '' }}" required>
+                </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">Цена (опт), ₽ *</label>
+                        <input type="number" step="0.01" name="price" class="form-control"
+                               min="0" max="10000000"
+                               value="{{ product.price if product else '' }}" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">Остаток *</label>
+                        <input type="number" name="stock" class="form-control"
+                               min="0" max="1000000"
+                               value="{{ product.stock if product else 0 }}" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">Единица</label>
+                        {% set u = product.unit if product else "упаковка" %}
+                        <select name="unit" class="form-select">
+                            <option value="упаковка" {% if u == "упаковка" %}selected{% endif %}>упаковка</option>
+                            <option value="коробка" {% if u == "коробка" %}selected{% endif %}>коробка</option>
+                            <option value="шт" {% if u == "шт" %}selected{% endif %}>шт</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">В упаковке, шт</label>
+                        <input type="number" name="package_size" class="form-control"
+                               min="1" max="10000"
+                               value="{{ product.package_size if product else 25 }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">Мин. заказ</label>
+                        <input type="number" name="min_quantity" class="form-control"
+                               min="1" max="10000"
+                               value="{{ product.min_quantity if product else 1 }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">Длина, см</label>
+                        <input type="number" name="length_cm" class="form-control"
+                               min="0" max="500"
+                               value="{{ product.length_cm if product else 0 }}">
+                    </div>
+                </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Страна</label>
+                        <input type="text" name="country" class="form-control"
+                               maxlength="100"
+                               value="{{ product.country if product else '' }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Поставка (рейс)</label>
+                        <select name="supply_id" class="form-select">
+                            <option value="">— Без привязки —</option>
+                            {% for s in supplies %}
+                                <option value="{{ s.id }}"
+                                    {% if product and product.supply_id == s.id %}selected{% endif %}>
+                                    {{ s.country }} ·
+                                    {% if s.arrival_date %}{{ s.arrival_date.strftime('%d.%m.%Y') }}{% else %}без даты{% endif %}
+                                    · {{ s.status }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Описание</label>
+                    <textarea name="description" class="form-control" rows="4">{{ product.description if product else '' }}</textarea>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label fw-bold">Картинка</label>
+                <div class="mb-3 text-center">
+                    <img id="image-preview"
+                         src="{{ product.image_url if product and product.image_url else '' }}"
+                         class="img-fluid rounded {% if not product or not product.image_url %}d-none{% endif %}"
+                         style="max-height:250px;" alt="">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small text-muted">Загрузить файл:</label>
+                    <input type="file" name="image_file" class="form-control"
+                           accept="image/*" onchange="previewImage(this)">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small text-muted">…или путь / ссылка:</label>
+                    <input type="text" name="image_url" class="form-control" maxlength="500"
+                           value="{{ product.image_url if product else '' }}">
+                </div>
+            </div>
+        </div>
+        <hr>
+        <div class="d-flex justify-content-between">
+            <a href="/admin" class="btn btn-secondary">
+                <i class="fas fa-times me-1"></i>Отмена
+            </a>
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-save me-1"></i>Сохранить
+            </button>
+        </div>
+    </div>
+</form>
+
+<script>
+function previewImage(input) {
+    const preview = document.getElementById('image-preview');
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = e => { preview.src = e.target.result; preview.classList.remove('d-none'); };
+        reader.readAsDataURL(input.files[0]);
+    }
+}
+</script>
+
+{% endblock %}
