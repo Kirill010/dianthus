@@ -13,11 +13,9 @@ from .bootstrap import ensure_default_admin
 from .config import config
 from .database import Base, engine, get_db
 from .deps import get_current_user
+from .migrations import auto_migrate
 from .templating import render
 from .routers import admin, cart, catalog
-
-
-# ═══════ ЛОГИРОВАНИЕ ════════════════════════════════════════
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,38 +23,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
-# ═══════ БАЗА ДАННЫХ ════════════════════════════════════════
-
 try:
     Base.metadata.create_all(bind=engine)
-    # Не логируем URL целиком — в нём может быть пароль
-    db_name = config.DATABASE_URL.split("@")[-1] if "@" in config.DATABASE_URL \
-        else config.DATABASE_URL
+    auto_migrate()
+
+    db_name = (config.DATABASE_URL.split("@")[-1]
+               if "@" in config.DATABASE_URL else config.DATABASE_URL)
     logger.info("✅ Схема БД готова (%s)", db_name)
 except Exception as e:
     logger.error("❌ Не удалось подключиться к БД: %s", e)
-    logger.error("Проверьте DATABASE_URL в .env и что сервер БД запущен.")
     raise
 
-
-# ═══════ ПРИЛОЖЕНИЕ ═════════════════════════════════════════
-
 app = FastAPI(title="Диантус — оптовый магазин цветов")
-
-
-# ═══════ MIDDLEWARE ═════════════════════════════════════════
 
 app.add_middleware(
     SessionMiddleware,
     secret_key=config.SECRET_KEY,
-    max_age=60 * 60 * 24 * 14,     # 2 недели
+    max_age=60 * 60 * 24 * 14,
     same_site="lax",
     https_only=(config.ENV == "prod"),
 )
-
-
-# ═══════ СТАТИКА ════════════════════════════════════════════
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -64,20 +50,29 @@ STATIC_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
-# ═══════ РОУТЕРЫ ════════════════════════════════════════════
+def _check_vendor() -> None:
+    """Предупредить, если vendor-файлы не скачаны."""
+    vendor = STATIC_DIR / "vendor"
+    needed = ["bootstrap.min.css", "bootstrap.bundle.min.js",
+              "fontawesome/css/all.min.css"]
+    missing = [n for n in needed if not (vendor / n).exists()]
+    if missing:
+        logger.warning(
+            "⚠️  Не найдены vendor-файлы: %s. "
+            "Запустите: python download_vendor.py",
+            ", ".join(missing),
+        )
+
+
+_check_vendor()
 
 app.include_router(auth_router)
 app.include_router(catalog.router)
 app.include_router(cart.router)
 app.include_router(admin.router)
 
-
-# ═══════ АДМИН ПО УМОЛЧАНИЮ ════════════════════════════════
-
 ensure_default_admin()
 
-
-# ═══════ ОБЩИЕ МАРШРУТЫ ═════════════════════════════════════
 
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request, db: Session = Depends(get_db)):
@@ -95,12 +90,10 @@ async def login_page(request: Request, db: Session = Depends(get_db)):
     register_data = request.session.pop("register_data", {})
     login_error = request.session.pop("login_error", None)
 
-    return render(
-        request, "login.html", db,
-        register_errors=register_errors,
-        register_data=register_data,
-        login_error=login_error,
-    )
+    return render(request, "login.html", db,
+                  register_errors=register_errors,
+                  register_data=register_data,
+                  login_error=login_error)
 
 
 @app.get("/registration_pending", response_class=HTMLResponse)

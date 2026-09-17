@@ -1,9 +1,4 @@
-"""
-Создание администратора по умолчанию при старте приложения.
-
-Работает только если в .env заданы ADMIN_EMAIL и ADMIN_PASSWORD.
-Безопасно для повторных запусков.
-"""
+"""Создание админа при старте приложения."""
 import logging
 import os
 
@@ -13,24 +8,23 @@ from dotenv import load_dotenv
 from .database import SessionLocal
 from . import models
 
-
 load_dotenv()
 logger = logging.getLogger(__name__)
 
 
-def _hash_password(password: str) -> str:
-    pwd_bytes = password.encode("utf-8")
-    if len(pwd_bytes) > 72:
-        raise ValueError("Пароль длиннее 72 байт — bcrypt не примет")
-    return bcrypt.hashpw(pwd_bytes, bcrypt.gensalt()).decode()
+def _hash(password: str) -> str:
+    b = password.encode("utf-8")
+    if len(b) > 72:
+        raise ValueError("Пароль > 72 байт")
+    return bcrypt.hashpw(b, bcrypt.gensalt()).decode()
 
 
-def _check_password(password: str, hashed: str) -> bool:
-    pwd_bytes = password.encode("utf-8")
-    if len(pwd_bytes) > 72:
+def _check(password: str, hashed: str) -> bool:
+    b = password.encode("utf-8")
+    if len(b) > 72:
         return False
     try:
-        return bcrypt.checkpw(pwd_bytes, hashed.encode())
+        return bcrypt.checkpw(b, hashed.encode())
     except ValueError:
         return False
 
@@ -40,46 +34,30 @@ def ensure_default_admin() -> None:
     password = os.getenv("ADMIN_PASSWORD") or ""
 
     if not email or not password:
-        logger.info("ADMIN_EMAIL/ADMIN_PASSWORD не заданы — админ не создаётся")
+        logger.info("ADMIN_EMAIL/PASSWORD не заданы — админ не создаётся")
         return
-
-    if len(password) < 8:
-        logger.warning("ADMIN_PASSWORD короче 8 символов — пропускаем")
-        return
-    if len(password.encode("utf-8")) > 72:
-        logger.warning("ADMIN_PASSWORD длиннее 72 байт — пропускаем")
+    if len(password) < 8 or len(password.encode("utf-8")) > 72:
+        logger.warning("ADMIN_PASSWORD некорректной длины — пропускаем")
         return
 
     db = SessionLocal()
     try:
         user = db.query(models.User).filter(models.User.email == email).first()
         if user:
-            # Пользователь с таким email уже есть.
-            # Повышаем ТОЛЬКО если пароль совпадает — иначе любой,
-            # кто угадал ADMIN_EMAIL, стал бы админом после рестарта.
             if user.is_admin and user.is_approved:
                 return
-            if not _check_password(password, user.hashed_password):
-                logger.warning(
-                    "Пользователь %s с email ADMIN_EMAIL существует, "
-                    "но пароль не совпадает — не повышаем", email,
-                )
+            if not _check(password, user.hashed_password):
+                logger.warning("Email занят, но пароль не совпал — "
+                               "не повышаем до админа")
                 return
-            changed = False
-            if not user.is_admin:
-                user.is_admin = True
-                changed = True
-            if not user.is_approved:
-                user.is_approved = True
-                changed = True
-            if changed:
-                db.commit()
-                logger.info("👑 Пользователь %s повышен до админа", email)
+            user.is_admin = True
+            user.is_approved = True
+            db.commit()
+            logger.info("👑 %s повышен до админа", email)
             return
-
         db.add(models.User(
             email=email,
-            hashed_password=_hash_password(password),
+            hashed_password=_hash(password),
             full_name=os.getenv("ADMIN_NAME", "Администратор"),
             phone=os.getenv("ADMIN_PHONE", ""),
             company_name=os.getenv("ADMIN_COMPANY", "Диантус"),
@@ -87,9 +65,9 @@ def ensure_default_admin() -> None:
             is_approved=True,
         ))
         db.commit()
-        logger.info("👑 Создан администратор по умолчанию: %s", email)
+        logger.info("👑 Создан админ: %s", email)
     except Exception as e:
         db.rollback()
-        logger.exception("Не удалось создать админа: %s", e)
+        logger.exception("Ошибка создания админа: %s", e)
     finally:
         db.close()

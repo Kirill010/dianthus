@@ -1,28 +1,21 @@
-"""
-Выдать права администратора по email.
-
-Использование: python make_admin.py EMAIL
-"""
+"""Выдать права администратора по email."""
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from app.database import SessionLocal   # noqa: E402
+from app.database import SessionLocal  # noqa: E402
 from app import models                  # noqa: E402
 
 
 def make_admin(email: str) -> int:
-    """Возвращает 0 при успехе, 1 при ошибке."""
     email = (email or "").strip().lower()
     if not email:
         print("❌ Не указан email")
         return 1
-
     db = SessionLocal()
     try:
-        user = db.query(models.User).filter(
-            models.User.email == email).first()
+        user = db.query(models.User).filter(models.User.email == email).first()
         if not user:
             print(f"❌ Пользователь {email} не найден")
             return 1

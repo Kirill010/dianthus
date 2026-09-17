@@ -1,30 +1,56 @@
 {% extends "base.html" %}
+{% set hide_bottom_nav = true %}
 {% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <h2 class="mb-0">
+        {% if supply %}<i class="fas fa-edit me-2"></i>Поставка №{{ supply.id }}
+        {% else %}<i class="fas fa-truck-fast me-2"></i>Новая поставка{% endif %}
+    </h2>
+    <a href="/admin" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i>Назад</a>
+</div>
 
-<h2 class="mb-4">
-    {% if supply %}<i class="fas fa-edit me-2"></i>Редактировать поставку
-    {% else %}<i class="fas fa-truck-fast me-2"></i>Добавить поставку{% endif %}
-</h2>
+{% if supply and supply.items %}
+<div class="alert {% if supply.status == 'Разгружен' %}alert-success{% else %}alert-warning{% endif %} mb-3">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div>
+            <strong>Статус: {{ supply.status }}</strong>
+            {% if supply.status == 'Разгружен' %}
+                <div class="small">Товары активны в каталоге</div>
+            {% else %}
+                <div class="small">Нажмите «Разгрузить», чтобы товары появились в каталоге</div>
+            {% endif %}
+        </div>
+        {% if supply.status in ['Прибыл', 'В пути'] %}
+        <form action="/admin/supplies/{{ supply.id }}/unload" method="post"
+              onsubmit="return confirm('Разгрузить поставку? Старые партии обнулятся.');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-success"><i class="fas fa-box-open me-1"></i>Разгрузить</button>
+        </form>
+        {% elif supply.status == 'Разгружен' %}
+        <form action="/admin/supplies/{{ supply.id }}/deactivate" method="post"
+              onsubmit="return confirm('Снять с полок?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-outline-danger"><i class="fas fa-eye-slash me-1"></i>Снять с полок</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
 
-<form method="post"
-      action="{% if supply %}/admin/supplies/{{ supply.id }}/edit{% else %}/admin/supplies/new{% endif %}">
-
+<form method="post" action="{% if supply %}/admin/supplies/{{ supply.id }}/edit{% else %}/admin/supplies/new{% endif %}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-
-    <div class="card p-4">
+    <div class="card p-4 mb-4">
+        <h5 class="mb-3">Данные поставки</h5>
         <div class="row g-3">
             <div class="col-md-6">
-                <label class="form-label fw-bold">Страна отправки *</label>
-                <input type="text" name="country" class="form-control"
-                       placeholder="Голландия" maxlength="100"
-                       value="{{ supply.country if supply else '' }}" required>
+                <label class="form-label fw-bold">Страна *</label>
+                <input type="text" name="country" class="form-control" maxlength="100" value="{{ supply.country if supply else '' }}" required>
             </div>
             <div class="col-md-6">
                 <label class="form-label fw-bold">Статус *</label>
                 <select name="status" class="form-select">
                     {% for s in supply_statuses %}
-                        <option value="{{ s }}"
-                            {% if supply and supply.status == s %}selected{% endif %}>{{ s }}</option>
+                        <option value="{{ s }}" {% if supply and supply.status == s %}selected{% endif %}>{{ s }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -34,26 +60,82 @@
                        value="{{ supply.departure_date.strftime('%Y-%m-%d') if supply and supply.departure_date else '' }}">
             </div>
             <div class="col-md-6">
-                <label class="form-label fw-bold">Ожидаемое прибытие</label>
+                <label class="form-label fw-bold">Прибытие</label>
                 <input type="date" name="arrival_date" class="form-control"
                        value="{{ supply.arrival_date.strftime('%Y-%m-%d') if supply and supply.arrival_date else '' }}">
             </div>
             <div class="col-12">
                 <label class="form-label fw-bold">Заметка</label>
-                <textarea name="notes" class="form-control" rows="4"
-                          placeholder="Например: тюльпаны, нарциссы, гиацинты. Машина из Амстердама.">{{ supply.notes if supply else '' }}</textarea>
+                <textarea name="notes" class="form-control" rows="2">{{ supply.notes if supply else '' }}</textarea>
             </div>
         </div>
         <hr>
         <div class="d-flex justify-content-between">
-            <a href="/admin" class="btn btn-secondary">
-                <i class="fas fa-times me-1"></i>Отмена
-            </a>
-            <button type="submit" class="btn btn-primary">
-                <i class="fas fa-save me-1"></i>Сохранить
-            </button>
+            <a href="/admin" class="btn btn-secondary">Отмена</a>
+            <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i>Сохранить</button>
         </div>
     </div>
 </form>
 
+{% if supply %}
+<div class="card p-4 mb-4">
+    <h5 class="mb-3"><i class="fas fa-boxes me-2"></i>Товары в поставке <span class="badge bg-secondary">{{ items|length }}</span></h5>
+    {% if items %}
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead><tr><th>Товар</th><th>Упак.</th><th>Цена / Остаток</th><th>Остаток</th><th>Активно</th><th></th></tr></thead>
+            <tbody>
+            {% for item in items %}
+                <tr>
+                    <td><strong>{{ item.product.name }}</strong>
+                        {% if item.product.length_cm %}<br><small class="text-muted">{{ item.product.length_cm }} см</small>{% endif %}</td>
+                    <td>{{ item.product.package_size }} шт</td>
+                    <td>
+                        <form action="/admin/supply_items/{{ item.id }}/update" method="post" class="d-flex gap-1" style="max-width:240px;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <input type="number" step="0.01" name="price" class="form-control form-control-sm" value="{{ item.price }}" required>
+                            <input type="number" name="stock" class="form-control form-control-sm" value="{{ item.stock }}" required>
+                            <button type="submit" class="btn btn-sm btn-primary"><i class="fas fa-check"></i></button>
+                        </form>
+                    </td>
+                    <td>{% if item.stock > 0 %}<span class="badge bg-success">{{ item.stock }}</span>{% else %}<span class="badge bg-danger">0</span>{% endif %}</td>
+                    <td>{% if item.is_active %}<span class="badge bg-success">Да</span>{% else %}<span class="badge bg-secondary">Нет</span>{% endif %}</td>
+                    <td>
+                        <form action="/admin/supply_items/{{ item.id }}/delete" method="post" onsubmit="return confirm('Удалить?');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}<p class="text-muted text-center">Пока нет товаров</p>{% endif %}
+</div>
+
+<div class="card p-4 mb-4">
+    <h5 class="mb-3"><i class="fas fa-plus me-2"></i>Добавить товар</h5>
+    {% if all_products %}
+    <form action="/admin/supplies/{{ supply.id }}/items/add" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="row g-3">
+            <div class="col-md-5">
+                <select name="product_id" class="form-select" required>
+                    <option value="">— Выберите товар —</option>
+                    {% for p in all_products %}
+                        <option value="{{ p.id }}">{{ p.name }}{% if p.length_cm %} · {{ p.length_cm }} см{% endif %}{% if p.category %} · {{ p.category }}{% endif %}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3"><input type="number" step="0.01" name="price" class="form-control" placeholder="Цена, ₽" min="0" required></div>
+            <div class="col-md-2"><input type="number" name="stock" class="form-control" placeholder="Кол-во упак." min="0" required></div>
+            <div class="col-md-2"><button type="submit" class="btn btn-primary w-100"><i class="fas fa-plus"></i> Добавить</button></div>
+        </div>
+    </form>
+    {% else %}
+    <p class="text-muted mb-0">Справочник пуст. <a href="/admin/products/new">Добавьте товары</a>.</p>
+    {% endif %}
+</div>
+{% endif %}
 {% endblock %}

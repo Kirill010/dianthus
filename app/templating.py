@@ -1,26 +1,20 @@
-"""
-Общий рендер шаблонов.
-
-Пути строятся от файла — работает при запуске из любой папки.
-"""
+"""Общий рендер шаблонов."""
 from pathlib import Path
 
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import nulls_last
 from sqlalchemy.orm import Session
 
 from .deps import get_current_user
 from .security import ensure_csrf_token
 from . import models
 
-
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 def render(request: Request, template: str, db: Session, **context):
-    """Готовит общий контекст и рендерит шаблон."""
-    # Если роутер уже передал user — не делаем лишний запрос в БД
     user = context.pop("user", None)
     if user is None:
         user = get_current_user(request, db)
@@ -28,15 +22,16 @@ def render(request: Request, template: str, db: Session, **context):
     flash = request.session.pop("flash", None)
     cart = request.session.get("cart", [])
     cart_count = sum(item["quantity"] for item in cart)
-
     csrf_token = ensure_csrf_token(request)
 
     active_supply = None
     if user:
+        # NULLS LAST — иначе на SQLite поставка без даты прибытия
+        # «перебивает» реальную ближайшую поставку
         active_supply = (
             db.query(models.Supply)
             .filter(models.Supply.status.in_(["Ожидается", "В пути"]))
-            .order_by(models.Supply.arrival_date.asc())
+            .order_by(nulls_last(models.Supply.arrival_date.asc()))
             .first()
         )
 
@@ -47,7 +42,6 @@ def render(request: Request, template: str, db: Session, **context):
         "active_supply": active_supply,
         "csrf_token": csrf_token,
     })
-
     return templates.TemplateResponse(
         request=request, name=template, context=context,
     )
