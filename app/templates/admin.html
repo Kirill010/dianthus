@@ -81,18 +81,53 @@
                         </td>
                         <td>
                             {% if not u.is_admin and not u.is_approved %}
+                                {# ─── Новая заявка: Одобрить / Отклонить ─── #}
                                 <form action="/admin/users/{{ u.id }}/approve" method="post" class="d-inline">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                    <button class="btn btn-sm btn-success">Одобрить</button>
+                                    <button class="btn btn-sm btn-success">
+                                        <i class="fas fa-check me-1"></i>Одобрить
+                                    </button>
                                 </form>
-                                <form action="/admin/users/{{ u.id }}/reject" method="post" class="d-inline" onsubmit="return confirm('Отклонить?');">
+                                <form action="/admin/users/{{ u.id }}/reject" method="post" class="d-inline"
+                                    onsubmit="return confirm('Отклонить заявку?');">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                     <button class="btn btn-sm btn-outline-danger">Отклонить</button>
                                 </form>
-                            {% elif not u.is_admin %}
-                                <form action="/admin/users/{{ u.id }}/reject" method="post" class="d-inline" onsubmit="return confirm('Удалить?');">
+
+                            {% elif u.is_admin %}
+                                {# ─── Админ ─── #}
+                                {% if u.id == user.id %}
+                                    <span class="badge bg-dark px-3 py-2">
+                                        <i class="fas fa-user me-1"></i>Это вы
+                                    </span>
+                                {% else %}
+                                    <form action="/admin/users/{{ u.id }}/demote" method="post"
+                                        class="d-inline"
+                                        onsubmit="return confirm('Снять права администратора с {{ u.full_name }}?');">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                        <button class="btn btn-sm btn-outline-warning">
+                                            <i class="fas fa-user-minus me-1"></i>Снять админа
+                                        </button>
+                                    </form>
+                                {% endif %}
+
+                            {% else %}
+                                {# ─── Обычный одобренный клиент ─── #}
+                                <form action="/admin/users/{{ u.id }}/make_admin" method="post"
+                                    class="d-inline"
+                                    onsubmit="return confirm('Сделать {{ u.full_name }} администратором?');">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                    <button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                                    <button class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-user-shield me-1"></i>Сделать админом
+                                    </button>
+                                </form>
+                                <form action="/admin/users/{{ u.id }}/reject" method="post"
+                                    class="d-inline"
+                                    onsubmit="return confirm('Удалить пользователя?');">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <button class="btn btn-sm btn-outline-danger">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
                                 </form>
                             {% endif %}
                         </td>

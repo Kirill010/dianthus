@@ -86,53 +86,66 @@ async def dashboard(request: Request, db: Session = Depends(get_db),
 
 # ═══════ МОДЕРАЦИЯ ══════════════════════════════════════════
 
-@router.post("/users/{user_id}/approve")
-async def user_approve(user_id: int, request: Request,
-                       db: Session = Depends(get_db),
-                       _a=Depends(require_admin),
-                       _csrf: None = Depends(check_csrf)):
+@router.post("/users/{user_id}/make_admin")
+async def user_make_admin(user_id: int, request: Request,
+                          db: Session = Depends(get_db),
+                          current_admin=Depends(require_admin),
+                          _csrf: None = Depends(check_csrf)):
+    """Повысить пользователя до администратора."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(404, "Пользователь не найден")
+
     if user.is_admin:
-        request.session["flash"] = "Этот пользователь уже админ"
+        request.session["flash"] = f"«{user.full_name}» уже админ"
         return RedirectResponse(url="/admin", status_code=303)
-    if user.is_approved:
-        request.session["flash"] = f"«{user.company_name}» уже одобрен"
-        return RedirectResponse(url="/admin", status_code=303)
-    user.is_approved = True
+
+    user.is_admin = True
+    user.is_approved = True  # админ автоматически одобрен
     db.commit()
-    request.session["flash"] = f"Клиент «{user.company_name}» одобрен"
+
+    logger.info("👑 %s повышен до админа (кем: %s)",
+                user.email, current_admin.email)
+    request.session["flash"] = (
+        f"👑 «{user.full_name}» ({user.email}) теперь администратор"
+    )
     return RedirectResponse(url="/admin", status_code=303)
 
 
-@router.post("/users/{user_id}/reject")
-async def user_reject(user_id: int, request: Request,
+@router.post("/users/{user_id}/demote")
+async def user_demote(user_id: int, request: Request,
                       db: Session = Depends(get_db),
-                      _a=Depends(require_admin),
+                      current_admin=Depends(require_admin),
                       _csrf: None = Depends(check_csrf)):
+    """Снять права администратора. Нельзя снять с себя или последнего админа."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(404, "Пользователь не найден")
-    if user.is_admin:
-        raise HTTPException(400, "Нельзя удалить админа")
 
-    has_orders = (db.query(Order.id).filter(Order.user_id == user_id)
-                  .first() is not None)
-    if has_orders:
-        user.is_approved = False
-        db.commit()
-        request.session["flash"] = (
-            f"У «{user.company_name}» есть заказы — доступ закрыт"
-        )
+    # Защита 1: нельзя снять права с самого себя
+    if user.id == current_admin.id:
+        request.session["flash"] = "❌ Нельзя снять права с самого себя"
         return RedirectResponse(url="/admin", status_code=303)
 
-    name = user.company_name
-    db.delete(user)
-    db.commit()
-    request.session["flash"] = f"Заявка «{name}» отклонена"
-    return RedirectResponse(url="/admin", status_code=303)
+    if not user.is_admin:
+        request.session["flash"] = "Пользователь и так не админ"
+        return RedirectResponse(url="/admin", status_code=303)
 
+    # Защита 2: должен остаться хотя бы один админ
+    admins_count = (db.query(User)
+                    .filter(User.is_admin == True).count())  # noqa: E712
+    if admins_count <= 1:
+        request.session["flash"] = "❌ Нельзя снять последнего администратора"
+        return RedirectResponse(url="/admin", status_code=303)
+
+    user.is_admin = False
+    db.commit()
+    logger.info("👤 %s снят с админов (кем: %s)",
+                user.email, current_admin.email)
+    request.session["flash"] = (
+        f"«{user.full_name}» больше не администратор"
+    )
+    return RedirectResponse(url="/admin", status_code=303)
 
 # ═══════ ЗАКАЗЫ ═════════════════════════════════════════════
 
