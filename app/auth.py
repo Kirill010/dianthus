@@ -47,7 +47,6 @@ async def register(
     _csrf: None = Depends(check_csrf),
 ):
     check_rate_limit(request, "register", max_hits=5, window=300)
-
     email = email.strip().lower()
     company_name = company_name.strip()
     full_name = full_name.strip()
@@ -92,10 +91,6 @@ async def register(
     except IntegrityError:
         db.rollback()
         request.session["register_errors"] = ["Этот email уже зарегистрирован"]
-        request.session["register_data"] = {
-            "email": email, "full_name": full_name,
-            "phone": phone, "company_name": company_name,
-        }
         return RedirectResponse(url="/login", status_code=303)
 
     logger.info("Заявка на регистрацию: %s (%s)", email, company_name)

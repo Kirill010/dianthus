@@ -26,8 +26,6 @@ def render(request: Request, template: str, db: Session, **context):
 
     active_supply = None
     if user:
-        # NULLS LAST — иначе на SQLite поставка без даты прибытия
-        # «перебивает» реальную ближайшую поставку
         active_supply = (
             db.query(models.Supply)
             .filter(models.Supply.status.in_(["Ожидается", "В пути"]))

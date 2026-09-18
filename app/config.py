@@ -20,11 +20,6 @@ def _int_env(key: str, default: int) -> int:
 
 
 def _str_env(key: str, default: str) -> str:
-    """Вернуть значение переменной окружения ИЛИ default, если пусто.
-
-    Отличие от os.getenv(key, default): если переменная есть, но пустая
-    (например DATABASE_URL=), os.getenv вернёт "", а нам нужен default.
-    """
     value = os.getenv(key)
     return value if value else default
 
@@ -46,4 +41,4 @@ if config.ENV == "prod":
             'Сгенерировать: python -c "import secrets; print(secrets.token_hex(32))"'
         )
     if len(config.SECRET_KEY) < 32:
-        raise RuntimeError("❌ SECRET_KEY слишком короткий (минимум 32 символа).")
+        raise RuntimeError("❌ SECRET_KEY слишком короткий.")

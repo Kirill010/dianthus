@@ -24,8 +24,6 @@ async def check_csrf(request: Request, csrf_token: str = Form("")) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="Сессия истекла. Обновите страницу.")
     if not csrf_token or not secrets.compare_digest(expected, csrf_token):
-        logger.warning("CSRF не совпал: %s",
-                       request.client.host if request.client else "?")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="Недействительный CSRF-токен.")
 

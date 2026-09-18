@@ -2,6 +2,7 @@
 import re
 
 _EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
+_NAME_RE = re.compile(r"^[А-Яа-яЁёA-Za-z\- .]{2,120}$")
 
 
 def validate_email(email: str) -> str | None:
@@ -27,10 +28,6 @@ def validate_password(password: str) -> str | None:
     if not any(c.isdigit() for c in password):
         return "Пароль должен содержать цифру"
     return None
-
-
-# ИСПРАВЛЕНО: добавлена точка — «Ким К. С.» теперь проходит
-_NAME_RE = re.compile(r"^[А-Яа-яЁёA-Za-z\- .]{2,120}$")
 
 
 def validate_full_name(name: str) -> str | None:

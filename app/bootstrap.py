@@ -32,12 +32,11 @@ def _check(password: str, hashed: str) -> bool:
 def ensure_default_admin() -> None:
     email = (os.getenv("ADMIN_EMAIL") or "").strip().lower()
     password = os.getenv("ADMIN_PASSWORD") or ""
-
     if not email or not password:
-        logger.info("ADMIN_EMAIL/PASSWORD не заданы — админ не создаётся")
+        logger.info("ADMIN_EMAIL/PASSWORD не заданы")
         return
     if len(password) < 8 or len(password.encode("utf-8")) > 72:
-        logger.warning("ADMIN_PASSWORD некорректной длины — пропускаем")
+        logger.warning("ADMIN_PASSWORD некорректной длины")
         return
 
     db = SessionLocal()
@@ -47,8 +46,7 @@ def ensure_default_admin() -> None:
             if user.is_admin and user.is_approved:
                 return
             if not _check(password, user.hashed_password):
-                logger.warning("Email занят, но пароль не совпал — "
-                               "не повышаем до админа")
+                logger.warning("Email занят, пароль не совпал")
                 return
             user.is_admin = True
             user.is_approved = True

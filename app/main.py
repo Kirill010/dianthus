@@ -26,7 +26,6 @@ logger = logging.getLogger(__name__)
 try:
     Base.metadata.create_all(bind=engine)
     auto_migrate()
-
     db_name = (config.DATABASE_URL.split("@")[-1]
                if "@" in config.DATABASE_URL else config.DATABASE_URL)
     logger.info("✅ Схема БД готова (%s)", db_name)
@@ -39,7 +38,7 @@ app = FastAPI(title="Диантус — оптовый магазин цвето
 app.add_middleware(
     SessionMiddleware,
     secret_key=config.SECRET_KEY,
-    max_age=60 * 60 * 24 * 7,
+    max_age=60 * 60 * 24 * 7,  # 7 дней
     same_site="lax",
     https_only=(config.ENV == "prod"),
 )
@@ -51,17 +50,14 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 def _check_vendor() -> None:
-    """Предупредить, если vendor-файлы не скачаны."""
     vendor = STATIC_DIR / "vendor"
     needed = ["bootstrap.min.css", "bootstrap.bundle.min.js",
               "fontawesome/css/all.min.css"]
     missing = [n for n in needed if not (vendor / n).exists()]
     if missing:
         logger.warning(
-            "⚠️  Не найдены vendor-файлы: %s. "
-            "Запустите: python download_vendor.py",
-            ", ".join(missing),
-        )
+            "⚠️  Не найдены vendor-файлы: %s. Запустите: "
+            "python download_vendor.py", ", ".join(missing))
 
 
 _check_vendor()
@@ -85,15 +81,10 @@ async def root(request: Request, db: Session = Depends(get_db)):
 async def login_page(request: Request, db: Session = Depends(get_db)):
     if get_current_user(request, db):
         return RedirectResponse(url="/catalog", status_code=303)
-
-    register_errors = request.session.pop("register_errors", None)
-    register_data = request.session.pop("register_data", {})
-    login_error = request.session.pop("login_error", None)
-
     return render(request, "login.html", db,
-                  register_errors=register_errors,
-                  register_data=register_data,
-                  login_error=login_error)
+                  register_errors=request.session.pop("register_errors", None),
+                  register_data=request.session.pop("register_data", {}),
+                  login_error=request.session.pop("login_error", None))
 
 
 @app.get("/registration_pending", response_class=HTMLResponse)

@@ -148,6 +148,70 @@ async def user_demote(user_id: int, request: Request,
     )
     return RedirectResponse(url="/admin", status_code=303)
 
+@router.post("/users/{user_id}/approve")
+async def user_approve(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_admin=Depends(require_admin),
+    _csrf: None = Depends(check_csrf),
+):
+    """Одобрить заявку на регистрацию клиента."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        request.session["flash"] = "Пользователь не найден"
+        return RedirectResponse(url="/admin", status_code=303)
+
+    if user.is_approved:
+        request.session["flash"] = f"«{user.full_name}» уже одобрен"
+        return RedirectResponse(url="/admin", status_code=303)
+
+    user.is_approved = True
+    db.commit()
+    logger.info("✅ Одобрен клиент: %s (кем: %s)",
+                user.email, current_admin.email)
+    request.session["flash"] = (
+        f"✅ «{user.company_name}» ({user.full_name}) одобрен"
+    )
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@router.post("/users/{user_id}/reject")
+async def user_reject(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_admin=Depends(require_admin),
+    _csrf: None = Depends(check_csrf),
+):
+    """Удалить пользователя. История его заказов СОХРАНЯЕТСЯ."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        request.session["flash"] = "Пользователь не найден"
+        return RedirectResponse(url="/admin", status_code=303)
+
+    # ─── Защита ───
+    if user.id == current_admin.id:
+        request.session["flash"] = "❌ Нельзя удалить себя"
+        return RedirectResponse(url="/admin", status_code=303)
+    if user.is_admin:
+        request.session["flash"] = "❌ Сначала снимите права администратора"
+        return RedirectResponse(url="/admin", status_code=303)
+
+    # ─── Сохраняем историю заказов: обнуляем FK ───
+    db.query(Order).filter(Order.user_id == user.id).update(
+        {Order.user_id: None}, synchronize_session=False
+    )
+
+    name, email = user.full_name, user.email
+    db.delete(user)
+    db.commit()
+
+    logger.info("🗑 Удалён пользователь: %s (кем: %s)",
+                email, current_admin.email)
+    request.session["flash"] = f"🗑 «{name}» удалён"
+    return RedirectResponse(url="/admin", status_code=303)
+
 # ═══════ ЗАКАЗЫ ═════════════════════════════════════════════
 
 @router.post("/update_order_status")

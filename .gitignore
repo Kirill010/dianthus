@@ -58,6 +58,7 @@ cover/
 
 # Django stuff:
 *.log
+logs/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
@@ -150,6 +151,8 @@ activemq-data/
 
 # Environments
 .env
+*.env
+!.env.example
 .envrc
 .venv
 env/
@@ -220,9 +223,12 @@ __marimo__/
 .streamlit/secrets.toml
 
 *.db
+*.sqlite
 *.sqlite3
 app/static/uploads/*
 !app/static/uploads/.gitkeep
+app/static/vendor/
 .idea/
+*.swp
 .vscode/
 .DS_Store

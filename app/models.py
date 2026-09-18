@@ -1,14 +1,4 @@
-"""
-Модели БД (5 таблиц).
-
-  User       — оптовый покупатель (или админ)
-  Supply     — рейс машины из страны-производителя
-  Product    — товар на складе
-  Order      — заказ клиента
-  OrderItem  — позиция внутри заказа
-
-Магазин ТОЛЬКО оптовый: у товара одна цена.
-"""
+"""Модели БД."""
 from datetime import datetime, timezone
 
 from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey,
@@ -24,19 +14,12 @@ def _utcnow() -> datetime:
 
 ORDER_STATUSES = ["Новый", "Подтверждён", "В работе",
                   "Отправлен", "Выполнен", "Отменён"]
-
 SUPPLY_STATUSES = ["Ожидается", "В пути", "Прибыл", "Разгружен"]
 
 PRODUCT_CATEGORIES = [
-    "Роза Эквадор",
-    "Роза кустовая",
-    "Хризантема",
-    "Гвоздика",
-    "Тюльпан",
-    "Пион",
-    "Горшечные",
-    "Зелень",
-    "Прочее",
+    "Роза Эквадор", "Роза кустовая", "Хризантема",
+    "Гвоздика", "Тюльпан", "Пион",
+    "Горшечные", "Зелень", "Прочее",
 ]
 
 QUANTITY_LEVELS = [
@@ -79,7 +62,6 @@ class Product(Base):
     image_url = Column(String(500), default="")
     category = Column(String(100), default="Прочее", index=True)
     created_at = Column(DateTime, default=_utcnow)
-
     supply_items = relationship("SupplyItem", back_populates="product",
                                 cascade="all, delete-orphan")
 
@@ -93,7 +75,6 @@ class Supply(Base):
     status = Column(String(30), default="Ожидается")
     notes = Column(Text, default="")
     created_at = Column(DateTime, default=_utcnow)
-
     items = relationship("SupplyItem", back_populates="supply",
                          cascade="all, delete-orphan")
 
@@ -115,7 +96,6 @@ class SupplyItem(Base):
     stock = Column(Integer, default=0)
     is_active = Column(Boolean, default=False, nullable=False, index=True)
     created_at = Column(DateTime, default=_utcnow)
-
     supply = relationship("Supply", back_populates="items")
     product = relationship("Product", back_populates="supply_items")
 
@@ -136,7 +116,6 @@ class Order(Base):
     status = Column(String(30), default="Новый")
     comment = Column(Text, default="")
     created_at = Column(DateTime, default=_utcnow)
-
     user = relationship("User", back_populates="orders")
     items = relationship("OrderItem", back_populates="order",
                          cascade="all, delete-orphan")
@@ -153,7 +132,6 @@ class OrderItem(Base):
     unit = Column(String(30), default="")
     price = Column(Float, nullable=False)
     quantity = Column(Integer, default=1)
-
     order = relationship("Order", back_populates="items")
 
     @property
