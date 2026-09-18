@@ -109,17 +109,38 @@
 
 {% if supply %}
 <div class="card p-4 mb-4">
-    <h5 class="mb-3"><i class="fas fa-boxes me-2"></i>Товары в поставке <span class="badge bg-secondary">{{ items|length }}</span></h5>
+    <h5 class="mb-3">
+        <i class="fas fa-boxes me-2"></i>Товары в поставке
+        <span class="badge bg-secondary">{{ items|length }}</span>
+    </h5>
     {% if items %}
     <div class="table-responsive">
-        <table class="table table-hover align-middle">
-            <thead><tr><th>Товар</th><th>Упак.</th><th>Цена / Остаток</th><th>Остаток</th><th>Активно</th><th></th></tr></thead>
+        <table class="table table-hover align-middle supply-items-table">
+            <thead>
+                <tr>
+                    <th class="supply-items-table__num">#</th>
+                    <th>Товар</th>
+                    <th>Упак.</th>
+                    <th>Цена / Остаток</th>
+                    <th>Остаток</th>
+                    <th>Всего шт</th>
+                    <th>Активно</th>
+                    <th></th>
+                </tr>
+            </thead>
             <tbody>
             {% for item in items %}
+                {% set pack = item.product.package_size or 1 %}
+                {% set total_stems = item.stock * pack %}
                 <tr>
-                    <td><strong>{{ item.product.name }}</strong>
-                        {% if item.product.length_cm %}<br><small class="text-muted">{{ item.product.length_cm }} см</small>{% endif %}</td>
-                    <td>{{ item.product.package_size }} шт</td>
+                    <td class="supply-items-table__num">
+                        <span class="supply-items-table__num-badge">{{ loop.index }}</span>
+                    </td>
+                    <td>
+                        <strong>{{ item.product.name }}</strong>
+                        {% if item.product.length_cm %}<br><small class="text-muted">{{ item.product.length_cm }} см</small>{% endif %}
+                    </td>
+                    <td><small>{{ pack }} шт</small></td>
                     <td>
                         <form action="/admin/supply_items/{{ item.id }}/update" method="post" class="d-flex gap-1" style="max-width:240px;">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -128,8 +149,23 @@
                             <button type="submit" class="btn btn-sm btn-primary"><i class="fas fa-check"></i></button>
                         </form>
                     </td>
-                    <td>{% if item.stock > 0 %}<span class="badge bg-success">{{ item.stock }}</span>{% else %}<span class="badge bg-danger">0</span>{% endif %}</td>
-                    <td>{% if item.is_active %}<span class="badge bg-success">Да</span>{% else %}<span class="badge bg-secondary">Нет</span>{% endif %}</td>
+                    <td>
+                        {% if item.stock > 0 %}
+                            <span class="badge bg-success">{{ item.stock }}</span>
+                        {% else %}
+                            <span class="badge bg-danger">0</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="supply-items-table__stems">{{ total_stems }}</span>
+                    </td>
+                    <td>
+                        {% if item.is_active %}
+                            <span class="badge bg-success">Да</span>
+                        {% else %}
+                            <span class="badge bg-secondary">Нет</span>
+                        {% endif %}
+                    </td>
                     <td>
                         <form action="/admin/supply_items/{{ item.id }}/delete" method="post" onsubmit="return confirm('Удалить?');">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -141,7 +177,9 @@
             </tbody>
         </table>
     </div>
-    {% else %}<p class="text-muted text-center">Пока нет товаров</p>{% endif %}
+    {% else %}
+        <p class="text-muted text-center mb-0">Пока нет товаров</p>
+    {% endif %}
 </div>
 
 <div class="card p-4 mb-4">
@@ -168,4 +206,31 @@
     {% endif %}
 </div>
 {% endif %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Нумеруем строки автоматически (на случай изменения порядка)
+    const rows = document.querySelectorAll('.supply-items-table tbody tr');
+    rows.forEach((row, i) => {
+        const badge = row.querySelector('.supply-items-table__num-badge');
+        if (badge) badge.textContent = i + 1;
+    });
+
+    // Ctrl+F работает и так, но если хочешь свой поиск — раскомментируй ниже
+    /*
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.placeholder = 'Поиск по товарам в поставке...';
+    searchInput.className = 'form-control mb-3';
+    const table = document.querySelector('.supply-items-table');
+    table.parentElement.parentElement.insertBefore(searchInput, table.parentElement);
+    searchInput.addEventListener('input', function() {
+        const q = this.value.toLowerCase();
+        rows.forEach(row => {
+            const name = row.querySelector('td:nth-child(2)')?.textContent.toLowerCase() || '';
+            row.style.display = name.includes(q) ? '' : 'none';
+        });
+    });
+    */
+});
+</script>
 {% endblock %}

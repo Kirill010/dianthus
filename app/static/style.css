@@ -1117,3 +1117,41 @@ a.contacts-item__value:hover { color: var(--primary); }
 .qty-hint strong {
     color: var(--primary);
 }
+/* ═══════════════ НУМЕРАЦИЯ В ТАБЛИЦЕ ПОСТАВКИ ═══════════════ */
+
+.supply-items-table__num {
+    width: 56px;
+    text-align: center;
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+}
+
+.supply-items-table__num-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--primary-mist);
+    color: var(--primary-dark);
+    font-weight: 700;
+    font-size: .82rem;
+    border: 1px solid var(--primary-pale);
+    font-family: 'Playfair Display', Georgia, serif;
+}
+
+.supply-items-table__stems {
+    color: var(--primary);
+    font-weight: 700;
+    font-size: .9rem;
+    white-space: nowrap;
+}
+
+/* На мобильном колонки "Всего шт" скрываем — мало места */
+@media (max-width: 768px) {
+    .supply-items-table th:nth-child(6),
+    .supply-items-table td:nth-child(6) {
+        display: none;
+    }
+}
