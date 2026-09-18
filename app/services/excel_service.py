@@ -1,13 +1,21 @@
-"""Excel: экспорт заказов/клиентов, импорт товаров."""
+"""Excel: экспорт заказов/клиентов, импорт товаров, парсер накладных."""
+import logging
+import re
 from io import BytesIO
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
+logger = logging.getLogger(__name__)
+
 HEADER_FILL = PatternFill("solid", fgColor="2D6A4F")
 HEADER_FONT = Font(bold=True, color="FFFFFF")
 HEADER_ALIGN = Alignment(horizontal="center", vertical="center")
 
+
+# ═══════════════════════════════════════════════════════════
+# ОБЩИЕ УТИЛИТЫ
+# ═══════════════════════════════════════════════════════════
 
 def _header(ws) -> None:
     for c in ws[1]:
@@ -28,6 +36,10 @@ def _stream(wb: Workbook) -> BytesIO:
     s.seek(0)
     return s
 
+
+# ═══════════════════════════════════════════════════════════
+# ЭКСПОРТ ЗАКАЗОВ И КЛИЕНТОВ
+# ═══════════════════════════════════════════════════════════
 
 def export_orders_to_excel(orders: list) -> BytesIO:
     wb = Workbook()
@@ -83,6 +95,10 @@ def export_customers_to_excel(customers: list[dict]) -> BytesIO:
     return _stream(wb)
 
 
+# ═══════════════════════════════════════════════════════════
+# ИМПОРТ СПРАВОЧНИКА ТОВАРОВ (по строгому шаблону)
+# ═══════════════════════════════════════════════════════════
+
 PRODUCT_IMPORT_HEADERS = ["Название", "Страна", "Длина, см",
                           "Единица", "В упаковке", "Мин. заказ",
                           "Категория", "Описание"]
@@ -136,47 +152,36 @@ def build_products_import_template() -> BytesIO:
     _autosize(ws, max_width=30)
     return _stream(wb)
 
+
 # ═══════════════════════════════════════════════════════════
-# ПАРСЕР НАКЛАДНЫХ ОТ ПОСТАВЩИКОВ
-# ═══════════════════════════════════════════════════════════
-#
-# Поддерживает .xls (старый Excel) и .xlsx.
-# Ищет в документе шапку таблицы по ключевым словам
-# ("Товар", "Количество", "Цена", "Сумма") и читает строки.
-#
-# НЕ путать с import_products_from_excel — тот импортирует
-# справочник товаров из строгого шаблона.
+# ПАРСЕР НАКЛАДНЫХ ОТ ПОСТАВЩИКОВ (.xls / .xlsx)
 # ═══════════════════════════════════════════════════════════
 
-import re
-
-# Возможные названия колонок в накладных (case-insensitive, подстрока)
 _COL_ALIASES: dict[str, list[str]] = {
     "name":     ["товар", "наименование", "название"],
-    "quantity": ["количество", "кол-во", "колво"],
-    "unit":     ["ед.", "ед ", "единица", "ед.изм"],
+    "quantity": ["количество", "кол-во", "колво", "кол."],
+    "unit":     ["ед.", "единица", "ед. изм", "ед.изм"],
     "price":    ["цена"],
     "total":    ["сумма", "стоимость"],
     "country":  ["страна происхождения", "страна"],
 }
 
-# Стоп-слова: если в строке они есть — таблица закончилась
-_STOP_WORDS = ["итого", "всего наименований", "в том числе",
-               "всего:", "ндс", "подпись", "отпустил", "получил"]
+_STOP_WORDS = [
+    "итого", "всего наименований", "в том числе",
+    "ндс:", "подпись", "отпустил", "получил",
+]
 
-# Длина стебля: реалистичный диапазон в см
 _LENGTH_MIN = 20
 _LENGTH_MAX = 150
 
-# Эвристики для категорий по названию
 _CATEGORY_PATTERNS: list[tuple[str, str]] = [
-    (r"\bроза\b|\brose\b|\bnaomi\b|\bavalanche\b|\bfreedom\b", "Роза Эквадор"),
-    (r"\bгвоздик", "Гвоздика"),
-    (r"\bхризантем", "Хризантема"),
-    (r"\bтюльпан", "Тюльпан"),
-    (r"\bпион", "Пион"),
-    (r"\bгоршеч", "Горшечные"),
-    (r"\bзелень\b|\bgreenery\b", "Зелень"),
+    (r"гвоздик", "Гвоздика"),
+    (r"хризантем", "Хризантема"),
+    (r"тюльпан", "Тюльпан"),
+    (r"пион", "Пион"),
+    (r"горшеч", "Горшечные"),
+    (r"зелень", "Зелень"),
+    (r"\btessa\b", "Роза Эквадор"),
 ]
 
 
@@ -196,20 +201,25 @@ def _read_xlsx(content: bytes) -> list[list]:
 
 
 def _to_float(v) -> float:
+    """
+    Достаёт число из значения любой формы:
+       300        → 300.0
+       "300"      → 300.0
+       "300шт"    → 300.0
+       "52,00"    → 52.0
+       "15 600,00"→ 15600.0
+       "1 234 ₽"  → 1234.0
+    """
     if v is None:
         return 0.0
     if isinstance(v, (int, float)):
         return float(v)
-    s = (str(v).strip()
-         .replace(",", ".")
-         .replace(" ", "")
-         .replace("\xa0", "")
-         .replace("₽", "")
-         .replace("RUB", ""))
-    if not s:
+    s = str(v).strip().replace(" ", "").replace("\xa0", "")
+    m = re.search(r"-?\d+(?:[.,]\d+)?", s)
+    if not m:
         return 0.0
     try:
-        return float(s)
+        return float(m.group().replace(",", "."))
     except ValueError:
         return 0.0
 
@@ -219,7 +229,6 @@ def _to_int(v) -> int:
 
 
 def _clean_name(raw) -> str:
-    """Убирает переносы строк, лишние пробелы."""
     if raw is None:
         return ""
     return re.sub(r"\s+", " ", str(raw)).strip()
@@ -227,11 +236,11 @@ def _clean_name(raw) -> str:
 
 def _find_header(rows: list[list]) -> tuple[int, dict[str, int]]:
     """
-    Ищет строку-шапку в первых 60 строках.
+    Ищет строку-шапку в первых 80 строках.
     Возвращает (индекс строки, {поле: индекс колонки}).
-    Если шапки нет — (None, {}).
+    Если шапки нет — (-1, {}).
     """
-    for i, row in enumerate(rows[:60]):
+    for i, row in enumerate(rows[:80]):
         col_map: dict[str, int] = {}
         for j, cell in enumerate(row):
             s = _clean_name(cell).lower().replace("\n", " ")
@@ -244,20 +253,27 @@ def _find_header(rows: list[list]) -> tuple[int, dict[str, int]]:
                     if alias in s:
                         col_map[field] = j
                         break
-        # Шапка считается найденной, если есть товар + количество + цена
+        # Шапка найдена, если есть товар + количество + цена
         if {"name", "quantity", "price"} <= col_map.keys():
             return i, col_map
     return -1, {}
 
 
 def _is_stop_row(row: list) -> bool:
-    """Строка — конец таблицы?"""
+    """
+    Строка — конец таблицы?
+
+    ⚠️ ВАЖНО:
+      • Пустая строка НЕ считается концом — просто пропускается.
+      • Стоп-слово ищется по ВСЕЙ строке, а не по первым 8 ячейкам.
+        Иначе вторая строка шапки («Страна происхождения») роняет
+        парсер.
+    """
     if not row:
-        return True
-    # Берём первые 8 ячеек
-    chunk = " ".join(_clean_name(c) for c in row[:8] if c).lower()
-    if not chunk.strip():
-        return True
+        return False
+    chunk = " ".join(_clean_name(c) for c in row).lower().strip()
+    if not chunk:
+        return False
     return any(w in chunk for w in _STOP_WORDS)
 
 
@@ -284,18 +300,15 @@ def parse_invoice(content: bytes, filename: str
     Универсальный парсер накладных поставщиков.
 
     Возвращает:
-        items — список позиций
+        items — список позиций:
             [{"name", "quantity", "unit", "price", "total",
               "length_cm", "category", "country"}, ...]
         warnings — список предупреждений (не ошибок).
-
-    Пример использования:
-        items, warnings = parse_invoice(file_bytes, "nakladnaya.xls")
     """
     warnings: list[str] = []
     fn = (filename or "").lower()
 
-    # 1. Читаем файл в зависимости от формата
+    # 1. Читаем файл
     try:
         if fn.endswith(".xls"):
             rows = _read_xls(content)
@@ -317,10 +330,13 @@ def parse_invoice(content: bytes, filename: str
             "«Товар», «Количество», «Цена»"
         ]
 
+    logger.info("Накладная: шапка в строке %d, колонки %s",
+                header_idx + 1, col_map)
+
     # 3. Читаем данные построчно
     items: list[dict] = []
 
-    def cell(row: list, field: str):
+    def cell(row, field):
         j = col_map.get(field)
         if j is None or j >= len(row):
             return None
@@ -330,13 +346,15 @@ def parse_invoice(content: bytes, filename: str
         row = rows[i]
 
         if _is_stop_row(row):
+            logger.info("Накладная: стоп на строке %d", i + 1)
             break
 
         name = _clean_name(cell(row, "name"))
         if len(name) < 2:
+            # Пустая строка или продолжение шапки — пропускаем
             continue
 
-        # На всякий случай: пропускаем встроенные «итого» внутри таблицы
+        # Пропускаем встроенные «итого» внутри таблицы
         if any(w in name.lower() for w in ["итого", "всего", "ндс"]):
             continue
 
@@ -346,15 +364,16 @@ def parse_invoice(content: bytes, filename: str
 
         if quantity <= 0 or price <= 0:
             warnings.append(
-                f"Строка {i + 1}: пропущена (кол-во={quantity}, цена={price})"
+                f"Строка {i + 1}: пропущена "
+                f"(кол-во={quantity}, цена={price})"
             )
             continue
 
-        # Проверка суммы (если в файле указана)
         calc = quantity * price
         if total and abs(total - calc) > 1:
             warnings.append(
-                f"Строка {i + 1}: сумма {total} ≠ {quantity}×{price}={calc}"
+                f"Строка {i + 1}: сумма {total} ≠ "
+                f"{quantity}×{price}={calc:.2f}"
             )
 
         unit = _clean_name(cell(row, "unit")) or "шт"
@@ -373,5 +392,12 @@ def parse_invoice(content: bytes, filename: str
 
     if not items:
         warnings.append("В таблице не нашлось строк с товарами")
+        logger.warning(
+            "Накладная: 0 позиций. header_idx=%d, col_map=%s",
+            header_idx, col_map,
+        )
+        for r in range(header_idx + 1, min(header_idx + 6, len(rows))):
+            logger.warning("Строка %d (первые 15): %s",
+                           r + 1, rows[r][:15])
 
     return items, warnings
