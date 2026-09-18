@@ -308,6 +308,7 @@ def _validate_product(name, length_cm, package_size, min_quantity) -> list[str]:
         errors.append("Укажите название")
     elif len(name.strip()) > 200:
         errors.append("Название слишком длинное")
+
     for check, val in [
         (lambda v: validate_positive_int(v, "Размер упаковки"), package_size),
         (lambda v: validate_positive_int(v, "Мин. заказ"), min_quantity),
@@ -315,11 +316,22 @@ def _validate_product(name, length_cm, package_size, min_quantity) -> list[str]:
         msg = check(val)
         if msg:
             errors.append(msg)
+
     if length_cm is not None:
         if length_cm < 0:
             errors.append("Длина не может быть отрицательной")
         elif length_cm > 500:
             errors.append("Длина > 500 см")
+
+    # ─── Проверка: минимум к заказу не должен быть больше 100 000 шт ───
+    if package_size and min_quantity:
+        total_min = package_size * min_quantity
+        if total_min > 100_000:
+            errors.append(
+                f"Минимум к заказу получается {total_min:,} шт — "
+                f"это слишком много. Проверьте «В упаковке» и «Мин. заказ»."
+            )
+
     return errors
 
 

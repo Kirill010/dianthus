@@ -1062,3 +1062,58 @@ a.contacts-item__value:hover { color: var(--primary); }
     .profile-stat { padding: 14px; }
     .profile-stat__value { font-size: 1.2rem; }
 }
+/* ═══════════════ СПЕЦИФИКАЦИЯ В КАРТОЧКЕ ═══════════════ */
+
+.product-card__specs,
+.product-detail__specs {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 8px 0;
+    font-size: .82rem;
+}
+
+.spec-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.spec-label {
+    color: var(--text-soft);
+    white-space: nowrap;
+}
+
+.spec-value {
+    color: var(--text);
+    font-weight: 600;
+    text-align: right;
+}
+
+.spec-value--stock {
+    color: var(--primary);   /* зелёный — как на фото */
+    font-weight: 700;
+}
+
+/* Старая мета-инфа — оставляем для совместимости */
+.product-card__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 9px;
+    font-size: .75rem;
+    color: var(--text-muted);
+}
+.product-card__meta i { color: var(--bronze-light); margin-right: 3px; }
+
+/* Убираем старую подсказку под счётчиком, если была */
+.qty-hint {
+    display: block;
+    font-size: .72rem;
+    color: var(--text-soft);
+    margin-top: 8px;
+    text-align: center;
+}
+.qty-hint strong {
+    color: var(--primary);
+}

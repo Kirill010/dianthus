@@ -21,13 +21,13 @@ def _cart_total(cart: list[dict]) -> float:
 async def add_to_cart(
     request: Request,
     supply_item_id: int = Form(...),
-    quantity: int = Form(1),          # ← количество УПАКОВОК
+    quantity_stems: int = Form(0),     # ← ШТУКИ (а не упаковки)
     db: Session = Depends(get_db),
     _csrf: None = Depends(check_csrf),
 ):
     """
-    Клиент вводит количество УПАКОВОК (шаг = 1 упаковка).
-    Упаковка содержит package_size штук — справочная информация.
+    Клиент вводит количество ШТУК (кратно размеру упаковки).
+    Внутри корзины храним УПАКОВКИ — так проще с остатками.
     """
     user = get_current_user(request, db)
     if not user:
@@ -44,30 +44,38 @@ async def add_to_cart(
                                     product.package_size > 0) else 1
     min_packs = product.min_quantity if (product.min_quantity and
                                          product.min_quantity > 0) else 1
+    min_stems = pack * min_packs
+    max_stems = item.stock * pack
 
     if item.stock <= 0:
         request.session["flash"] = f"«{product.name}» закончился"
         return RedirectResponse(url=f"/product/{supply_item_id}",
                                 status_code=303)
 
-    if quantity < min_packs:
-        quantity = min_packs
-    if quantity > item.stock:
-        quantity = item.stock
-        request.session["flash"] = (
-            f"Максимум {item.stock} упак. ({item.stock * pack} шт)"
-        )
+    # ─── Нормализация введённого количества ШТУК ───
+    if quantity_stems <= 0:
+        quantity_stems = min_stems
+    if quantity_stems < min_stems:
+        quantity_stems = min_stems
+    if quantity_stems > max_stems:
+        quantity_stems = max_stems
+    # Округляем вниз до целой упаковки
+    quantity_stems = (quantity_stems // pack) * pack
+    if quantity_stems < min_stems:
+        quantity_stems = min_stems
+
+    quantity_packs = quantity_stems // pack
 
     cart = request.session.get("cart", [])
     for ci in cart:
         if ci["supply_item_id"] == supply_item_id:
-            new_qty = ci["quantity"] + quantity
-            if new_qty > item.stock:
-                new_qty = item.stock
+            new_packs = ci["quantity"] + quantity_packs
+            if new_packs > item.stock:
+                new_packs = item.stock
                 request.session["flash"] = (
                     f"Максимум {item.stock} упак. ({item.stock * pack} шт)"
                 )
-            ci["quantity"] = new_qty
+            ci["quantity"] = new_packs
             ci.setdefault("package_size", pack)
             break
     else:
@@ -79,12 +87,10 @@ async def add_to_cart(
             "package_size": pack,
             "price": item.price,
             "image_url": product.image_url,
-            "quantity": quantity,
+            "quantity": quantity_packs,      # ← УПАКОВКИ
         })
-        stems = quantity * pack
         request.session["flash"] = (
-            f"«{product.name}» добавлен в корзину "
-            f"({quantity} упак. = {stems} шт)"
+            f"«{product.name}» — {quantity_packs} упак. ({quantity_stems} шт)"
         )
 
     request.session["cart"] = cart

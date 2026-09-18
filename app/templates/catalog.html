@@ -48,11 +48,8 @@
     {% for item in items %}
     {% set pack = item.product.package_size or 1 %}
     {% set stems = item.stock * pack %}
-    {% set min_packs = item.product.min_quantity or 1 %}
+    {% set min_stems = pack * (item.product.min_quantity or 1) %}
     {% set is_out = stems < 1 %}
-    {% set is_big = stems >= 200 %}
-    {% set is_medium = stems >= 50 and stems < 200 %}
-    {% set is_small = stems >= 1 and stems < 50 %}
     <div class="product-card {% if is_out %}product-card--out{% endif %}">
         <a href="/product/{{ item.id }}" class="product-card__image">
             {% if item.product.image_url %}
@@ -60,45 +57,52 @@
             {% else %}
                 <div class="product-card__placeholder"><i class="fas fa-seedling"></i></div>
             {% endif %}
-            {% if is_out %}<span class="product-card__badge product-card__badge--out">Нет</span>
-            {% elif is_big %}<span class="product-card__badge product-card__badge--big">Много</span>
-            {% elif is_medium %}<span class="product-card__badge product-card__badge--medium">Средне</span>
-            {% elif is_small %}<span class="product-card__badge product-card__badge--small">Мало</span>{% endif %}
+            {% if is_out %}<span class="product-card__badge product-card__badge--out">Нет</span>{% endif %}
         </a>
         <div class="product-card__body">
             <a href="/product/{{ item.id }}" class="product-card__name">{{ item.product.name }}</a>
-            <div class="product-card__meta">
-                {% if item.product.length_cm %}<span><i class="fas fa-ruler-vertical"></i> {{ item.product.length_cm }} см</span>{% endif %}
-                <span><i class="fas fa-box"></i> {{ pack }} шт/уп</span>
-                {% if is_out %}<span class="product-card__stock product-card__stock--out">Нет в наличии</span>
-                {% else %}<span class="product-card__stock">Доступно: {{ item.stock }} упак. / {{ stems }} шт</span>{% endif %}
+
+            <div class="product-card__specs">
+                {% if item.product.length_cm %}
+                <div class="spec-row">
+                    <span class="spec-label">Размер:</span>
+                    <span class="spec-value">{{ item.product.length_cm }}см</span>
+                </div>
+                {% endif %}
+                <div class="spec-row">
+                    <span class="spec-label">Кол-во в уп:</span>
+                    <span class="spec-value">{{ pack }}шт</span>
+                </div>
+                <div class="spec-row">
+                    <span class="spec-label">Доступно:</span>
+                    <span class="spec-value spec-value--stock">{{ stems }}шт</span>
+                </div>
             </div>
+
             <div class="product-card__price">{{ "%.2f"|format(item.price) }} ₽</div>
-            {% if not is_out %}
+
+            {% set can_order = (not is_out) and (stems >= min_stems) %}
+            {% if can_order %}
             <form action="/add_to_cart" method="post" class="product-card__form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="supply_item_id" value="{{ item.id }}">
                 <div class="qty-control">
                     <button type="button" onclick="this.nextElementSibling.stepDown()">−</button>
                     <input type="number"
-                           name="quantity"
-                           value="{{ min_packs }}"
-                           min="{{ min_packs }}"
-                           max="{{ item.stock }}"
-                           step="1"
-                           data-pack="{{ pack }}"
-                           oninput="updatePackHint(this)"
+                           name="quantity_stems"
+                           value="{{ min_stems }}"
+                           min="{{ min_stems }}"
+                           max="{{ stems }}"
+                           step="{{ pack }}"
                            required>
                     <button type="button" onclick="this.previousElementSibling.stepUp()">+</button>
                 </div>
-                <button type="submit" class="btn-cart">
-                    <i class="fas fa-shopping-cart"></i>
-                </button>
+                <button type="submit" class="btn-cart"><i class="fas fa-shopping-cart"></i></button>
             </form>
-            <small class="qty-hint">
-                упак. × {{ pack }} шт =
-                <span class="qty-hint__packs">{{ min_packs * pack }}</span> шт
-            </small>
+            {% elif not is_out %}
+            <button class="btn-cart--disabled" disabled title="Минимум к заказу {{ min_stems }} шт, а на складе только {{ stems }} шт">
+                <i class="fas fa-info-circle"></i> Минимум {{ min_stems }} шт
+            </button>
             {% else %}
             <button class="btn-cart--disabled" disabled><i class="fas fa-ban"></i> Нет</button>
             {% endif %}
@@ -122,14 +126,5 @@
     {% if has_filters %}<a href="/catalog" class="btn btn-primary mt-2">Сбросить</a>{% endif %}
 </div>
 {% endif %}
-
-<script>
-function updatePackHint(input) {
-    const pack = parseInt(input.dataset.pack) || 1;
-    const packs = parseInt(input.value) || 0;
-    const hint = input.closest('.product-card__body').querySelector('.qty-hint__packs');
-    if (hint) hint.textContent = packs * pack;
-}
-</script>
 
 {% endblock %}

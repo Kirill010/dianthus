@@ -50,13 +50,42 @@
                     </div>
                     <div class="col-md-4">
                         <label class="form-label fw-bold">В упаковке, шт</label>
-                        <input type="number" name="package_size" class="form-control" min="1" max="10000" value="{{ product.package_size if product else 25 }}">
+                        <input type="number" name="package_size" id="packageSize"
+                            class="form-control" min="1" max="10000"
+                            value="{{ product.package_size if product else 25 }}"
+                            oninput="updateMinHint()" required>
+                        <div class="form-text">
+                            Сколько штук в одной упаковке. Роза — 25, гвоздика — 20, тюльпан — 50.
+                        </div>
                     </div>
                     <div class="col-md-4">
                         <label class="form-label fw-bold">Мин. заказ, упак.</label>
-                        <input type="number" name="min_quantity" class="form-control" min="1" max="10000" value="{{ product.min_quantity if product else 1 }}">
+                        <input type="number" name="min_quantity" id="minQty"
+                            class="form-control" min="1" max="10000"
+                            value="{{ product.min_quantity if product else 1 }}"
+                            oninput="updateMinHint()" required>
+                        <div class="form-text">Обычно 1. Меняй только если есть причина.</div>
                     </div>
                 </div>
+
+                {# Живая подсказка менеджеру — что получится #}
+                <div class="alert alert-info py-2 px-3 small mb-3" id="minHint">
+                    <i class="fas fa-info-circle me-1"></i>
+                    <span id="minHintText">Минимум к заказу: 25 шт (1 упак. × 25 шт)</span>
+                </div>
+
+                <script>
+                function updateMinHint() {
+                    const pack = parseInt(document.getElementById('packageSize').value) || 1;
+                    const minQty = parseInt(document.getElementById('minQty').value) || 1;
+                    const total = pack * minQty;
+                    const el = document.getElementById('minHintText');
+                    if (el) {
+                        el.textContent = `Минимум к заказу: ${total} шт (${minQty} упак. × ${pack} шт)`;
+                    }
+                }
+                document.addEventListener('DOMContentLoaded', updateMinHint);
+                </script>
                 <div class="mb-3">
                     <label class="form-label fw-bold">Описание</label>
                     <textarea name="description" class="form-control" rows="3">{{ product.description if product else '' }}</textarea>

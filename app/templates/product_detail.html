@@ -1,27 +1,43 @@
 {% extends "base.html" %}
 {% block content %}
 <a href="/catalog" class="back-link"><i class="fas fa-arrow-left"></i>Назад</a>
+
 {% set pack = product.package_size or 1 %}
-{% set min_packs = product.min_quantity or 1 %}
 {% set stems = item.stock * pack %}
+{% set min_stems = pack * (product.min_quantity or 1) %}
 {% set is_out = stems < 1 %}
-{% set is_big = stems >= 200 %}
-{% set is_medium = stems >= 50 and stems < 200 %}
+
 <div class="product-detail">
     <div class="product-detail__image">
         {% if product.image_url %}<img src="{{ product.image_url }}" alt="{{ product.name }}">
         {% else %}<div class="product-card__placeholder"><i class="fas fa-seedling"></i></div>{% endif %}
     </div>
+
     <h1 class="product-detail__name">{{ product.name }}</h1>
-    <div class="product-card__meta my-3">
-        {% if product.country %}<span>Страна: {{ product.country }}</span>{% endif %}
-        {% if product.length_cm %}<span>Размер: {{ product.length_cm }} см</span>{% endif %}
-        <span>В упаковке: {{ pack }} шт</span>
-        {% if is_out %}<span class="product-card__stock product-card__stock--out">Нет в наличии</span>
-        {% elif is_big %}<span class="product-card__stock">Доступно: {{ item.stock }} упак. / {{ stems }} шт (много)</span>
-        {% elif is_medium %}<span class="product-card__stock">Доступно: {{ item.stock }} упак. / {{ stems }} шт (средне)</span>
-        {% else %}<span class="product-card__stock">Доступно: {{ item.stock }} упак. / {{ stems }} шт (мало)</span>{% endif %}
+
+    <div class="product-detail__specs">
+        {% if product.country %}
+        <div class="spec-row">
+            <span class="spec-label">Страна:</span>
+            <span class="spec-value">{{ product.country }}</span>
+        </div>
+        {% endif %}
+        {% if product.length_cm %}
+        <div class="spec-row">
+            <span class="spec-label">Размер:</span>
+            <span class="spec-value">{{ product.length_cm }}см</span>
+        </div>
+        {% endif %}
+        <div class="spec-row">
+            <span class="spec-label">Кол-во в уп:</span>
+            <span class="spec-value">{{ pack }}шт</span>
+        </div>
+        <div class="spec-row">
+            <span class="spec-label">Доступно:</span>
+            <span class="spec-value spec-value--stock">{{ stems }}шт</span>
+        </div>
     </div>
+
     {% if item.supply and item.supply.is_active %}
     <div class="supply-hint mb-3">
         <i class="fas fa-truck-fast me-2"></i>
@@ -29,12 +45,11 @@
         {% if item.supply.arrival_date %} · прибытие <strong>{{ item.supply.arrival_date.strftime('%d.%m.%Y') }}</strong>{% endif %}
     </div>
     {% endif %}
-    <div class="product-detail__price">{{ "%.2f"|format(item.price) }} ₽ / упак.</div>
-    <p class="text-muted small">
-        Минимум: {{ min_packs }} упак.
-        ({{ min_packs * pack }} шт, в упаковке {{ pack }} шт)
-    </p>
+
+    <div class="product-detail__price">{{ "%.2f"|format(item.price) }} ₽</div>
+
     {% if product.description %}<p class="product-detail__desc">{{ product.description }}</p>{% endif %}
+
     {% if not is_out %}
     <form action="/add_to_cart" method="post" class="product-detail__form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -42,13 +57,11 @@
         <div class="qty-control qty-control--lg">
             <button type="button" onclick="this.nextElementSibling.stepDown()">−</button>
             <input type="number"
-                   name="quantity"
-                   value="{{ min_packs }}"
-                   min="{{ min_packs }}"
-                   max="{{ item.stock }}"
-                   step="1"
-                   data-pack="{{ pack }}"
-                   id="qty-input"
+                   name="quantity_stems"
+                   value="{{ min_stems }}"
+                   min="{{ min_stems }}"
+                   max="{{ stems }}"
+                   step="{{ pack }}"
                    required>
             <button type="button" onclick="this.previousElementSibling.stepUp()">+</button>
         </div>
@@ -56,32 +69,20 @@
             <i class="fas fa-cart-plus me-2"></i>В корзину
         </button>
     </form>
-    <div class="qty-summary" id="qty-summary">
-        <span>Упаковок: <strong id="qty-packs">{{ min_packs }}</strong></span>
-        <span class="qty-summary__sep">·</span>
-        <span>В упаковке: <strong>{{ pack }} шт</strong></span>
-        <span class="qty-summary__sep">·</span>
-        <span>Итого стеблей: <strong><span id="qty-stems">{{ min_packs * pack }}</span> шт</strong></span>
+    <p class="qty-hint">
+        Упаковок: <strong>{{ product.min_quantity or 1 }}</strong> × {{ pack }} шт
+        = <strong>{{ min_stems }} шт</strong>
+    </p>
+    {% elif not is_out %}
+    <div class="alert alert-warning mt-3">
+        <i class="fas fa-exclamation-triangle me-2"></i>
+        Минимальный заказ — {{ min_stems }} шт, а на складе только {{ stems }} шт.
+        Свяжитесь с менеджером.
     </div>
-
-    <script>
-    (function () {
-        const inp = document.getElementById('qty-input');
-        const packsEl = document.getElementById('qty-packs');
-        const stemsEl = document.getElementById('qty-stems');
-        const pack = parseInt(inp.dataset.pack) || 1;
-
-        function update() {
-            const packs = parseInt(inp.value) || 0;
-            packsEl.textContent = packs;
-            stemsEl.textContent = packs * pack;
-        }
-        inp.addEventListener('input', update);
-        update();
-    })();
-    </script>
     {% else %}
-    <button class="btn btn-secondary btn-lg w-100 mt-3" disabled><i class="fas fa-ban me-2"></i>Нет в наличии</button>
+    <button class="btn btn-secondary btn-lg w-100 mt-3" disabled>
+        <i class="fas fa-ban me-2"></i>Нет в наличии
+    </button>
     {% endif %}
 </div>
 {% endblock %}
