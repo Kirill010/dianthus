@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h1 class="catalog-title mb-4">
+    <i class="fas fa-phone-alt me-2"></i>Контакты
+</h1>
+
+<div class="card p-4 mb-4">
+    <h5 class="mb-3"><i class="fas fa-store me-2"></i>{{ shop.name }}</h5>
+
+    <div class="contacts-list">
+        {% if shop.phone %}
+        <div class="contacts-item">
+            <i class="fas fa-phone"></i>
+            <div>
+                <div class="contacts-item__label">Телефон</div>
+                <a href="tel:{{ shop.phone|replace(' ', '')|replace('(', '')|replace(')', '')|replace('-', '') }}"
+                   class="contacts-item__value">{{ shop.phone }}</a>
+                {% if shop.phone_2 %}
+                    <br>
+                    <a href="tel:{{ shop.phone_2|replace(' ', '')|replace('(', '')|replace(')', '')|replace('-', '') }}"
+                       class="contacts-item__value">{{ shop.phone_2 }}</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% if shop.address %}
+        <div class="contacts-item">
+            <i class="fas fa-map-marker-alt"></i>
+            <div>
+                <div class="contacts-item__label">Адрес</div>
+                <div class="contacts-item__value">{{ shop.address }}</div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if shop.hours %}
+        <div class="contacts-item">
+            <i class="fas fa-clock"></i>
+            <div>
+                <div class="contacts-item__label">Часы работы</div>
+                <div class="contacts-item__value">{{ shop.hours }}</div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if shop.max_link %}
+<div class="card p-4 mb-4">
+    <h5 class="mb-3"><i class="fas fa-comments me-2"></i>Мы в MAX</h5>
+    <p class="text-muted small mb-3">
+        Пишите нам в мессенджере MAX — оперативно ответим по заказам и поставкам.
+    </p>
+    <a href="{{ shop.max_link }}" target="_blank" rel="noopener"
+       class="btn btn-primary align-self-start">
+        <i class="fas fa-comment-dots me-2"></i>Открыть MAX
+    </a>
+</div>
+{% endif %}
+
+<div class="card p-4 mb-4">
+    <h5 class="mb-3"><i class="fas fa-info-circle me-2"></i>Как оформить заказ</h5>
+    <ol class="contacts-steps">
+        <li>Выбираете товар в каталоге — <strong>упаковками</strong>.</li>
+        <li>Добавляете в корзину → «Оформить».</li>
+        <li>Менеджер свяжется с вами для подтверждения.</li>
+        <li>Согласовываем доставку и оплату.</li>
+        <li>Отправляем заказ.</li>
+    </ol>
+    <div class="alert alert-info py-2 px-3 small mb-0">
+        <i class="fas fa-truck-fast me-1"></i>
+        Работаем только с юрлицами и ИП. Продажа — упаковками.
+    </div>
+</div>
+
+{% if shop.map_url %}
+<div class="card p-0 mb-4 overflow-hidden">
+    <iframe src="{{ shop.map_url }}" width="100%" height="320"
+            style="border:0;" allowfullscreen loading="lazy"></iframe>
+</div>
+{% endif %}
+
+{% endblock %}

@@ -31,6 +31,15 @@ class Config:
     DATABASE_URL: str = _str_env("DATABASE_URL", "sqlite:///./dianthus.db")
     PAGE_SIZE: int = _int_env("PAGE_SIZE", 12)
 
+    # ─── Контакты магазина (видны на /contacts и в подвале) ───
+    SHOP_NAME: str = _str_env("SHOP_NAME", "ООО «Диантус»")
+    SHOP_PHONE: str = _str_env("SHOP_PHONE", "")
+    SHOP_PHONE_2: str = _str_env("SHOP_PHONE_2", "")
+    SHOP_ADDRESS: str = _str_env("SHOP_ADDRESS", "")
+    SHOP_WORKING_HOURS: str = _str_env("SHOP_WORKING_HOURS", "")
+    SHOP_MAX_LINK: str = _str_env("SHOP_MAX_LINK", "")
+    SHOP_MAP_URL: str = _str_env("SHOP_MAP_URL", "")
+
 
 config = Config()
 

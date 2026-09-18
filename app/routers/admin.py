@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin")
 XLSX_MIME = ("application/vnd.openxmlformats-officedocument"
              ".spreadsheetml.sheet")
-MAX_EXCEL_SIZE = 10 * 1024 * 1024  # 10 МБ
+MAX_EXCEL_SIZE = 10 * 1024 * 1024
 CHUNK = 64 * 1024
 
 
@@ -59,7 +59,6 @@ def _err(request: Request, errors: list[str]) -> None:
 @router.get("", response_class=HTMLResponse)
 async def dashboard(request: Request, db: Session = Depends(get_db),
                     admin=Depends(require_admin)):
-    # selectinload — против N+1 при обходе o.items и s.items в шаблоне
     orders = (db.query(Order)
               .options(selectinload(Order.user), selectinload(Order.items))
               .order_by(Order.created_at.desc()).all())
@@ -92,19 +91,15 @@ async def user_make_admin(user_id: int, request: Request,
                           db: Session = Depends(get_db),
                           current_admin=Depends(require_admin),
                           _csrf: None = Depends(check_csrf)):
-    """Повысить пользователя до администратора."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(404, "Пользователь не найден")
-
     if user.is_admin:
         request.session["flash"] = f"«{user.full_name}» уже админ"
         return RedirectResponse(url="/admin", status_code=303)
-
     user.is_admin = True
-    user.is_approved = True  # админ автоматически одобрен
+    user.is_approved = True
     db.commit()
-
     logger.info("👑 %s повышен до админа (кем: %s)",
                 user.email, current_admin.email)
     request.session["flash"] = (
@@ -118,54 +113,41 @@ async def user_demote(user_id: int, request: Request,
                       db: Session = Depends(get_db),
                       current_admin=Depends(require_admin),
                       _csrf: None = Depends(check_csrf)):
-    """Снять права администратора. Нельзя снять с себя или последнего админа."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(404, "Пользователь не найден")
-
-    # Защита 1: нельзя снять права с самого себя
     if user.id == current_admin.id:
         request.session["flash"] = "❌ Нельзя снять права с самого себя"
         return RedirectResponse(url="/admin", status_code=303)
-
     if not user.is_admin:
         request.session["flash"] = "Пользователь и так не админ"
         return RedirectResponse(url="/admin", status_code=303)
-
-    # Защита 2: должен остаться хотя бы один админ
     admins_count = (db.query(User)
                     .filter(User.is_admin == True).count())  # noqa: E712
     if admins_count <= 1:
         request.session["flash"] = "❌ Нельзя снять последнего администратора"
         return RedirectResponse(url="/admin", status_code=303)
-
     user.is_admin = False
     db.commit()
     logger.info("👤 %s снят с админов (кем: %s)",
                 user.email, current_admin.email)
-    request.session["flash"] = (
-        f"«{user.full_name}» больше не администратор"
-    )
+    request.session["flash"] = f"«{user.full_name}» больше не администратор"
     return RedirectResponse(url="/admin", status_code=303)
 
+
 @router.post("/users/{user_id}/approve")
-async def user_approve(
-    user_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    current_admin=Depends(require_admin),
-    _csrf: None = Depends(check_csrf),
-):
+async def user_approve(user_id: int, request: Request,
+                       db: Session = Depends(get_db),
+                       current_admin=Depends(require_admin),
+                       _csrf: None = Depends(check_csrf)):
     """Одобрить заявку на регистрацию клиента."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         request.session["flash"] = "Пользователь не найден"
         return RedirectResponse(url="/admin", status_code=303)
-
     if user.is_approved:
         request.session["flash"] = f"«{user.full_name}» уже одобрен"
         return RedirectResponse(url="/admin", status_code=303)
-
     user.is_approved = True
     db.commit()
     logger.info("✅ Одобрен клиент: %s (кем: %s)",
@@ -177,40 +159,32 @@ async def user_approve(
 
 
 @router.post("/users/{user_id}/reject")
-async def user_reject(
-    user_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    current_admin=Depends(require_admin),
-    _csrf: None = Depends(check_csrf),
-):
+async def user_reject(user_id: int, request: Request,
+                      db: Session = Depends(get_db),
+                      current_admin=Depends(require_admin),
+                      _csrf: None = Depends(check_csrf)):
     """Удалить пользователя. История его заказов СОХРАНЯЕТСЯ."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         request.session["flash"] = "Пользователь не найден"
         return RedirectResponse(url="/admin", status_code=303)
-
-    # ─── Защита ───
     if user.id == current_admin.id:
         request.session["flash"] = "❌ Нельзя удалить себя"
         return RedirectResponse(url="/admin", status_code=303)
     if user.is_admin:
         request.session["flash"] = "❌ Сначала снимите права администратора"
         return RedirectResponse(url="/admin", status_code=303)
-
-    # ─── Сохраняем историю заказов: обнуляем FK ───
     db.query(Order).filter(Order.user_id == user.id).update(
         {Order.user_id: None}, synchronize_session=False
     )
-
     name, email = user.full_name, user.email
     db.delete(user)
     db.commit()
-
     logger.info("🗑 Удалён пользователь: %s (кем: %s)",
                 email, current_admin.email)
     request.session["flash"] = f"🗑 «{name}» удалён"
     return RedirectResponse(url="/admin", status_code=303)
+
 
 # ═══════ ЗАКАЗЫ ═════════════════════════════════════════════
 
@@ -247,7 +221,6 @@ async def orders_export(db: Session = Depends(get_db),
 @router.get("/customers/export")
 async def customers_export(db: Session = Depends(get_db),
                            _a=Depends(require_admin)):
-    # ИСПРАВЛЕНО: select() вместо .subquery() — совместимо с SQLAlchemy 2.0
     stmt = (select(Order.user_id)
             .where(Order.user_id.isnot(None))
             .distinct())
@@ -288,7 +261,6 @@ async def products_import(request: Request, file: UploadFile = File(...),
         request.session["flash"] = "Нужен файл .xlsx"
         return RedirectResponse(url="/admin", status_code=303)
 
-    # ИСПРАВЛЕНО: читаем чанками с лимитом, чтобы не съесть память
     content = bytearray()
     while True:
         chunk = await file.read(CHUNK)
@@ -311,7 +283,6 @@ async def products_import(request: Request, file: UploadFile = File(...),
         request.session["flash"] = msg
         return RedirectResponse(url="/admin", status_code=303)
 
-    # ИСПРАВЛЕНО: транзакция с rollback на ошибке
     try:
         for data in products:
             db.add(Product(**data))
@@ -452,7 +423,6 @@ async def product_delete(product_id: int, request: Request,
                          db: Session = Depends(get_db),
                          _a=Depends(require_admin),
                          _csrf: None = Depends(check_csrf)):
-    """Удалить товар из справочника. Обнуляем FK в OrderItem."""
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         request.session["flash"] = "Товар не найден"
@@ -570,7 +540,6 @@ async def supply_edit(
     supply.status = status
     supply.arrival_date = _parse_date(arrival_date)
     supply.notes = notes.strip()
-    # departure_date намеренно не трогаем — оставляем как было (обычно None)
     db.commit()
     request.session["flash"] = "Поставка обновлена"
     return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit",
@@ -582,7 +551,6 @@ async def supply_delete(supply_id: int, request: Request,
                         db: Session = Depends(get_db),
                         _a=Depends(require_admin),
                         _csrf: None = Depends(check_csrf)):
-    """Удалить поставку, обнулив FK в OrderItem."""
     supply = db.query(Supply).filter(Supply.id == supply_id).first()
     if supply:
         item_ids = [item.id for item in supply.items]
@@ -607,7 +575,6 @@ async def supply_import_invoice(
     _a=Depends(require_admin),
     _csrf: None = Depends(check_csrf),
 ):
-    """Импорт накладной поставщика (.xls или .xlsx) в поставку."""
     supply = db.query(Supply).filter(Supply.id == supply_id).first()
     if not supply:
         raise HTTPException(404, "Поставка не найдена")
@@ -618,7 +585,6 @@ async def supply_import_invoice(
         return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit",
                                 status_code=303)
 
-    # Читаем с лимитом 10 МБ
     content = bytearray()
     while True:
         chunk = await file.read(CHUNK)
@@ -635,7 +601,6 @@ async def supply_import_invoice(
         return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit",
                                 status_code=303)
 
-    # Парсим
     items, warnings = parse_invoice(bytes(content), fn)
     if not items:
         msg = "Не нашёл позиций в накладной."
@@ -645,14 +610,12 @@ async def supply_import_invoice(
         return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit",
                                 status_code=303)
 
-    # Импортируем
     created_products = 0
     updated_items = 0
     new_items = 0
 
     try:
         for it in items:
-            # 1. Найти или создать товар в справочнике
             product = (db.query(Product)
                        .filter(Product.name == it["name"])
                        .first())
@@ -669,10 +632,9 @@ async def supply_import_invoice(
                     category=it.get("category", "Прочее"),
                 )
                 db.add(product)
-                db.flush()  # получить product.id
+                db.flush()
                 created_products += 1
 
-            # 2. Добавить или обновить позицию в поставке
             existing = (db.query(SupplyItem)
                         .filter(SupplyItem.supply_id == supply_id,
                                 SupplyItem.product_id == product.id)

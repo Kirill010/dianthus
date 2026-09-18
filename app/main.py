@@ -15,7 +15,7 @@ from .database import Base, engine, get_db
 from .deps import get_current_user
 from .migrations import auto_migrate
 from .templating import render
-from .routers import admin, cart, catalog
+from .routers import admin, cart, catalog, profile
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,7 +38,7 @@ app = FastAPI(title="Диантус — оптовый магазин цвето
 app.add_middleware(
     SessionMiddleware,
     secret_key=config.SECRET_KEY,
-    max_age=60 * 60 * 24 * 7,  # 7 дней
+    max_age=60 * 60 * 24 * 7,
     same_site="lax",
     https_only=(config.ENV == "prod"),
 )
@@ -66,6 +66,7 @@ app.include_router(auth_router)
 app.include_router(catalog.router)
 app.include_router(cart.router)
 app.include_router(admin.router)
+app.include_router(profile.router)
 
 ensure_default_admin()
 

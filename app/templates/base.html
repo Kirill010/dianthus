@@ -6,7 +6,6 @@
     <title>Диантус · Оптовый магазин цветов</title>
     <link rel="icon" type="image/png" href="/static/logo-icon.png">
 
-    <!-- Локальные стили (не зависят от интернета) -->
     <link href="/static/vendor/bootstrap.min.css" rel="stylesheet">
     <link href="/static/vendor/fontawesome/css/all.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
@@ -40,11 +39,16 @@
             {% if user.is_admin %}
                 <a href="/admin" class="app-header__icon" title="Админка"><i class="fas fa-cog"></i></a>
             {% endif %}
+            <a href="/contacts" class="app-header__icon" title="Контакты">
+                <i class="fas fa-phone"></i>
+            </a>
             <a href="/cart" class="app-header__icon" title="Корзина">
                 <i class="fas fa-shopping-bag"></i>
                 {% if cart_count %}<span class="app-header__badge">{{ cart_count }}</span>{% endif %}
             </a>
-            <a href="/logout" class="app-header__icon" title="Выйти"><i class="fas fa-sign-out-alt"></i></a>
+            <a href="/profile" class="app-header__icon" title="Профиль">
+                <i class="fas fa-user"></i>
+            </a>
         </div>
     </div>
     {% if user.company_name %}
@@ -75,18 +79,20 @@
         <i class="fas fa-shopping-cart"></i><span>Корзина</span>
         {% if cart_count %}<span class="bottom-nav__badge">{{ cart_count }}</span>{% endif %}
     </a>
-    <a href="/logout" class="bottom-nav__item"
-       onclick="return confirm('Выйти из аккаунта?');">
-        <i class="fas fa-sign-out-alt"></i><span>Выйти</span>
+    <a href="/profile" class="bottom-nav__item {% if request.url.path == '/profile' %}active{% endif %}">
+        <i class="fas fa-user"></i><span>Профиль</span>
     </a>
 </nav>
 {% endif %}
 
 <footer class="app-footer">
-    <p class="mb-0">© 2026 ООО «Диантус» · Оптовые поставки цветов</p>
+    <p class="mb-0">
+        © 2026 {{ config.SHOP_NAME }}
+        · <a href="/contacts">Контакты</a>
+        · Оптовые поставки цветов
+    </p>
 </footer>
 
-<!-- Локальный Bootstrap JS (для вкладок, модалок и alert-dismiss) -->
 <script src="/static/vendor/bootstrap.bundle.min.js"></script>
 </body>
 </html>

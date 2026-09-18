@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
 <a href="/catalog" class="back-link"><i class="fas fa-arrow-left"></i>Назад</a>
-{% set stems = item.stock * product.package_size %}
+{% set pack = product.package_size or 1 %}
+{% set min_packs = product.min_quantity or 1 %}
+{% set stems = item.stock * pack %}
 {% set is_out = stems < 1 %}
 {% set is_big = stems >= 200 %}
 {% set is_medium = stems >= 50 and stems < 200 %}
@@ -14,11 +16,11 @@
     <div class="product-card__meta my-3">
         {% if product.country %}<span>Страна: {{ product.country }}</span>{% endif %}
         {% if product.length_cm %}<span>Размер: {{ product.length_cm }} см</span>{% endif %}
-        <span>В упаковке: {{ product.package_size }} шт</span>
+        <span>В упаковке: {{ pack }} шт</span>
         {% if is_out %}<span class="product-card__stock product-card__stock--out">Нет в наличии</span>
-        {% elif is_big %}<span class="product-card__stock">Доступно: {{ stems }} шт (много)</span>
-        {% elif is_medium %}<span class="product-card__stock">Доступно: {{ stems }} шт (средне)</span>
-        {% else %}<span class="product-card__stock">Доступно: {{ stems }} шт (мало)</span>{% endif %}
+        {% elif is_big %}<span class="product-card__stock">Доступно: {{ item.stock }} упак. / {{ stems }} шт (много)</span>
+        {% elif is_medium %}<span class="product-card__stock">Доступно: {{ item.stock }} упак. / {{ stems }} шт (средне)</span>
+        {% else %}<span class="product-card__stock">Доступно: {{ item.stock }} упак. / {{ stems }} шт (мало)</span>{% endif %}
     </div>
     {% if item.supply and item.supply.is_active %}
     <div class="supply-hint mb-3">
@@ -27,44 +29,39 @@
         {% if item.supply.arrival_date %} · прибытие <strong>{{ item.supply.arrival_date.strftime('%d.%m.%Y') }}</strong>{% endif %}
     </div>
     {% endif %}
-    <div class="product-detail__price">{{ "%.2f"|format(item.price) }} ₽ / {{ product.unit }}</div>
+    <div class="product-detail__price">{{ "%.2f"|format(item.price) }} ₽ / упак.</div>
     <p class="text-muted small">
-        Минимум: {{ product.min_quantity }} {{ product.unit }}
-        = <strong>{{ min_stems }} шт</strong>
-        (в упаковке {{ pack }} шт)
+        Минимум: {{ min_packs }} упак.
+        ({{ min_packs * pack }} шт, в упаковке {{ pack }} шт)
     </p>
     {% if product.description %}<p class="product-detail__desc">{{ product.description }}</p>{% endif %}
     {% if not is_out %}
-    {% set pack = product.package_size or 1 %}
-    {% set min_stems = pack * (product.min_quantity or 1) %}
     <form action="/add_to_cart" method="post" class="product-detail__form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="supply_item_id" value="{{ item.id }}">
         <div class="qty-control qty-control--lg">
-            <button type="button"
-                    onclick="this.nextElementSibling.stepDown()">−</button>
+            <button type="button" onclick="this.nextElementSibling.stepDown()">−</button>
             <input type="number"
-                name="quantity_stems"
-                value="{{ min_stems }}"
-                min="{{ min_stems }}"
-                max="{{ stems }}"
-                step="{{ pack }}"
-                data-pack="{{ pack }}"
-                id="qty-input"
-                required>
-            <button type="button"
-                    onclick="this.previousElementSibling.stepUp()">+</button>
+                   name="quantity"
+                   value="{{ min_packs }}"
+                   min="{{ min_packs }}"
+                   max="{{ item.stock }}"
+                   step="1"
+                   data-pack="{{ pack }}"
+                   id="qty-input"
+                   required>
+            <button type="button" onclick="this.previousElementSibling.stepUp()">+</button>
         </div>
         <button type="submit" class="btn btn-primary btn-lg w-100">
             <i class="fas fa-cart-plus me-2"></i>В корзину
         </button>
     </form>
     <div class="qty-summary" id="qty-summary">
-        <span>Упаковок: <strong id="qty-packs">{{ product.min_quantity or 1 }}</strong></span>
+        <span>Упаковок: <strong id="qty-packs">{{ min_packs }}</strong></span>
         <span class="qty-summary__sep">·</span>
         <span>В упаковке: <strong>{{ pack }} шт</strong></span>
         <span class="qty-summary__sep">·</span>
-        <span>Итого: <strong><span id="qty-stems">{{ min_stems }}</span> шт</strong></span>
+        <span>Итого стеблей: <strong><span id="qty-stems">{{ min_packs * pack }}</span> шт</strong></span>
     </div>
 
     <script>
@@ -75,8 +72,7 @@
         const pack = parseInt(inp.dataset.pack) || 1;
 
         function update() {
-            const stems = parseInt(inp.value) || 0;
-            const packs = Math.floor(stems / pack);
+            const packs = parseInt(inp.value) || 0;
             packsEl.textContent = packs;
             stemsEl.textContent = packs * pack;
         }

@@ -1,4 +1,4 @@
-"""Корзина и оформление заказа."""
+"""Корзина и оформление заказа. Продаём упаковками."""
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
@@ -21,14 +21,13 @@ def _cart_total(cart: list[dict]) -> float:
 async def add_to_cart(
     request: Request,
     supply_item_id: int = Form(...),
-    quantity_stems: int = Form(0),          # ← количество ШТУК
+    quantity: int = Form(1),          # ← количество УПАКОВОК
     db: Session = Depends(get_db),
     _csrf: None = Depends(check_csrf),
 ):
     """
-    Клиент вводит количество ШТУК. Кратно размеру упаковки.
-    Внутри корзины quantity хранится в УПАКОВКАХ —
-    так проще работать с stock и price (они в упаковках).
+    Клиент вводит количество УПАКОВОК (шаг = 1 упаковка).
+    Упаковка содержит package_size штук — справочная информация.
     """
     user = get_current_user(request, db)
     if not user:
@@ -41,48 +40,34 @@ async def add_to_cart(
         raise HTTPException(status_code=404, detail="Товар не найден")
 
     product = item.product
-
-    # ─── Безопасные значения упаковки и минимума ───
     pack = product.package_size if (product.package_size and
                                     product.package_size > 0) else 1
     min_packs = product.min_quantity if (product.min_quantity and
                                          product.min_quantity > 0) else 1
-    min_stems = pack * min_packs
-    max_stems = item.stock * pack
 
     if item.stock <= 0:
         request.session["flash"] = f"«{product.name}» закончился"
         return RedirectResponse(url=f"/product/{supply_item_id}",
                                 status_code=303)
 
-    # ─── Нормализация введённого количества ШТУК ───
-    if quantity_stems <= 0:
-        quantity_stems = min_stems
-    if quantity_stems < min_stems:
-        quantity_stems = min_stems
-    if quantity_stems > max_stems:
-        quantity_stems = max_stems
-    # Кратность размеру упаковки (округление ВНИЗ до целой упаковки)
-    if quantity_stems % pack != 0:
-        quantity_stems = (quantity_stems // pack) * pack
-        if quantity_stems < min_stems:
-            quantity_stems = min_stems
-
-    # Переводим в упаковки для хранения в корзине
-    quantity_packs = quantity_stems // pack
+    if quantity < min_packs:
+        quantity = min_packs
+    if quantity > item.stock:
+        quantity = item.stock
+        request.session["flash"] = (
+            f"Максимум {item.stock} упак. ({item.stock * pack} шт)"
+        )
 
     cart = request.session.get("cart", [])
     for ci in cart:
         if ci["supply_item_id"] == supply_item_id:
-            new_packs = ci["quantity"] + quantity_packs
-            if new_packs > item.stock:
-                new_packs = item.stock
+            new_qty = ci["quantity"] + quantity
+            if new_qty > item.stock:
+                new_qty = item.stock
                 request.session["flash"] = (
-                    f"Максимум {item.stock} упак. "
-                    f"({item.stock * pack} шт)"
+                    f"Максимум {item.stock} упак. ({item.stock * pack} шт)"
                 )
-            ci["quantity"] = new_packs
-            # На случай, если у старой позиции не было package_size
+            ci["quantity"] = new_qty
             ci.setdefault("package_size", pack)
             break
     else:
@@ -94,11 +79,12 @@ async def add_to_cart(
             "package_size": pack,
             "price": item.price,
             "image_url": product.image_url,
-            "quantity": quantity_packs,     # ← УПАКОВКИ
+            "quantity": quantity,
         })
+        stems = quantity * pack
         request.session["flash"] = (
             f"«{product.name}» добавлен в корзину "
-            f"({quantity_stems} шт = {quantity_packs} упак.)"
+            f"({quantity} упак. = {stems} шт)"
         )
 
     request.session["cart"] = cart
@@ -116,7 +102,6 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
         return render(request, "cart.html", db,
                       user=user, cart=[], total=0)
 
-    # ─── Автоочистка: убираем позиции, которых больше нет ───────
     ids = [c["supply_item_id"] for c in cart]
     alive = {
         i.id: i for i in
@@ -133,7 +118,6 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
         if item is None:
             removed_names.append(c["name"])
             continue
-        # Обновляем цену, если админ поменял
         c["price"] = item.price
         c["quantity"] = min(c["quantity"], item.stock)
         if c["quantity"] <= 0:
@@ -200,7 +184,6 @@ async def place_order(request: Request, comment: str = Form(""),
         request.session["flash"] = "Комментарий слишком длинный"
         return RedirectResponse(url="/checkout", status_code=303)
 
-    # ─── ИСПРАВЛЕНИЕ: фильтруем только АКТИВНЫЕ позиции ───────────
     ids = [c["supply_item_id"] for c in cart]
     query = (db.query(SupplyItem)
              .filter(SupplyItem.id.in_(ids),
@@ -209,7 +192,6 @@ async def place_order(request: Request, comment: str = Form(""),
         query = query.with_for_update()
     items_map = {i.id: i for i in query.all()}
 
-    # Проверяем, что каждая позиция корзины ещё существует и активна
     for c in cart:
         item = items_map.get(c["supply_item_id"])
         if item is None:
@@ -219,7 +201,7 @@ async def place_order(request: Request, comment: str = Form(""),
             return RedirectResponse(url="/cart", status_code=303)
         if item.stock < c["quantity"]:
             request.session["flash"] = (
-                f"«{c['name']}»: только {item.stock} на складе"
+                f"«{c['name']}»: только {item.stock} упак. на складе"
             )
             return RedirectResponse(url="/cart", status_code=303)
 

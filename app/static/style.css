@@ -1,52 +1,41 @@
 /* ═══════════════════════════════════════════════════════════════
    ДИАНТУС — фирменный стиль в палитре логотипа
-   Тёплая ботаническая палитра: крем, шалфей, терракота,
-   пыльная роза, бронза. Как старинный ботанический альбом.
    ═══════════════════════════════════════════════════════════════ */
 
 :root {
-    /* Фон — как бумага логотипа */
     --bg:            #f5efe4;
     --bg-soft:       #faf6ef;
     --bg-card:       #fffdf8;
     --bg-warm:       #ede4d3;
 
-    /* Глубокий зелёный — цвет надписи «Диантус» */
     --primary:       #4a6741;
     --primary-dark:  #35492f;
     --primary-light: #8ba38c;
     --primary-pale:  #d8e2d0;
     --primary-mist:  #ecf1e8;
 
-    /* Терракота — мак из логотипа */
     --accent:        #c97b4a;
     --accent-light:  #e0a878;
     --accent-pale:   #f4e2d2;
 
-    /* Пыльная роза — цветок в центре логотипа */
     --rose:          #c88a92;
     --rose-light:    #e5b8bd;
     --rose-pale:     #f4e0e3;
 
-    /* Бронза — ободок логотипа */
     --bronze:        #8c6d52;
     --bronze-light:  #b8997a;
     --bronze-pale:   #e8dcca;
 
-    /* Текст и линии */
     --text:          #2b2b2b;
     --text-muted:    #6e6a60;
     --text-soft:     #8a857a;
     --border:        #e5dcc9;
     --border-soft:   #efe7d5;
 
-    /* Тени */
     --shadow-sm: 0 2px 8px  rgba(74, 103, 65, .06);
     --shadow-md: 0 8px 24px rgba(74, 103, 65, .08);
     --shadow-lg: 0 20px 40px rgba(74, 103, 65, .12);
 }
-
-/* ═══════════════ БАЗА ═══════════════ */
 
 * { box-sizing: border-box; }
 
@@ -57,8 +46,6 @@ body {
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-
-    /* Мягкий «бумажный» фон с двумя еле заметными пятнами */
     background-color: var(--bg);
     background-image:
         radial-gradient(circle at 12% 8%,  rgba(200, 138, 146, .10) 0, transparent 35%),
@@ -78,15 +65,13 @@ a:hover { color: var(--primary-dark); }
 
 main { flex: 1; }
 
-/* Тонкая «бронзовая» линия под крупными блоками */
 hr {
     border: none;
     border-top: 1px solid var(--border);
     opacity: 1;
 }
 
-/* ═══════════════ БАННЕР ПОСТАВКИ ═══════════════ */
-
+/* ── БАННЕР ── */
 .supply-banner {
     background: linear-gradient(90deg,
                 var(--primary-dark) 0%,
@@ -114,8 +99,7 @@ hr {
     50%      { transform: scale(1.08); }
 }
 
-/* ═══════════════ КНОПКИ ═══════════════ */
-
+/* ── КНОПКИ ── */
 .btn-primary {
     background: linear-gradient(180deg, var(--primary) 0%, var(--primary-dark) 100%);
     border: none;
@@ -133,7 +117,6 @@ hr {
     box-shadow: 0 8px 22px rgba(74, 103, 65, .38);
     color: #fff;
 }
-
 .btn-outline-primary {
     border: 2px solid var(--primary);
     color: var(--primary);
@@ -148,7 +131,6 @@ hr {
     color: #fff;
     transform: translateY(-1px);
 }
-
 .btn-outline-secondary {
     border: 1.5px solid var(--border);
     color: var(--text-muted);
@@ -160,7 +142,6 @@ hr {
     color: var(--primary-dark);
     border-color: var(--bronze-light);
 }
-
 .btn-outline-success {
     border: 1.5px solid var(--primary-light);
     color: var(--primary);
@@ -170,7 +151,6 @@ hr {
     background: var(--primary-mist);
     color: var(--primary-dark);
 }
-
 .btn-outline-danger {
     border: 1.5px solid var(--rose);
     color: var(--rose);
@@ -180,7 +160,6 @@ hr {
     background: var(--rose-pale);
     color: #a95f68;
 }
-
 .btn-outline-warning {
     border: 1.5px solid var(--accent-light);
     color: var(--accent);
@@ -190,26 +169,22 @@ hr {
     background: var(--accent-pale);
     color: #a55f35;
 }
-
 .btn-success {
     background: var(--primary);
     border-color: var(--primary);
     border-radius: 30px;
 }
 .btn-success:hover { background: var(--primary-dark); border-color: var(--primary-dark); }
-
 .btn-secondary {
     background: var(--text-soft);
     border: none;
     border-radius: 30px;
 }
 .btn-secondary:hover { background: var(--text-muted); }
-
 .btn-link { color: var(--rose); text-decoration: none; }
 .btn-link:hover { color: #a95f68; text-decoration: underline; }
 
-/* ═══════════════ КАРТОЧКИ ═══════════════ */
-
+/* ── КАРТОЧКИ ── */
 .card {
     border: 1px solid var(--border-soft);
     border-radius: 20px;
@@ -223,8 +198,7 @@ hr {
     transform: translateY(-3px);
 }
 
-/* ═══════════════ ФОРМЫ ═══════════════ */
-
+/* ── ФОРМЫ ── */
 .form-control, .form-select {
     border-radius: 12px;
     border: 1.5px solid var(--border);
@@ -242,10 +216,8 @@ hr {
 .form-label { color: var(--primary-dark); }
 .form-text  { color: var(--text-soft); font-size: .8rem; }
 
-/* ═══════════════ УТИЛИТЫ ═══════════════ */
-
+/* ── УТИЛИТЫ ── */
 .text-primary-custom { color: var(--primary) !important; }
-
 .table thead th {
     background: var(--primary-mist);
     border: none;
@@ -258,28 +230,11 @@ hr {
 .table > :not(caption) > * > * {
     border-bottom-color: var(--border-soft);
 }
-
 .alert { border: none; border-radius: 14px; }
-.alert-info {
-    background: var(--primary-mist);
-    color: var(--primary-dark);
-    border-left: 3px solid var(--primary);
-}
-.alert-warning {
-    background: var(--accent-pale);
-    color: #8a5427;
-    border-left: 3px solid var(--accent);
-}
-.alert-danger {
-    background: var(--rose-pale);
-    color: #97454e;
-    border-left: 3px solid var(--rose);
-}
-.alert-success {
-    background: var(--primary-pale);
-    color: var(--primary-dark);
-    border-left: 3px solid var(--primary);
-}
+.alert-info    { background: var(--primary-mist); color: var(--primary-dark); border-left: 3px solid var(--primary); }
+.alert-warning { background: var(--accent-pale);  color: #8a5427;            border-left: 3px solid var(--accent); }
+.alert-danger  { background: var(--rose-pale);    color: #97454e;            border-left: 3px solid var(--rose); }
+.alert-success { background: var(--primary-pale); color: var(--primary-dark); border-left: 3px solid var(--primary); }
 
 .badge.bg-secondary { background: var(--text-soft) !important; }
 .badge.bg-success   { background: var(--primary) !important; }
@@ -289,8 +244,7 @@ hr {
 .badge.bg-dark      { background: var(--primary-dark) !important; }
 .badge.bg-light     { background: var(--bg-warm) !important; color: var(--text) !important; }
 
-/* ═══════════════ ШАПКА ═══════════════ */
-
+/* ── ШАПКА ── */
 .app-header {
     background: var(--bg-card);
     box-shadow: 0 2px 20px rgba(74, 103, 65, .08);
@@ -298,19 +252,14 @@ hr {
     border-bottom: 1px solid var(--border-soft);
     position: relative;
 }
-/* Тонкая бронзовая линия по низу шапки */
 .app-header::after {
     content: '';
     position: absolute;
     left: 0; right: 0; bottom: -1px;
     height: 2px;
-    background: linear-gradient(90deg,
-                transparent 0%,
-                var(--bronze-light) 50%,
-                transparent 100%);
+    background: linear-gradient(90deg, transparent 0%, var(--bronze-light) 50%, transparent 100%);
     opacity: .5;
 }
-
 .app-header__inner {
     display: flex;
     justify-content: space-between;
@@ -318,7 +267,6 @@ hr {
     max-width: 1200px;
     margin: 0 auto;
 }
-
 .app-logo {
     display: inline-flex;
     align-items: center;
@@ -337,7 +285,6 @@ hr {
     display: block;
     filter: drop-shadow(0 2px 4px rgba(74, 103, 65, .15));
 }
-
 .login-logo {
     max-width: 300px;
     width: 100%;
@@ -346,7 +293,6 @@ hr {
     margin: 0 auto;
     filter: drop-shadow(0 6px 16px rgba(74, 103, 65, .18));
 }
-
 .app-header__right { display: flex; gap: 8px; align-items: center; }
 .app-header__icon {
     width: 42px; height: 42px;
@@ -381,8 +327,7 @@ hr {
     letter-spacing: .3px;
 }
 
-/* ═══════════════ НИЖНЯЯ НАВИГАЦИЯ ═══════════════ */
-
+/* ── НИЖНЯЯ НАВИГАЦИЯ ── */
 .bottom-nav {
     position: fixed; bottom: 0; left: 0; right: 0;
     background: var(--bg-card);
@@ -412,8 +357,7 @@ hr {
 }
 .has-bottom-nav main { padding-bottom: 80px; }
 
-/* ═══════════════ ПОДВАЛ ═══════════════ */
-
+/* ── ПОДВАЛ ── */
 .app-footer {
     background: var(--bg-card);
     border-top: 1px solid var(--border-soft);
@@ -433,9 +377,9 @@ hr {
     margin-bottom: 8px;
     opacity: .6;
 }
+.app-footer a { color: var(--primary); }
 
-/* ═══════════════ КАТАЛОГ ═══════════════ */
-
+/* ── КАТАЛОГ ── */
 .catalog-header {
     display: flex; justify-content: space-between; align-items: baseline;
     margin-bottom: 1rem;
@@ -459,7 +403,6 @@ hr {
     font-size: .85rem;
     border: 1px solid var(--primary-pale);
 }
-
 .category-tabs {
     display: flex; gap: 8px; overflow-x: auto;
     padding-bottom: 8px; margin-bottom: 14px;
@@ -488,10 +431,7 @@ hr {
     border-color: var(--primary);
     box-shadow: 0 3px 10px rgba(74, 103, 65, .25);
 }
-
-.level-tabs {
-    display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap;
-}
+.level-tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
 .level-tab {
     display: inline-flex; align-items: center; gap: 7px;
     padding: 6px 14px;
@@ -530,11 +470,7 @@ hr {
     background: rgba(255, 255, 255, .25);
     color: #fff;
 }
-
-/* Поиск */
-.catalog-search {
-    display: flex; gap: 8px; margin-bottom: 18px;
-}
+.catalog-search { display: flex; gap: 8px; margin-bottom: 18px; }
 .catalog-search__input { flex: 1; position: relative; }
 .catalog-search__input i {
     position: absolute; left: 16px; top: 50%;
@@ -572,13 +508,11 @@ hr {
     color: #a95f68;
 }
 
-/* ═══════════════ КАРТОЧКА ТОВАРА ═══════════════ */
-
+/* ── КАРТОЧКА ТОВАРА ── */
 .product-grid {
     display: grid; gap: 18px;
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
 }
-
 .product-card {
     background: var(--bg-card);
     border-radius: 18px;
@@ -593,7 +527,6 @@ hr {
     transform: translateY(-4px);
     box-shadow: var(--shadow-lg);
 }
-/* Тонкая бронзовая полоска сверху карточки */
 .product-card::before {
     content: '';
     position: absolute; top: 0; left: 20%; right: 20%;
@@ -603,9 +536,7 @@ hr {
     transition: opacity .3s;
 }
 .product-card:hover::before { opacity: 1; }
-
 .product-card--out { opacity: .7; }
-
 .product-card__image {
     display: block;
     aspect-ratio: 1;
@@ -620,7 +551,6 @@ hr {
     transition: transform .5s ease;
 }
 .product-card:hover .product-card__image img { transform: scale(1.05); }
-
 .product-card__placeholder {
     width: 100%; height: 100%;
     display: flex; align-items: center; justify-content: center;
@@ -642,7 +572,6 @@ hr {
 .product-card__badge--big    { background: var(--primary); }
 .product-card__badge--medium { background: var(--accent); }
 .product-card__badge--small  { background: var(--bronze); }
-
 .product-card__body {
     padding: 14px;
     display: flex; flex-direction: column; gap: 7px;
@@ -671,11 +600,8 @@ hr {
     margin-top: 4px;
     font-family: 'Playfair Display', Georgia, serif;
 }
-.product-card__form {
-    display: flex; gap: 6px; margin-top: 10px;
-}
+.product-card__form { display: flex; gap: 6px; margin-top: 10px; }
 
-/* Счётчик */
 .qty-control {
     display: flex; flex: 1; align-items: center;
     border: 1.5px solid var(--border);
@@ -731,8 +657,7 @@ hr {
     font-size: .85rem;
 }
 
-/* ═══════════════ ПАГИНАЦИЯ ═══════════════ */
-
+/* ── ПАГИНАЦИЯ ── */
 .pagination-nav {
     display: flex; justify-content: center; align-items: center;
     gap: 14px; margin-top: 28px;
@@ -759,8 +684,7 @@ hr {
     font-family: 'Playfair Display', Georgia, serif;
 }
 
-/* ═══════════════ ПУСТОЕ СОСТОЯНИЕ ═══════════════ */
-
+/* ── ПУСТОЕ СОСТОЯНИЕ ── */
 .empty-state {
     text-align: center; padding: 60px 20px; color: var(--text-muted);
 }
@@ -775,8 +699,7 @@ hr {
     font-family: 'Playfair Display', Georgia, serif;
 }
 
-/* ═══════════════ ДЕТАЛЬНАЯ СТРАНИЦА ═══════════════ */
-
+/* ── ДЕТАЛЬНАЯ СТРАНИЦА ── */
 .product-detail { max-width: 640px; margin: 0 auto; }
 .product-detail__image {
     aspect-ratio: 1;
@@ -835,8 +758,7 @@ hr {
     border-radius: 8px;
 }
 
-/* ═══════════════ КОРЗИНА ═══════════════ */
-
+/* ── КОРЗИНА ── */
 .cart-items {
     display: flex; flex-direction: column; gap: 12px; margin-bottom: 22px;
 }
@@ -914,8 +836,7 @@ hr {
 }
 .cart-actions .btn { flex: 1; }
 
-/* ═══════════════ ЗАКАЗЫ ═══════════════ */
-
+/* ── ЗАКАЗЫ ── */
 .orders-list { display: flex; flex-direction: column; gap: 14px; }
 .order-card {
     background: var(--bg-card);
@@ -963,8 +884,7 @@ hr {
     font-style: italic;
 }
 
-/* ═══════════════ «ЗАЯВКА ОТПРАВЛЕНА» ═══════════════ */
-
+/* ── PENDING ── */
 .pending-card {
     background: var(--bg-card);
     border-radius: 22px;
@@ -983,21 +903,14 @@ hr {
     border-radius: 50%;
     opacity: .08;
 }
-.pending-card::before {
-    top: -60px; left: -60px;
-    background: var(--rose);
-}
-.pending-card::after {
-    bottom: -60px; right: -60px;
-    background: var(--primary);
-}
+.pending-card::before { top: -60px; left: -60px; background: var(--rose); }
+.pending-card::after  { bottom: -60px; right: -60px; background: var(--primary); }
 .pending-icon {
     font-size: 100px;
     color: var(--bronze-light);
     line-height: 1;
     margin-bottom: 30px;
-    position: relative;
-    z-index: 1;
+    position: relative; z-index: 1;
 }
 .pending-title {
     font-family: 'Playfair Display', Georgia, serif;
@@ -1005,16 +918,14 @@ hr {
     font-size: 34px;
     color: var(--primary-dark);
     margin-bottom: 18px;
-    position: relative;
-    z-index: 1;
+    position: relative; z-index: 1;
 }
 .pending-text {
     font-size: 16px;
     color: var(--text);
     max-width: 420px;
     margin: 0 auto 10px;
-    position: relative;
-    z-index: 1;
+    position: relative; z-index: 1;
 }
 .pending-hint {
     font-size: 14px;
@@ -1022,26 +933,10 @@ hr {
     max-width: 420px;
     margin: 0 auto;
     font-style: italic;
-    position: relative;
-    z-index: 1;
+    position: relative; z-index: 1;
 }
 
-/* ═══════════════ МОБИЛЬНАЯ АДАПТАЦИЯ ═══════════════ */
-
-@media (max-width: 576px) {
-    .product-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
-    .product-card__body { padding: 10px; }
-    .product-card__name { font-size: .85rem; }
-    .product-card__price { font-size: 1rem; }
-    .catalog-title { font-size: 1.5rem; }
-    .app-logo { font-size: 1.3rem; gap: 8px; }
-    .app-logo__icon { height: 34px; }
-    .login-logo { max-width: 220px; }
-    .product-detail__name { font-size: 1.5rem; }
-    .product-detail__price { font-size: 1.5rem; }
-}
-/* ═══════════════ ПОДСКАЗКА ПОД СЧЁТЧИКОМ ═══════════════ */
-
+/* ── ПОДСКАЗКА ПОД СЧЁТЧИКОМ ── */
 .qty-hint {
     display: block;
     font-size: .72rem;
@@ -1054,7 +949,6 @@ hr {
     font-weight: 700;
 }
 
-/* Сводка на детальной странице товара */
 .qty-summary {
     display: flex;
     flex-wrap: wrap;
@@ -1077,10 +971,94 @@ hr {
     color: var(--bronze-light);
     font-weight: 700;
 }
-
-/* В корзине */
 .cart-item__stems {
     color: var(--text-soft);
     font-size: .78rem;
     margin-left: 6px;
+}
+
+/* ── ПРОФИЛЬ ── */
+.profile-stat {
+    background: var(--bg-card);
+    border: 1px solid var(--border-soft);
+    border-radius: 16px;
+    padding: 20px;
+    text-align: center;
+    box-shadow: var(--shadow-sm);
+}
+.profile-stat i {
+    font-size: 1.4rem;
+    color: var(--bronze-light);
+    margin-bottom: 8px;
+}
+.profile-stat__value {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-weight: 700;
+    font-size: 1.5rem;
+    color: var(--primary-dark);
+}
+.profile-stat__label {
+    font-size: .78rem;
+    color: var(--text-soft);
+    margin-top: 2px;
+}
+
+/* ── КОНТАКТЫ ── */
+.contacts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.contacts-item {
+    display: flex;
+    gap: 14px;
+    padding: 14px 0;
+    border-bottom: 1px dashed var(--border);
+}
+.contacts-item:last-child { border-bottom: none; }
+.contacts-item > i {
+    width: 42px; height: 42px;
+    flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    background: var(--primary-mist);
+    color: var(--primary);
+    font-size: 1rem;
+}
+.contacts-item__label {
+    font-size: .75rem;
+    color: var(--text-soft);
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    margin-bottom: 2px;
+}
+.contacts-item__value {
+    font-size: 1rem;
+    color: var(--text);
+    font-weight: 600;
+    text-decoration: none;
+}
+a.contacts-item__value:hover { color: var(--primary); }
+.contacts-steps {
+    padding-left: 20px;
+    color: var(--text-muted);
+    line-height: 1.8;
+    font-size: .95rem;
+}
+.contacts-steps li::marker { color: var(--bronze); font-weight: 700; }
+
+/* ── МОБИЛЬНАЯ АДАПТАЦИЯ ── */
+@media (max-width: 576px) {
+    .product-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .product-card__body { padding: 10px; }
+    .product-card__name { font-size: .85rem; }
+    .product-card__price { font-size: 1rem; }
+    .catalog-title { font-size: 1.5rem; }
+    .app-logo { font-size: 1.3rem; gap: 8px; }
+    .app-logo__icon { height: 34px; }
+    .login-logo { max-width: 220px; }
+    .product-detail__name { font-size: 1.5rem; }
+    .product-detail__price { font-size: 1.5rem; }
+    .profile-stat { padding: 14px; }
+    .profile-stat__value { font-size: 1.2rem; }
 }

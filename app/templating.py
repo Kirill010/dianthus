@@ -6,6 +6,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import nulls_last
 from sqlalchemy.orm import Session
 
+from .config import config
 from .deps import get_current_user
 from .security import ensure_csrf_token
 from . import models
@@ -39,6 +40,7 @@ def render(request: Request, template: str, db: Session, **context):
         "cart_count": cart_count,
         "active_supply": active_supply,
         "csrf_token": csrf_token,
+        "config": config,
     })
     return templates.TemplateResponse(
         request=request, name=template, context=context,
