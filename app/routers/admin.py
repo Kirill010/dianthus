@@ -18,6 +18,7 @@ from ..security import check_csrf
 from ..services.excel_service import (
     build_products_import_template, export_customers_to_excel,
     export_orders_to_excel, import_products_from_excel,
+    parse_invoice,
 )
 from ..services.upload_service import delete_upload, save_upload
 from ..templating import render
@@ -428,7 +429,7 @@ async def supply_new_page(request: Request, db: Session = Depends(get_db),
 @router.post("/supplies/new")
 async def supply_new(
     request: Request, country: str = Form(""),
-    status: str = Form("Ожидается"), departure_date: str = Form(""),
+    status: str = Form("Ожидается"),
     arrival_date: str = Form(""), notes: str = Form(""),
     db: Session = Depends(get_db),
     _a=Depends(require_admin),
@@ -440,16 +441,16 @@ async def supply_new(
         errors.append(msg)
     if status not in SUPPLY_STATUSES:
         errors.append("Неизвестный статус поставки")
-    if departure_date and not _parse_date(departure_date):
-        errors.append("Некорректная дата отправки")
-    if arrival_date and not _parse_date(arrival_date):
+    if not arrival_date:
+        errors.append("Укажите дату прибытия — её увидят клиенты")
+    elif not _parse_date(arrival_date):
         errors.append("Некорректная дата прибытия")
     if errors:
         _err(request, errors)
         return RedirectResponse(url="/admin/supplies/new", status_code=303)
 
     supply = Supply(country=country.strip(), status=status,
-                    departure_date=_parse_date(departure_date),
+                    departure_date=None,
                     arrival_date=_parse_date(arrival_date),
                     notes=notes.strip())
     db.add(supply)
@@ -477,8 +478,7 @@ async def supply_edit_page(supply_id: int, request: Request,
 async def supply_edit(
     supply_id: int, request: Request,
     country: str = Form(""), status: str = Form("Ожидается"),
-    departure_date: str = Form(""), arrival_date: str = Form(""),
-    notes: str = Form(""),
+    arrival_date: str = Form(""), notes: str = Form(""),
     db: Session = Depends(get_db),
     _a=Depends(require_admin),
     _csrf: None = Depends(check_csrf),
@@ -493,9 +493,9 @@ async def supply_edit(
         errors.append(msg)
     if status not in SUPPLY_STATUSES:
         errors.append("Неизвестный статус поставки")
-    if departure_date and not _parse_date(departure_date):
-        errors.append("Некорректная дата отправки")
-    if arrival_date and not _parse_date(arrival_date):
+    if not arrival_date:
+        errors.append("Укажите дату прибытия — её увидят клиенты")
+    elif not _parse_date(arrival_date):
         errors.append("Некорректная дата прибытия")
     if errors:
         _err(request, errors)
@@ -504,9 +504,9 @@ async def supply_edit(
 
     supply.country = country.strip()
     supply.status = status
-    supply.departure_date = _parse_date(departure_date)
     supply.arrival_date = _parse_date(arrival_date)
     supply.notes = notes.strip()
+    # departure_date намеренно не трогаем — оставляем как было (обычно None)
     db.commit()
     request.session["flash"] = "Поставка обновлена"
     return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit",
@@ -531,6 +531,122 @@ async def supply_delete(supply_id: int, request: Request,
         db.commit()
     request.session["flash"] = "Поставка удалена"
     return RedirectResponse(url="/admin", status_code=303)
+
+
+# ═══════ ИМПОРТ НАКЛАДНОЙ ═══════════════════════════════════
+
+@router.post("/supplies/{supply_id}/import/invoice")
+async def supply_import_invoice(
+    supply_id: int, request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _a=Depends(require_admin),
+    _csrf: None = Depends(check_csrf),
+):
+    """Импорт накладной поставщика (.xls или .xlsx) в поставку."""
+    supply = db.query(Supply).filter(Supply.id == supply_id).first()
+    if not supply:
+        raise HTTPException(404, "Поставка не найдена")
+
+    fn = (file.filename or "").lower()
+    if not (fn.endswith(".xls") or fn.endswith(".xlsx")):
+        request.session["flash"] = "Нужен файл .xls или .xlsx"
+        return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit",
+                                status_code=303)
+
+    # Читаем с лимитом 10 МБ
+    content = bytearray()
+    while True:
+        chunk = await file.read(CHUNK)
+        if not chunk:
+            break
+        content.extend(chunk)
+        if len(content) > MAX_EXCEL_SIZE:
+            request.session["flash"] = "Файл слишком большой (>10 МБ)"
+            return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit",
+                                    status_code=303)
+
+    if not content:
+        request.session["flash"] = "Файл пустой"
+        return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit",
+                                status_code=303)
+
+    # Парсим
+    items, warnings = parse_invoice(bytes(content), fn)
+    if not items:
+        msg = "Не нашёл позиций в накладной."
+        if warnings:
+            msg += " " + "; ".join(warnings[:3])
+        request.session["flash"] = msg
+        return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit",
+                                status_code=303)
+
+    # Импортируем
+    created_products = 0
+    updated_items = 0
+    new_items = 0
+
+    try:
+        for it in items:
+            # 1. Найти или создать товар в справочнике
+            product = (db.query(Product)
+                       .filter(Product.name == it["name"])
+                       .first())
+            if not product:
+                product = Product(
+                    name=it["name"],
+                    description="",
+                    country=it.get("country") or supply.country,
+                    length_cm=it.get("length_cm", 0),
+                    unit=it.get("unit", "шт"),
+                    package_size=1,
+                    min_quantity=1,
+                    image_url="",
+                    category=it.get("category", "Прочее"),
+                )
+                db.add(product)
+                db.flush()  # получить product.id
+                created_products += 1
+
+            # 2. Добавить или обновить позицию в поставке
+            existing = (db.query(SupplyItem)
+                        .filter(SupplyItem.supply_id == supply_id,
+                                SupplyItem.product_id == product.id)
+                        .first())
+            if existing:
+                existing.price = it["price"]
+                existing.stock += it["quantity"]
+                updated_items += 1
+            else:
+                db.add(SupplyItem(
+                    supply_id=supply_id,
+                    product_id=product.id,
+                    price=it["price"],
+                    stock=it["quantity"],
+                ))
+                new_items += 1
+
+        db.commit()
+    except (IntegrityError, SQLAlchemyError) as e:
+        db.rollback()
+        logger.exception("Ошибка импорта накладной: %s", e)
+        request.session["flash"] = "Ошибка БД при импорте накладной, откат."
+        return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit",
+                                status_code=303)
+
+    msg = (f"📄 Импорт накладной: +{new_items} позиций, "
+           f"~{updated_items} обновлено. "
+           f"Создано товаров в справочнике: {created_products}.")
+    if warnings:
+        msg += f" ⚠️ Предупреждений: {len(warnings)} (см. лог)"
+        for w in warnings[:5]:
+            logger.warning("Накладная: %s", w)
+
+    logger.info("Импорт накладной в поставку №%d: %d позиций, "
+                "+%d товаров", supply_id, len(items), created_products)
+    request.session["flash"] = msg
+    return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit",
+                            status_code=303)
 
 
 # ═══════ ПОЗИЦИИ ПОСТАВКИ ═══════════════════════════════════

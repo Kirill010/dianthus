@@ -39,7 +39,7 @@ app = FastAPI(title="Диантус — оптовый магазин цвето
 app.add_middleware(
     SessionMiddleware,
     secret_key=config.SECRET_KEY,
-    max_age=60 * 60 * 24 * 14,
+    max_age=60 * 60 * 24 * 7,
     same_site="lax",
     https_only=(config.ENV == "prod"),
 )

@@ -55,18 +55,18 @@
                 </select>
             </div>
             <div class="col-md-6">
-                <label class="form-label fw-bold">Дата отправки</label>
-                <input type="date" name="departure_date" class="form-control"
-                       value="{{ supply.departure_date.strftime('%Y-%m-%d') if supply and supply.departure_date else '' }}">
+                <label class="form-label fw-bold">
+                    Дата прибытия *
+                    <i class="fas fa-eye text-muted" title="Эту дату видят клиенты в баннере"></i>
+                </label>
+                <input type="date" name="arrival_date" class="form-control"
+                    value="{{ supply.arrival_date.strftime('%Y-%m-%d') if supply and supply.arrival_date else '' }}"
+                    required>
+                <div class="form-text">Клиенты увидят эту дату в баннере «Машина в пути»</div>
             </div>
             <div class="col-md-6">
-                <label class="form-label fw-bold">Прибытие</label>
-                <input type="date" name="arrival_date" class="form-control"
-                       value="{{ supply.arrival_date.strftime('%Y-%m-%d') if supply and supply.arrival_date else '' }}">
-            </div>
-            <div class="col-12">
                 <label class="form-label fw-bold">Заметка</label>
-                <textarea name="notes" class="form-control" rows="2">{{ supply.notes if supply else '' }}</textarea>
+                <textarea name="notes" class="form-control" rows="2" maxlength="500">{{ supply.notes if supply else '' }}</textarea>
             </div>
         </div>
         <hr>
@@ -76,6 +76,36 @@
         </div>
     </div>
 </form>
+
+{# Импорт накладной — только когда поставка уже существует #}
+{% if supply %}
+<div class="card p-4 mb-4">
+    <h5 class="mb-3">
+        <i class="fas fa-file-invoice me-2"></i>Импорт накладной из Excel
+    </h5>
+    <p class="text-muted small mb-3">
+        Загрузите накладную от поставщика (<code>.xls</code> или <code>.xlsx</code>).
+        Система сама найдёт таблицу с колонками «Товар», «Количество», «Цена»,
+        добавит позиции в эту поставку, а товары, которых ещё нет в справочнике,
+        создаст автоматически.
+    </p>
+    <form action="/admin/supplies/{{ supply.id }}/import/invoice"
+          method="post" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="row g-2">
+            <div class="col-md-9">
+                <input type="file" name="file" accept=".xls,.xlsx"
+                       class="form-control" required>
+            </div>
+            <div class="col-md-3">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="fas fa-upload me-1"></i>Загрузить
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+{% endif %}
 
 {% if supply %}
 <div class="card p-4 mb-4">

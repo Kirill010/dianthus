@@ -77,9 +77,47 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
+
     cart = request.session.get("cart", [])
+    if not cart:
+        return render(request, "cart.html", db,
+                      user=user, cart=[], total=0)
+
+    # ─── Автоочистка: убираем позиции, которых больше нет ───────
+    ids = [c["supply_item_id"] for c in cart]
+    alive = {
+        i.id: i for i in
+        db.query(SupplyItem)
+        .filter(SupplyItem.id.in_(ids),
+                SupplyItem.is_active == True)  # noqa: E712
+        .all()
+    }
+
+    clean_cart = []
+    removed_names = []
+    for c in cart:
+        item = alive.get(c["supply_item_id"])
+        if item is None:
+            removed_names.append(c["name"])
+            continue
+        # Обновляем цену, если админ поменял
+        c["price"] = item.price
+        c["quantity"] = min(c["quantity"], item.stock)
+        if c["quantity"] <= 0:
+            removed_names.append(c["name"])
+            continue
+        clean_cart.append(c)
+
+    if removed_names:
+        request.session["cart"] = clean_cart
+        request.session["flash"] = (
+            "Из корзины убраны недоступные товары: "
+            + ", ".join(removed_names)
+        )
+        return RedirectResponse(url="/cart", status_code=303)
+
     return render(request, "cart.html", db,
-                  user=user, cart=cart, total=_cart_total(cart))
+                  user=user, cart=clean_cart, total=_cart_total(clean_cart))
 
 
 @router.post("/remove_from_cart")
