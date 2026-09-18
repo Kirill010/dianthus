@@ -28,19 +28,62 @@
     </div>
     {% endif %}
     <div class="product-detail__price">{{ "%.2f"|format(item.price) }} ₽ / {{ product.unit }}</div>
-    <p class="text-muted small">Минимум: {{ product.min_quantity }} {{ product.unit }}</p>
+    <p class="text-muted small">
+        Минимум: {{ product.min_quantity }} {{ product.unit }}
+        = <strong>{{ min_stems }} шт</strong>
+        (в упаковке {{ pack }} шт)
+    </p>
     {% if product.description %}<p class="product-detail__desc">{{ product.description }}</p>{% endif %}
     {% if not is_out %}
+    {% set pack = product.package_size or 1 %}
+    {% set min_stems = pack * (product.min_quantity or 1) %}
     <form action="/add_to_cart" method="post" class="product-detail__form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="supply_item_id" value="{{ item.id }}">
         <div class="qty-control qty-control--lg">
-            <button type="button" onclick="this.nextElementSibling.stepDown()">−</button>
-            <input type="number" name="quantity" value="{{ product.min_quantity }}" min="{{ product.min_quantity }}" max="{{ item.stock }}">
-            <button type="button" onclick="this.previousElementSibling.stepUp()">+</button>
+            <button type="button"
+                    onclick="this.nextElementSibling.stepDown()">−</button>
+            <input type="number"
+                name="quantity_stems"
+                value="{{ min_stems }}"
+                min="{{ min_stems }}"
+                max="{{ stems }}"
+                step="{{ pack }}"
+                data-pack="{{ pack }}"
+                id="qty-input"
+                required>
+            <button type="button"
+                    onclick="this.previousElementSibling.stepUp()">+</button>
         </div>
-        <button type="submit" class="btn btn-primary btn-lg w-100"><i class="fas fa-cart-plus me-2"></i>В корзину</button>
+        <button type="submit" class="btn btn-primary btn-lg w-100">
+            <i class="fas fa-cart-plus me-2"></i>В корзину
+        </button>
     </form>
+    <div class="qty-summary" id="qty-summary">
+        <span>Упаковок: <strong id="qty-packs">{{ product.min_quantity or 1 }}</strong></span>
+        <span class="qty-summary__sep">·</span>
+        <span>В упаковке: <strong>{{ pack }} шт</strong></span>
+        <span class="qty-summary__sep">·</span>
+        <span>Итого: <strong><span id="qty-stems">{{ min_stems }}</span> шт</strong></span>
+    </div>
+
+    <script>
+    (function () {
+        const inp = document.getElementById('qty-input');
+        const packsEl = document.getElementById('qty-packs');
+        const stemsEl = document.getElementById('qty-stems');
+        const pack = parseInt(inp.dataset.pack) || 1;
+
+        function update() {
+            const stems = parseInt(inp.value) || 0;
+            const packs = Math.floor(stems / pack);
+            packsEl.textContent = packs;
+            stemsEl.textContent = packs * pack;
+        }
+        inp.addEventListener('input', update);
+        update();
+    })();
+    </script>
     {% else %}
     <button class="btn btn-secondary btn-lg w-100 mt-3" disabled><i class="fas fa-ban me-2"></i>Нет в наличии</button>
     {% endif %}

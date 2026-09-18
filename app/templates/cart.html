@@ -6,9 +6,14 @@
     {% for item in cart %}
     <div class="cart-item">
         <div class="cart-item__image">{% if item.image_url %}<img src="{{ item.image_url }}" alt="">{% endif %}</div>
+        {% set pack = item.package_size or 1 %}
+        {% set stems = item.quantity * pack %}
         <div class="cart-item__body">
             <div class="cart-item__name">{{ item.name }}</div>
-            <div class="cart-item__price">{{ "%.2f"|format(item.price) }} ₽ × {{ item.quantity }}</div>
+            <div class="cart-item__price">
+                {{ "%.2f"|format(item.price) }} ₽ × {{ item.quantity }} упак.
+                <span class="cart-item__stems">({{ stems }} шт)</span>
+            </div>
             <div class="cart-item__sum">{{ "%.0f"|format(item.price * item.quantity) }} ₽</div>
         </div>
         <form action="/remove_from_cart" method="post">

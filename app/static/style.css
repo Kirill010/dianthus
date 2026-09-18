@@ -1040,3 +1040,47 @@ hr {
     .product-detail__name { font-size: 1.5rem; }
     .product-detail__price { font-size: 1.5rem; }
 }
+/* ═══════════════ ПОДСКАЗКА ПОД СЧЁТЧИКОМ ═══════════════ */
+
+.qty-hint {
+    display: block;
+    font-size: .72rem;
+    color: var(--text-soft);
+    margin-top: 4px;
+    text-align: center;
+}
+.qty-hint__packs {
+    color: var(--primary);
+    font-weight: 700;
+}
+
+/* Сводка на детальной странице товара */
+.qty-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    align-items: center;
+    margin-top: 12px;
+    padding: 10px 14px;
+    background: var(--primary-mist);
+    border-radius: 12px;
+    font-size: .85rem;
+    color: var(--text-muted);
+    border: 1px solid var(--primary-pale);
+}
+.qty-summary strong {
+    color: var(--primary-dark);
+    font-weight: 700;
+}
+.qty-summary__sep {
+    color: var(--bronze-light);
+    font-weight: 700;
+}
+
+/* В корзине */
+.cart-item__stems {
+    color: var(--text-soft);
+    font-size: .78rem;
+    margin-left: 6px;
+}

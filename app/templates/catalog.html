@@ -73,16 +73,34 @@
             </div>
             <div class="product-card__price">{{ "%.2f"|format(item.price) }} ₽</div>
             {% if not is_out %}
+            {% set pack = item.product.package_size or 1 %}
+            {% set min_stems = pack * (item.product.min_quantity or 1) %}
             <form action="/add_to_cart" method="post" class="product-card__form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="supply_item_id" value="{{ item.id }}">
                 <div class="qty-control">
-                    <button type="button" onclick="this.nextElementSibling.stepDown()">−</button>
-                    <input type="number" name="quantity" value="{{ item.product.min_quantity }}" min="{{ item.product.min_quantity }}" max="{{ item.stock }}">
-                    <button type="button" onclick="this.previousElementSibling.stepUp()">+</button>
+                    <button type="button"
+                            onclick="this.nextElementSibling.stepDown()">−</button>
+                    <input type="number"
+                        name="quantity_stems"
+                        value="{{ min_stems }}"
+                        min="{{ min_stems }}"
+                        max="{{ stems }}"
+                        step="{{ pack }}"
+                        data-pack="{{ pack }}"
+                        oninput="updatePackHint(this)"
+                        required>
+                    <button type="button"
+                            onclick="this.previousElementSibling.stepUp()">+</button>
                 </div>
-                <button type="submit" class="btn-cart"><i class="fas fa-shopping-cart"></i></button>
+                <button type="submit" class="btn-cart">
+                    <i class="fas fa-shopping-cart"></i>
+                </button>
             </form>
+            <small class="qty-hint">
+                = <span class="qty-hint__packs">{{ item.product.min_quantity or 1 }}</span>
+                упак. × {{ pack }} шт
+            </small>
             {% else %}
             <button class="btn-cart--disabled" disabled><i class="fas fa-ban"></i> Нет</button>
             {% endif %}
@@ -106,5 +124,13 @@
     {% if has_filters %}<a href="/catalog" class="btn btn-primary mt-2">Сбросить</a>{% endif %}
 </div>
 {% endif %}
-
+<script>
+function updatePackHint(input) {
+    const pack = parseInt(input.dataset.pack) || 1;
+    const stems = parseInt(input.value) || 0;
+    const packs = Math.floor(stems / pack);
+    const hint = input.closest('.product-card__body').querySelector('.qty-hint__packs');
+    if (hint) hint.textContent = packs;
+}
+</script>
 {% endblock %}

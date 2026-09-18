@@ -14,8 +14,13 @@
 </div>
 <div class="cart-summary mt-3">
     {% for item in cart %}
+    {% set pack = item.package_size or 1 %}
+    {% set stems = item.quantity * pack %}
     <div class="cart-summary__row">
-        <span>{{ item.name }} × {{ item.quantity }}</span>
+        <span>
+            {{ item.name }} — {{ item.quantity }} упак.
+            × {{ pack }} шт = {{ stems }} шт
+        </span>
         <span>{{ "%.0f"|format(item.price * item.quantity) }} ₽</span>
     </div>
     {% endfor %}
