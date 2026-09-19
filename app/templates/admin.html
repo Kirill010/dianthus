@@ -80,8 +80,19 @@
                             {% if u.is_admin %}<span class="badge bg-dark">Админ</span>
                             {% elif u.is_approved %}<span class="badge bg-success">Активен</span>
                             {% else %}<span class="badge bg-warning text-dark">Ожидает</span>{% endif %}
+                            {% if u.discount_percent and u.discount_percent > 0 %}
+                                <span class="badge bg-warning text-dark ms-1">−{{ u.discount_percent }}%</span>
+                            {% endif %}
                         </td>
                         <td>
+                            <form action="/admin/users/{{ u.id }}/discount" method="post"
+                                class="d-inline-flex align-items-center gap-1 mb-1">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="number" name="discount_percent" min="0" max="100"
+                                    step="0.5" class="form-control form-control-sm"
+                                    style="width:80px;" value="{{ u.discount_percent or 0 }}">
+                                <button class="btn btn-sm btn-outline-warning" title="Скидка">%</button>
+                            </form>
                             {% if not u.is_admin and not u.is_approved %}
                                 <form action="/admin/users/{{ u.id }}/approve" method="post" class="d-inline">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -94,39 +105,32 @@
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                     <button class="btn btn-sm btn-outline-danger">Отклонить</button>
                                 </form>
-
                             {% elif u.is_admin %}
-                                {% if u.id == user.id %}
-                                    <span class="badge bg-dark px-3 py-2">
-                                        <i class="fas fa-user me-1"></i>Это вы
-                                    </span>
-                                {% else %}
+                                {% if u.id != user.id %}
                                     <form action="/admin/users/{{ u.id }}/demote" method="post"
                                         class="d-inline"
-                                        onsubmit="return confirm('Снять права администратора с {{ u.full_name }}?');">
+                                        onsubmit="return confirm('Снять права администратора?');">
                                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                         <button class="btn btn-sm btn-outline-warning">
                                             <i class="fas fa-user-minus me-1"></i>Снять админа
                                         </button>
                                     </form>
+                                {% else %}
+                                    <span class="badge bg-dark px-2 py-1"><i class="fas fa-user me-1"></i>Это вы</span>
                                 {% endif %}
-
                             {% else %}
                                 <form action="/admin/users/{{ u.id }}/make_admin" method="post"
                                     class="d-inline"
-                                    onsubmit="return confirm('Сделать {{ u.full_name }} администратором?');">
+                                    onsubmit="return confirm('Сделать администратором?');">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                     <button class="btn btn-sm btn-outline-primary">
-                                        <i class="fas fa-user-shield me-1"></i>Сделать админом
+                                        <i class="fas fa-user-shield me-1"></i>Админ
                                     </button>
                                 </form>
                                 <form action="/admin/users/{{ u.id }}/reject" method="post"
-                                    class="d-inline"
-                                    onsubmit="return confirm('Удалить пользователя?');">
+                                    class="d-inline" onsubmit="return confirm('Удалить пользователя?');">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                    <button class="btn btn-sm btn-outline-danger">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
                                 </form>
                             {% endif %}
                         </td>

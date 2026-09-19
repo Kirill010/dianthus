@@ -47,6 +47,8 @@ class User(Base):
     city = Column(String(100), default="")
     is_admin = Column(Boolean, default=False, nullable=False)
     is_approved = Column(Boolean, default=False, nullable=False)
+    # ↓ Персональная скидка клиента в процентах (0..100)
+    discount_percent = Column(Float, default=0, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
     orders = relationship("Order", back_populates="user",
                           cascade="all, delete-orphan")
@@ -62,8 +64,9 @@ class Product(Base):
     country = Column(String(100), default="", index=True)
     length_cm = Column(Integer, default=0)
     unit = Column(String(30), default="упаковка")
+    # ↓ Сколько штук (стеблей) в одной упаковке
     package_size = Column(Integer, default=1)
-    min_quantity = Column(Integer, default=1)
+    min_quantity = Column(Integer, default=1)   # минимум упаковок к заказу
     image_url = Column(String(500), default="")
     category = Column(String(100), default="Прочее", index=True)
     created_at = Column(DateTime, default=_utcnow)
@@ -93,20 +96,38 @@ class Supply(Base):
 
 
 class SupplyItem(Base):
+    """
+    Позиция поставки.
+
+    price  — цена ЗА ШТУКУ (как в накладной поставщика).
+    stock  — количество УПАКОВОК (целое число).
+    """
     __tablename__ = "supply_items"
     id = Column(Integer, primary_key=True, index=True)
     supply_id = Column(Integer, ForeignKey("supplies.id"), nullable=False)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
-    price = Column(Float, nullable=False, default=0)
-    stock = Column(Integer, default=0)
+    price = Column(Float, nullable=False, default=0)  # ₽ за ШТУКУ
+    stock = Column(Integer, default=0)                # УПАКОВОК
     is_active = Column(Boolean, default=False, nullable=False, index=True)
     created_at = Column(DateTime, default=_utcnow)
     supply = relationship("Supply", back_populates="items")
     product = relationship("Product", back_populates="supply_items")
 
     @property
+    def pack_size(self) -> int:
+        if self.product and self.product.package_size:
+            return max(1, self.product.package_size)
+        return 1
+
+    @property
     def total_stems(self) -> int:
-        return self.stock * (self.product.package_size if self.product else 1)
+        """Всего стеблей = упаковок × штук в упаковке."""
+        return self.stock * self.pack_size
+
+    @property
+    def price_per_pack(self) -> float:
+        """Цена за упаковку = цена за штуку × штук в упаковке."""
+        return self.price * self.pack_size
 
     @property
     def is_available(self) -> bool:
@@ -117,13 +138,19 @@ class Order(Base):
     __tablename__ = "orders"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    total_price = Column(Float, default=0)
+    subtotal = Column(Float, default=0, nullable=False)          # без скидки
+    discount_percent = Column(Float, default=0, nullable=False)  # снимок скидки
+    total_price = Column(Float, default=0)                       # со скидкой
     status = Column(String(30), default="Новый")
     comment = Column(Text, default="")
     created_at = Column(DateTime, default=_utcnow)
     user = relationship("User", back_populates="orders")
     items = relationship("OrderItem", back_populates="order",
                          cascade="all, delete-orphan")
+
+    @property
+    def discount_amount(self) -> float:
+        return max(0.0, self.subtotal - self.total_price)
 
 
 class OrderItem(Base):
@@ -135,13 +162,19 @@ class OrderItem(Base):
                             nullable=True)
     product_name = Column(String(200), nullable=False)
     unit = Column(String(30), default="")
-    price = Column(Float, nullable=False)
-    quantity = Column(Integer, default=1)
+    price = Column(Float, nullable=False)          # за ШТУКУ
+    package_size = Column(Integer, default=1)      # снимок размера упаковки
+    quantity = Column(Integer, default=1)          # УПАКОВОК
     order = relationship("Order", back_populates="items")
 
     @property
+    def total_stems(self) -> int:
+        return self.quantity * (self.package_size or 1)
+
+    @property
     def subtotal(self) -> float:
-        return self.price * self.quantity
+        """Сумма позиции: цена/шт × шт-в-упак × упак."""
+        return self.price * (self.package_size or 1) * self.quantity
 
 
 class Notification(Base):

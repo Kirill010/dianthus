@@ -7,25 +7,37 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="mb-3">
             <label class="form-label fw-bold">Комментарий</label>
-            <textarea name="comment" class="form-control" rows="3" maxlength="1000" placeholder="Например: нужна досрочная отгрузка"></textarea>
+            <textarea name="comment" class="form-control" rows="3" maxlength="1000"
+                      placeholder="Например: нужна досрочная отгрузка"></textarea>
         </div>
-        <button type="submit" class="btn btn-primary btn-lg w-100"><i class="fas fa-check me-2"></i>Подтвердить заказ</button>
+        <button type="submit" class="btn btn-primary btn-lg w-100">
+            <i class="fas fa-check me-2"></i>Подтвердить заказ
+        </button>
     </form>
 </div>
 <div class="cart-summary mt-3">
     {% for item in cart %}
     {% set pack = item.package_size or 1 %}
-    {% set stems = item.quantity * pack %}
+    {% set line_total = item.price * pack * item.quantity %}
     <div class="cart-summary__row">
         <span>
-            {{ item.name }} — {{ item.quantity }} упак.
-            × {{ pack }} шт = {{ stems }} шт
+            {{ item.name }} — {{ item.quantity }} упак. × {{ pack }} шт
+            = {{ item.quantity * pack }} шт
         </span>
-        <span>{{ "%.0f"|format(item.price * item.quantity) }} ₽</span>
+        <span>{{ "%.2f"|format(line_total) }} ₽</span>
     </div>
     {% endfor %}
+    <div class="cart-summary__row">
+        <span>Подытог:</span><span>{{ "%.2f"|format(subtotal) }} ₽</span>
+    </div>
+    {% if discount_percent and discount_percent > 0 %}
+    <div class="cart-summary__row" style="color:#c97b4a;">
+        <span>Скидка {{ discount_percent }}%:</span>
+        <span>−{{ "%.2f"|format(discount_amount) }} ₽</span>
+    </div>
+    {% endif %}
     <div class="cart-summary__row cart-summary__row--total">
-        <span>Итого:</span><strong>{{ "%.0f"|format(total) }} ₽</strong>
+        <span>Итого:</span><strong>{{ "%.2f"|format(total) }} ₽</strong>
     </div>
 </div>
 {% endblock %}

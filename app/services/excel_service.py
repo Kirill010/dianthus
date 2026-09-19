@@ -46,30 +46,40 @@ def export_orders_to_excel(orders: list) -> BytesIO:
     ws = wb.active
     ws.title = "Заказы"
     ws.append(["№", "Дата", "Компания", "Контакт", "Email",
-               "Товар", "Кол-во", "Ед.", "Цена", "Сумма позиции",
-               "Итого", "Статус", "Комментарий"])
+               "Товар", "Упак.", "Шт/упак", "Всего шт",
+               "Цена/шт", "Сумма позиции",
+               "Подытог", "Скидка %", "Итого", "Статус", "Комментарий"])
     _header(ws)
     for order in orders:
         user = order.user
         first = True
-        for item in order.items or [None]:
-            if item is None:
-                ws.append([order.id,
-                           order.created_at.strftime("%d.%m.%Y %H:%M"),
-                           user.company_name if user else "Гость",
-                           user.full_name if user else "",
-                           user.email if user else "",
-                           "—", 0, "", 0, 0, order.total_price,
-                           order.status, order.comment])
-                break
+        if not order.items:
+            ws.append([order.id,
+                       order.created_at.strftime("%d.%m.%Y %H:%M"),
+                       user.company_name if user else "Гость",
+                       user.full_name if user else "",
+                       user.email if user else "",
+                       "—", 0, 0, 0, 0, 0,
+                       order.subtotal, order.discount_percent,
+                       order.total_price, order.status, order.comment])
+            continue
+        for item in order.items:
+            pack = item.package_size or 1
+            stems = item.quantity * pack
             ws.append([
                 order.id if first else "",
                 order.created_at.strftime("%d.%m.%Y %H:%M") if first else "",
                 (user.company_name if user else "Гость") if first else "",
                 (user.full_name if user else "") if first else "",
                 (user.email if user else "") if first else "",
-                item.product_name, item.quantity, item.unit,
-                item.price, item.subtotal,
+                item.product_name,
+                item.quantity,
+                pack,
+                stems,
+                item.price,
+                item.subtotal,
+                order.subtotal if first else "",
+                order.discount_percent if first else "",
                 order.total_price if first else "",
                 order.status if first else "",
                 order.comment if first else "",
@@ -83,12 +93,13 @@ def export_customers_to_excel(customers: list[dict]) -> BytesIO:
     wb = Workbook()
     ws = wb.active
     ws.title = "Клиенты"
-    ws.append(["Компания", "Контакт", "Email", "Телефон",
+    ws.append(["Компания", "Контакт", "Email", "Телефон", "Скидка %",
                "Заказов", "Сумма, ₽", "Последний заказ"])
     _header(ws)
     for c in customers:
         ws.append([c.get("company_name", ""), c.get("full_name", ""),
                    c.get("email", ""), c.get("phone", ""),
+                   c.get("discount_percent", 0),
                    c.get("orders_count", 0), c.get("total_sum", 0),
                    c.get("last_order_date", "")])
     _autosize(ws)
@@ -96,7 +107,7 @@ def export_customers_to_excel(customers: list[dict]) -> BytesIO:
 
 
 # ═══════════════════════════════════════════════════════════
-# ИМПОРТ СПРАВОЧНИКА ТОВАРОВ (по строгому шаблону)
+# ИМПОРТ СПРАВОЧНИКА ТОВАРОВ
 # ═══════════════════════════════════════════════════════════
 
 PRODUCT_IMPORT_HEADERS = ["Название", "Страна", "Длина, см",
@@ -154,16 +165,17 @@ def build_products_import_template() -> BytesIO:
 
 
 # ═══════════════════════════════════════════════════════════
-# ПАРСЕР НАКЛАДНЫХ ОТ ПОСТАВЩИКОВ (.xls / .xlsx)
+# ПАРСЕР НАКЛАДНЫХ
 # ═══════════════════════════════════════════════════════════
 
 _COL_ALIASES: dict[str, list[str]] = {
-    "name":     ["товар", "наименование", "название"],
-    "quantity": ["количество", "кол-во", "колво", "кол."],
-    "unit":     ["ед.", "единица", "ед. изм", "ед.изм"],
-    "price":    ["цена"],
-    "total":    ["сумма", "стоимость"],
-    "country":  ["страна происхождения", "страна"],
+    "name":         ["товар", "наименование", "название"],
+    "quantity":     ["количество", "кол-во", "колво", "кол."],
+    "unit":         ["ед.", "единица", "ед. изм", "ед.изм"],
+    "price":        ["цена"],
+    "total":        ["сумма", "стоимость"],
+    "country":      ["страна происхождения", "страна"],
+    "package_size": ["в упаковке", "упаковка", "шт в упак", "шт/упак"],
 }
 
 _STOP_WORDS = [
@@ -182,11 +194,30 @@ _CATEGORY_PATTERNS: list[tuple[str, str]] = [
     (r"горшеч", "Горшечные"),
     (r"зелень", "Зелень"),
     (r"\btessa\b", "Роза Эквадор"),
+    (r"роза", "Роза Эквадор"),
+]
+
+# Предполагаемый размер упаковки по названию (если в накладной нет колонки)
+_DEFAULT_PACK_BY_NAME: list[tuple[str, int]] = [
+    (r"гвоздик", 20),
+    (r"тюльпан", 50),
+    (r"пион", 10),
+    (r"хризантем", 10),
+    (r"\btessa\b", 25),
+    (r"роза", 25),
 ]
 
 
+def guess_package_size(name: str) -> int:
+    """Пытается угадать размер упаковки по названию товара."""
+    low = name.lower()
+    for pattern, size in _DEFAULT_PACK_BY_NAME:
+        if re.search(pattern, low):
+            return size
+    return 1
+
+
 def _read_xls(content: bytes) -> list[list]:
-    """Читает .xls через xlrd. Возвращает список списков."""
     import xlrd
     wb = xlrd.open_workbook(file_contents=content)
     sheet = wb.sheet_by_index(0)
@@ -194,22 +225,12 @@ def _read_xls(content: bytes) -> list[list]:
 
 
 def _read_xlsx(content: bytes) -> list[list]:
-    """Читает .xlsx через openpyxl. Возвращает список списков."""
     wb = load_workbook(BytesIO(content), data_only=True)
     ws = wb.active
     return [list(row) for row in ws.iter_rows(values_only=True)]
 
 
 def _to_float(v) -> float:
-    """
-    Достаёт число из значения любой формы:
-       300        → 300.0
-       "300"      → 300.0
-       "300шт"    → 300.0
-       "52,00"    → 52.0
-       "15 600,00"→ 15600.0
-       "1 234 ₽"  → 1234.0
-    """
     if v is None:
         return 0.0
     if isinstance(v, (int, float)):
@@ -235,11 +256,6 @@ def _clean_name(raw) -> str:
 
 
 def _find_header(rows: list[list]) -> tuple[int, dict[str, int]]:
-    """
-    Ищет строку-шапку в первых 80 строках.
-    Возвращает (индекс строки, {поле: индекс колонки}).
-    Если шапки нет — (-1, {}).
-    """
     for i, row in enumerate(rows[:80]):
         col_map: dict[str, int] = {}
         for j, cell in enumerate(row):
@@ -253,22 +269,12 @@ def _find_header(rows: list[list]) -> tuple[int, dict[str, int]]:
                     if alias in s:
                         col_map[field] = j
                         break
-        # Шапка найдена, если есть товар + количество + цена
         if {"name", "quantity", "price"} <= col_map.keys():
             return i, col_map
     return -1, {}
 
 
 def _is_stop_row(row: list) -> bool:
-    """
-    Строка — конец таблицы?
-
-    ⚠️ ВАЖНО:
-      • Пустая строка НЕ считается концом — просто пропускается.
-      • Стоп-слово ищется по ВСЕЙ строке, а не по первым 8 ячейкам.
-        Иначе вторая строка шапки («Страна происхождения») роняет
-        парсер.
-    """
     if not row:
         return False
     chunk = " ".join(_clean_name(c) for c in row).lower().strip()
@@ -278,7 +284,6 @@ def _is_stop_row(row: list) -> bool:
 
 
 def _extract_length(name: str) -> int:
-    """Ищет длину стебля в названии (число 20-150)."""
     for m in re.finditer(r"\b(\d{2,3})\b", name):
         n = int(m.group(1))
         if _LENGTH_MIN <= n <= _LENGTH_MAX:
@@ -297,18 +302,16 @@ def _guess_category(name: str) -> str:
 def parse_invoice(content: bytes, filename: str
                   ) -> tuple[list[dict], list[str]]:
     """
-    Универсальный парсер накладных поставщиков.
+    Универсальный парсер накладных.
 
     Возвращает:
-        items — список позиций:
-            [{"name", "quantity", "unit", "price", "total",
-              "length_cm", "category", "country"}, ...]
-        warnings — список предупреждений (не ошибок).
+        items — [{"name", "quantity", "unit", "price", "total",
+                  "length_cm", "category", "country", "package_size"}]
+        warnings
     """
     warnings: list[str] = []
     fn = (filename or "").lower()
 
-    # 1. Читаем файл
     try:
         if fn.endswith(".xls"):
             rows = _read_xls(content)
@@ -322,7 +325,6 @@ def parse_invoice(content: bytes, filename: str
     if not rows:
         return [], ["Файл пуст"]
 
-    # 2. Ищем шапку
     header_idx, col_map = _find_header(rows)
     if header_idx < 0:
         return [], [
@@ -333,7 +335,6 @@ def parse_invoice(content: bytes, filename: str
     logger.info("Накладная: шапка в строке %d, колонки %s",
                 header_idx + 1, col_map)
 
-    # 3. Читаем данные построчно
     items: list[dict] = []
 
     def cell(row, field):
@@ -351,10 +352,8 @@ def parse_invoice(content: bytes, filename: str
 
         name = _clean_name(cell(row, "name"))
         if len(name) < 2:
-            # Пустая строка или продолжение шапки — пропускаем
             continue
 
-        # Пропускаем встроенные «итого» внутри таблицы
         if any(w in name.lower() for w in ["итого", "всего", "ндс"]):
             continue
 
@@ -378,16 +377,18 @@ def parse_invoice(content: bytes, filename: str
 
         unit = _clean_name(cell(row, "unit")) or "шт"
         country = _clean_name(cell(row, "country"))
+        pack_from_invoice = _to_int(cell(row, "package_size")) or 0
 
         items.append({
             "name": name,
-            "quantity": quantity,
+            "quantity": quantity,           # ШТУК
             "unit": unit,
-            "price": price,
+            "price": price,                 # за ШТУКУ
             "total": total,
             "length_cm": _extract_length(name),
             "category": _guess_category(name),
             "country": country,
+            "package_size": pack_from_invoice,  # 0 = неизвестно
         })
 
     if not items:
@@ -396,8 +397,5 @@ def parse_invoice(content: bytes, filename: str
             "Накладная: 0 позиций. header_idx=%d, col_map=%s",
             header_idx, col_map,
         )
-        for r in range(header_idx + 1, min(header_idx + 6, len(rows))):
-            logger.warning("Строка %d (первые 15): %s",
-                           r + 1, rows[r][:15])
 
     return items, warnings

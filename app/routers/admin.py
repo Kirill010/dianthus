@@ -18,8 +18,8 @@ from ..models import (ORDER_STATUSES, PRODUCT_CATEGORIES, SUPPLY_STATUSES,
 from ..security import check_csrf
 from ..services.excel_service import (
     build_products_import_template, export_customers_to_excel,
-    export_orders_to_excel, import_products_from_excel,
-    parse_invoice,
+    export_orders_to_excel, guess_package_size,
+    import_products_from_excel, parse_invoice,
 )
 from ..services.upload_service import delete_upload, save_upload
 from ..templating import render
@@ -130,8 +130,6 @@ async def user_demote(user_id: int, request: Request,
         return RedirectResponse(url="/admin", status_code=303)
     user.is_admin = False
     db.commit()
-    logger.info("👤 %s снят с админов (кем: %s)",
-                user.email, current_admin.email)
     request.session["flash"] = f"«{user.full_name}» больше не администратор"
     return RedirectResponse(url="/admin", status_code=303)
 
@@ -141,7 +139,6 @@ async def user_approve(user_id: int, request: Request,
                        db: Session = Depends(get_db),
                        current_admin=Depends(require_admin),
                        _csrf: None = Depends(check_csrf)):
-    """Одобрить заявку на регистрацию клиента."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         request.session["flash"] = "Пользователь не найден"
@@ -151,8 +148,6 @@ async def user_approve(user_id: int, request: Request,
         return RedirectResponse(url="/admin", status_code=303)
     user.is_approved = True
     db.commit()
-    logger.info("✅ Одобрен клиент: %s (кем: %s)",
-                user.email, current_admin.email)
     request.session["flash"] = (
         f"✅ «{user.company_name}» ({user.full_name}) одобрен"
     )
@@ -164,7 +159,6 @@ async def user_reject(user_id: int, request: Request,
                       db: Session = Depends(get_db),
                       current_admin=Depends(require_admin),
                       _csrf: None = Depends(check_csrf)):
-    """Удалить пользователя. История его заказов СОХРАНЯЕТСЯ."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         request.session["flash"] = "Пользователь не найден"
@@ -181,9 +175,33 @@ async def user_reject(user_id: int, request: Request,
     name, email = user.full_name, user.email
     db.delete(user)
     db.commit()
-    logger.info("🗑 Удалён пользователь: %s (кем: %s)",
-                email, current_admin.email)
     request.session["flash"] = f"🗑 «{name}» удалён"
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+# ─── НОВОЕ: управление скидкой клиента ───
+
+@router.post("/users/{user_id}/discount")
+async def user_set_discount(user_id: int, request: Request,
+                            discount_percent: float = Form(0),
+                            db: Session = Depends(get_db),
+                            current_admin=Depends(require_admin),
+                            _csrf: None = Depends(check_csrf)):
+    """Установить персональную скидку клиента (0..100 %)."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        request.session["flash"] = "Пользователь не найден"
+        return RedirectResponse(url="/admin", status_code=303)
+    if discount_percent < 0 or discount_percent > 100:
+        request.session["flash"] = "❌ Скидка должна быть в диапазоне 0..100"
+        return RedirectResponse(url="/admin", status_code=303)
+    user.discount_percent = float(discount_percent)
+    db.commit()
+    logger.info("💸 Скидка %s%% установлена для %s (кем: %s)",
+                discount_percent, user.email, current_admin.email)
+    request.session["flash"] = (
+        f"💸 «{user.company_name}»: скидка {discount_percent:.1f}%"
+    )
     return RedirectResponse(url="/admin", status_code=303)
 
 
@@ -206,7 +224,6 @@ async def update_order_status(request: Request,
     order.status = status
     db.commit()
 
-    # Создаём уведомление для клиента
     if order.user_id:
         status_text = {
             "Подтверждён": "Ваш заказ подтверждён",
@@ -256,6 +273,7 @@ async def customers_export(db: Session = Depends(get_db),
         customers.append({
             "company_name": u.company_name, "full_name": u.full_name,
             "email": u.email, "phone": u.phone,
+            "discount_percent": u.discount_percent or 0,
             "orders_count": len(orders),
             "total_sum": sum(o.total_price for o in orders),
             "last_order_date": max(o.created_at for o in orders)
@@ -344,15 +362,13 @@ def _validate_product(name, length_cm, package_size, min_quantity) -> list[str]:
         elif length_cm > 500:
             errors.append("Длина > 500 см")
 
-    # Проверка: минимум к заказу не должен быть больше 100 000 шт
     if package_size and min_quantity:
         total_min = package_size * min_quantity
         if total_min > 100_000:
             errors.append(
                 f"Минимум к заказу получается {total_min:,} шт — "
-                f"это слишком много. Проверьте «В упаковке» и «Мин. заказ»."
+                f"это слишком много."
             )
-
     return errors
 
 
@@ -598,7 +614,7 @@ async def supply_delete(supply_id: int, request: Request,
     return RedirectResponse(url="/admin", status_code=303)
 
 
-# ═══════ ИМПОРТ НАКЛАДНОЙ ═══════════════════════════════════
+# ═══════ ИМПОРТ НАКЛАДНОЙ (ИСПРАВЛЕНО) ═══════════════════════
 
 @router.post("/supplies/{supply_id}/import/invoice")
 async def supply_import_invoice(
@@ -646,20 +662,25 @@ async def supply_import_invoice(
     created_products = 0
     updated_items = 0
     new_items = 0
+    skipped = []
 
     try:
         for it in items:
+            # 1) Ищем товар в справочнике
             product = (db.query(Product)
                        .filter(Product.name == it["name"])
                        .first())
+
+            # 2) Если нет — создаём с угаданным размером упаковки
             if not product:
+                pack = it.get("package_size") or guess_package_size(it["name"])
                 product = Product(
                     name=it["name"],
                     description="",
                     country=it.get("country") or supply.country,
                     length_cm=it.get("length_cm", 0),
-                    unit=it.get("unit", "шт"),
-                    package_size=1,
+                    unit="упаковка",
+                    package_size=pack,
                     min_quantity=1,
                     image_url="",
                     category=it.get("category", "Прочее"),
@@ -668,20 +689,36 @@ async def supply_import_invoice(
                 db.flush()
                 created_products += 1
 
+            pack = max(1, product.package_size or 1)
+
+            # 3) Переводим ШТУКИ → УПАКОВКИ
+            packs = it["quantity"] // pack
+            if packs <= 0:
+                skipped.append(
+                    f"{it['name']}: {it['quantity']} шт < 1 упак ({pack} шт)"
+                )
+                continue
+            remainder = it["quantity"] - packs * pack
+            if remainder:
+                warnings.append(
+                    f"{it['name']}: {remainder} шт не вошли в целые упаковки"
+                )
+
+            # 4) Обновляем/создаём позицию поставки
             existing = (db.query(SupplyItem)
                         .filter(SupplyItem.supply_id == supply_id,
                                 SupplyItem.product_id == product.id)
                         .first())
             if existing:
-                existing.price = it["price"]
-                existing.stock += it["quantity"]
+                existing.price = it["price"]   # цена за ШТУКУ
+                existing.stock += packs         # УПАКОВКИ
                 updated_items += 1
             else:
                 db.add(SupplyItem(
                     supply_id=supply_id,
                     product_id=product.id,
-                    price=it["price"],
-                    stock=it["quantity"],
+                    price=it["price"],   # цена за ШТУКУ
+                    stock=packs,         # УПАКОВОК
                 ))
                 new_items += 1
 
@@ -695,14 +732,17 @@ async def supply_import_invoice(
 
     msg = (f"📄 Импорт накладной: +{new_items} позиций, "
            f"~{updated_items} обновлено. "
-           f"Создано товаров в справочнике: {created_products}.")
+           f"Создано товаров: {created_products}. "
+           f"Штуки пересчитаны в упаковки.")
     if warnings:
-        msg += f" ⚠️ Предупреждений: {len(warnings)} (см. лог)"
+        msg += f" ⚠️ Предупреждений: {len(warnings)}"
         for w in warnings[:5]:
             logger.warning("Накладная: %s", w)
+    if skipped:
+        msg += f" Пропущено: {len(skipped)}."
 
-    logger.info("Импорт накладной в поставку №%d: %d позиций, "
-                "+%d товаров", supply_id, len(items), created_products)
+    logger.info("Импорт накладной в поставку №%d: %d позиций, +%d товаров",
+                supply_id, len(items), created_products)
     request.session["flash"] = msg
     return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit",
                             status_code=303)
@@ -713,8 +753,9 @@ async def supply_import_invoice(
 @router.post("/supplies/{supply_id}/items/add")
 async def supply_item_add(
     supply_id: int, request: Request,
-    product_id: int = Form(...), price: float = Form(0),
-    stock: int = Form(0),
+    product_id: int = Form(...),
+    quantity_stems: int = Form(0),        # ← вводим в ШТУКАХ
+    price: float = Form(0),               # ← цена за ШТУКУ
     db: Session = Depends(get_db),
     _a=Depends(require_admin),
     _csrf: None = Depends(check_csrf),
@@ -730,12 +771,24 @@ async def supply_item_add(
             url=f"/admin/supplies/{supply_id}/edit", status_code=303)
 
     errors = []
-    for check, v in [(validate_price, price), (validate_stock, stock)]:
-        msg = check(v)
-        if msg:
-            errors.append(msg)
+    msg = validate_price(price)
+    if msg:
+        errors.append(msg)
+    if quantity_stems <= 0:
+        errors.append("Количество должно быть больше 0")
+
     if errors:
         _err(request, errors)
+        return RedirectResponse(
+            url=f"/admin/supplies/{supply_id}/edit", status_code=303)
+
+    pack = max(1, product.package_size or 1)
+    packs = quantity_stems // pack
+    if packs <= 0:
+        request.session["flash"] = (
+            f"❌ {quantity_stems} шт < 1 упак ({pack} шт). "
+            f"Введите минимум {pack} шт."
+        )
         return RedirectResponse(
             url=f"/admin/supplies/{supply_id}/edit", status_code=303)
 
@@ -744,12 +797,16 @@ async def supply_item_add(
                         SupplyItem.product_id == product_id).first())
     if existing:
         existing.price = price
-        existing.stock += stock
-        request.session["flash"] = "Позиция обновлена"
+        existing.stock += packs
+        request.session["flash"] = (
+            f"Позиция обновлена: +{packs} упак. (было {existing.stock - packs})"
+        )
     else:
         db.add(SupplyItem(supply_id=supply_id, product_id=product_id,
-                          price=price, stock=stock))
-        request.session["flash"] = "Товар добавлен в поставку"
+                          price=price, stock=packs))
+        request.session["flash"] = (
+            f"Добавлено: {packs} упак. × {pack} шт = {packs * pack} шт"
+        )
 
     try:
         db.commit()
@@ -767,7 +824,8 @@ async def supply_item_add(
 @router.post("/supply_items/{item_id}/update")
 async def supply_item_update(
     item_id: int, request: Request,
-    price: float = Form(...), stock: int = Form(...),
+    price: float = Form(...),           # за ШТУКУ
+    stock: int = Form(...),             # УПАКОВОК
     db: Session = Depends(get_db),
     _a=Depends(require_admin),
     _csrf: None = Depends(check_csrf),

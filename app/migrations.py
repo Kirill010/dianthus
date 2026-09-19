@@ -20,12 +20,13 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
         "category":     "VARCHAR(100) DEFAULT 'Прочее'",
     },
     "users": {
-        "phone":        "VARCHAR(30) DEFAULT ''",
-        "company_name": "VARCHAR(200) DEFAULT ''",
-        "inn":          "VARCHAR(12) DEFAULT ''",
-        "city":         "VARCHAR(100) DEFAULT ''",
-        "is_admin":     "BOOLEAN DEFAULT FALSE",
-        "is_approved":  "BOOLEAN DEFAULT FALSE",
+        "phone":            "VARCHAR(30) DEFAULT ''",
+        "company_name":     "VARCHAR(200) DEFAULT ''",
+        "inn":              "VARCHAR(12) DEFAULT ''",
+        "city":             "VARCHAR(100) DEFAULT ''",
+        "is_admin":         "BOOLEAN DEFAULT FALSE",
+        "is_approved":      "BOOLEAN DEFAULT FALSE",
+        "discount_percent": "FLOAT DEFAULT 0",       # ← новое
     },
     "supplies": {
         "status": "VARCHAR(30) DEFAULT 'Ожидается'",
@@ -35,8 +36,13 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
         "is_active": "BOOLEAN DEFAULT FALSE",
     },
     "orders": {
-        "status":  "VARCHAR(30) DEFAULT 'Новый'",
-        "comment": "TEXT DEFAULT ''",
+        "status":           "VARCHAR(30) DEFAULT 'Новый'",
+        "comment":          "TEXT DEFAULT ''",
+        "subtotal":         "FLOAT DEFAULT 0",       # ← новое
+        "discount_percent": "FLOAT DEFAULT 0",       # ← новое
+    },
+    "order_items": {
+        "package_size": "INTEGER DEFAULT 1",         # ← новое
     },
 }
 
@@ -46,7 +52,6 @@ EXPECTED_INDEXES: dict[str, list[tuple[str, str]]] = {
 
 
 def ensure_notifications_table() -> None:
-    """Создаёт таблицу уведомлений, если её нет."""
     try:
         insp = inspect(engine)
         if "notifications" not in insp.get_table_names():
@@ -55,6 +60,32 @@ def ensure_notifications_table() -> None:
             logger.info("🔧 Создана таблица notifications")
     except Exception as e:
         logger.error("Не удалось создать таблицу notifications: %s", e)
+
+
+def _backfill_order_subtotals() -> None:
+    """Заполняет subtotal для старых заказов (subtotal = total_price)."""
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "UPDATE orders SET subtotal = total_price "
+                "WHERE subtotal = 0 AND total_price > 0"
+            ))
+    except Exception as e:
+        logger.warning("Backfill orders.subtotal: %s", e)
+
+
+def _backfill_order_item_pack_sizes() -> None:
+    """Заполняет package_size в order_items для старых заказов."""
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("""
+                UPDATE order_items oi
+                SET package_size = COALESCE(p.package_size, 1)
+                FROM products p
+                WHERE oi.product_id = p.id AND oi.package_size = 1
+            """))
+    except Exception as e:
+        logger.warning("Backfill order_items.package_size: %s", e)
 
 
 def auto_migrate() -> None:
@@ -98,6 +129,10 @@ def auto_migrate() -> None:
                     added += 1
                 except Exception as e:
                     logger.warning("Индекс %s: %s", idx_name, e)
+
+    _backfill_order_subtotals()
+    _backfill_order_item_pack_sizes()
+
     if added:
         logger.info("✅ Авто-миграция: +%d изменений", added)
     else:

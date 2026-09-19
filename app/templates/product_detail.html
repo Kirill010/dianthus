@@ -4,7 +4,8 @@
 
 {% set pack = product.package_size or 1 %}
 {% set stems = item.stock * pack %}
-{% set min_stems = pack * (product.min_quantity or 1) %}
+{% set min_packs = product.min_quantity or 1 %}
+{% set min_stems = pack * min_packs %}
 {% set is_out = stems < 1 %}
 
 <div class="product-detail">
@@ -29,12 +30,14 @@
         </div>
         {% endif %}
         <div class="spec-row">
-            <span class="spec-label">Кол-во в уп:</span>
-            <span class="spec-value">{{ pack }}шт</span>
+            <span class="spec-label">В упаковке:</span>
+            <span class="spec-value">{{ pack }} шт</span>
         </div>
         <div class="spec-row">
             <span class="spec-label">Доступно:</span>
-            <span class="spec-value spec-value--stock">{{ stems }}шт</span>
+            <span class="spec-value spec-value--stock">
+                {{ item.stock }} упак. ({{ stems }} шт)
+            </span>
         </div>
     </div>
 
@@ -46,7 +49,12 @@
     </div>
     {% endif %}
 
-    <div class="product-detail__price">{{ "%.2f"|format(item.price) }} ₽</div>
+    <div class="product-detail__price">
+        {{ "%.2f"|format(item.price) }} ₽<small style="font-size:.5em;">/шт</small>
+    </div>
+    <div class="text-muted mb-2">
+        {{ "%.0f"|format(item.price * pack) }} ₽ за упаковку ({{ pack }} шт)
+    </div>
 
     {% if product.description %}<p class="product-detail__desc">{{ product.description }}</p>{% endif %}
 
@@ -70,15 +78,10 @@
         </button>
     </form>
     <p class="qty-hint">
-        Упаковок: <strong>{{ product.min_quantity or 1 }}</strong> × {{ pack }} шт
-        = <strong>{{ min_stems }} шт</strong>
+        В корзину добавляется <strong>{{ min_stems }} шт</strong>
+        ({{ min_packs }} упак. × {{ pack }} шт)
+        = <strong>{{ "%.0f"|format(item.price * min_stems) }} ₽</strong>
     </p>
-    {% elif not is_out %}
-    <div class="alert alert-warning mt-3">
-        <i class="fas fa-exclamation-triangle me-2"></i>
-        Минимальный заказ — {{ min_stems }} шт, а на складе только {{ stems }} шт.
-        Свяжитесь с менеджером.
-    </div>
     {% else %}
     <button class="btn btn-secondary btn-lg w-100 mt-3" disabled>
         <i class="fas fa-ban me-2"></i>Нет в наличии

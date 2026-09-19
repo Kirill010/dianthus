@@ -141,22 +141,32 @@
                     </td>
                     <td><small>{{ pack }} шт</small></td>
                     <td>
-                        <form action="/admin/supply_items/{{ item.id }}/update" method="post" class="d-flex gap-1" style="max-width:240px;">
+                        <form action="/admin/supply_items/{{ item.id }}/update" method="post"
+                            class="d-flex gap-1" style="max-width:260px;">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                            <input type="number" step="0.01" name="price" class="form-control form-control-sm" value="{{ item.price }}" required>
-                            <input type="number" name="stock" class="form-control form-control-sm" value="{{ item.stock }}" required>
-                            <button type="submit" class="btn btn-sm btn-primary"><i class="fas fa-check"></i></button>
+                            <input type="number" step="0.01" name="price"
+                                class="form-control form-control-sm"
+                                value="{{ item.price }}" required
+                                title="Цена за ШТУКУ">
+                            <input type="number" name="stock"
+                                class="form-control form-control-sm"
+                                value="{{ item.stock }}" required
+                                title="Количество УПАКОВОК">
+                            <button type="submit" class="btn btn-sm btn-primary">
+                                <i class="fas fa-check"></i>
+                            </button>
                         </form>
+                        <small class="text-muted">цена/шт · кол-во упак.</small>
                     </td>
                     <td>
                         {% if item.stock > 0 %}
-                            <span class="badge bg-success">{{ item.stock }}</span>
+                            <span class="badge bg-success">{{ item.stock }} упак.</span>
                         {% else %}
                             <span class="badge bg-danger">0</span>
                         {% endif %}
                     </td>
                     <td>
-                        <span class="supply-items-table__stems">{{ total_stems }}</span>
+                        <span class="supply-items-table__stems">{{ total_stems }} шт</span>
                     </td>
                     <td>
                         {% if item.is_active %}
@@ -166,9 +176,12 @@
                         {% endif %}
                     </td>
                     <td>
-                        <form action="/admin/supply_items/{{ item.id }}/delete" method="post" onsubmit="return confirm('Удалить?');">
+                        <form action="/admin/supply_items/{{ item.id }}/delete" method="post"
+                            onsubmit="return confirm('Удалить?');">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                            <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                            <button type="submit" class="btn btn-sm btn-outline-danger">
+                                <i class="fas fa-trash"></i>
+                            </button>
                         </form>
                     </td>
                 </tr>
@@ -191,13 +204,30 @@
                 <select name="product_id" class="form-select" required>
                     <option value="">— Выберите товар —</option>
                     {% for p in all_products %}
-                        <option value="{{ p.id }}">{{ p.name }}{% if p.length_cm %} · {{ p.length_cm }} см{% endif %}{% if p.category %} · {{ p.category }}{% endif %}</option>
+                        <option value="{{ p.id }}">
+                            {{ p.name }}
+                            {% if p.length_cm %} · {{ p.length_cm }} см{% endif %}
+                            · уп. {{ p.package_size }} шт
+                        </option>
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-3"><input type="number" step="0.01" name="price" class="form-control" placeholder="Цена, ₽" min="0" required></div>
-            <div class="col-md-2"><input type="number" name="stock" class="form-control" placeholder="Кол-во упак." min="0" required></div>
-            <div class="col-md-2"><button type="submit" class="btn btn-primary w-100"><i class="fas fa-plus"></i> Добавить</button></div>
+            <div class="col-md-3">
+                <input type="number" step="0.01" name="price"
+                    class="form-control" placeholder="Цена, ₽/шт"
+                    min="0" required>
+            </div>
+            <div class="col-md-2">
+                <input type="number" name="quantity_stems"
+                    class="form-control" placeholder="Кол-во, шт"
+                    min="1" required>
+                <small class="text-muted">в штуках</small>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="fas fa-plus"></i> Добавить
+                </button>
+            </div>
         </div>
     </form>
     {% else %}

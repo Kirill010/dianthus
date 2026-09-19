@@ -11,11 +11,6 @@
     {% for cat in active_categories %}
         <a href="{{ category_url(cat) }}" class="category-tab {% if current_filters.category == cat %}active{% endif %}">{{ cat }}</a>
     {% endfor %}
-    {% for cat in all_categories %}
-        {% if cat not in active_categories %}
-            <a href="{{ category_url(cat) }}" class="category-tab {% if current_filters.category == cat %}active{% endif %}">{{ cat }}</a>
-        {% endif %}
-    {% endfor %}
 </div>
 
 <div class="level-tabs">
@@ -47,8 +42,9 @@
 <div class="product-grid">
     {% for item in items %}
     {% set pack = item.product.package_size or 1 %}
-    {% set stems = item.stock * pack %}
-    {% set min_stems = pack * (item.product.min_quantity or 1) %}
+    {% set stems = item.stock * pack %}          {# всего стеблей #}
+    {% set min_packs = item.product.min_quantity or 1 %}
+    {% set min_stems = pack * min_packs %}
     {% set is_out = stems < 1 %}
     <div class="product-card {% if is_out %}product-card--out{% endif %}">
         <a href="/product/{{ item.id }}" class="product-card__image">
@@ -70,16 +66,23 @@
                 </div>
                 {% endif %}
                 <div class="spec-row">
-                    <span class="spec-label">Кол-во в уп:</span>
-                    <span class="spec-value">{{ pack }}шт</span>
+                    <span class="spec-label">В упаковке:</span>
+                    <span class="spec-value">{{ pack }} шт</span>
                 </div>
                 <div class="spec-row">
                     <span class="spec-label">Доступно:</span>
-                    <span class="spec-value spec-value--stock">{{ stems }}шт</span>
+                    <span class="spec-value spec-value--stock">
+                        {{ item.stock }} упак. ({{ stems }} шт)
+                    </span>
                 </div>
             </div>
 
-            <div class="product-card__price">{{ "%.2f"|format(item.price) }} ₽</div>
+            <div class="product-card__price">
+                {{ "%.2f"|format(item.price) }} ₽<small style="font-size:.65em;">/шт</small>
+            </div>
+            <div class="text-muted" style="font-size:.72rem; margin-top:-4px;">
+                {{ "%.0f"|format(item.price * pack) }} ₽ за упаковку
+            </div>
 
             {% set can_order = (not is_out) and (stems >= min_stems) %}
             {% if can_order %}
@@ -99,6 +102,9 @@
                 </div>
                 <button type="submit" class="btn-cart"><i class="fas fa-shopping-cart"></i></button>
             </form>
+            <small class="text-muted d-block mt-1">
+                {{ min_stems }} шт = {{ min_packs }} упак.
+            </small>
             {% elif not is_out %}
             <button class="btn-cart--disabled" disabled title="Минимум к заказу {{ min_stems }} шт, а на складе только {{ stems }} шт">
                 <i class="fas fa-info-circle"></i> Минимум {{ min_stems }} шт

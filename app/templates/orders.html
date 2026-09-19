@@ -15,6 +15,12 @@
                 {% else %}bg-secondary{% endif %}">{{ order.status }}</span>
         </div>
         <div class="order-card__meta">{{ order.created_at.strftime('%d.%m.%Y %H:%M') }}</div>
+        {% if order.discount_percent and order.discount_percent > 0 %}
+        <div class="order-card__meta">
+            Подытог {{ "%.0f"|format(order.subtotal) }} ₽ ·
+            скидка {{ order.discount_percent }}% = −{{ "%.0f"|format(order.discount_amount) }} ₽
+        </div>
+        {% endif %}
         <div class="order-card__sum">{{ "%.0f"|format(order.total_price) }} ₽</div>
         {% if order.comment %}<div class="order-card__comment">{{ order.comment }}</div>{% endif %}
     </div>

@@ -1,4 +1,4 @@
-"""Корзина и оформление заказа. Продажа кратно упаковкам."""
+"""Корзина и оформление заказа. Цена — за штуку, количество — упаковки."""
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
@@ -13,21 +13,43 @@ router = APIRouter()
 MAX_COMMENT_LENGTH = 1000
 
 
-def _cart_total(cart: list[dict]) -> float:
-    return sum(item["price"] * item["quantity"] for item in cart)
+# ───────── УТИЛИТЫ ─────────
 
+def _cart_subtotal(cart: list[dict]) -> float:
+    """
+    Сумма ДО скидки.
+    price — за ШТУКУ, quantity — УПАКОВКИ, package_size — штук в упаковке.
+    """
+    total = 0.0
+    for it in cart:
+        pack = it.get("package_size") or 1
+        total += it["price"] * pack * it["quantity"]
+    return total
+
+
+def _apply_discount(subtotal: float, discount_percent: float):
+    """Возвращает (размер скидки, итог)."""
+    pct = max(0.0, min(100.0, float(discount_percent or 0)))
+    if pct <= 0:
+        return 0.0, subtotal
+    discount = subtotal * pct / 100.0
+    return discount, subtotal - discount
+
+
+# ───────── ДОБАВЛЕНИЕ ─────────
 
 @router.post("/add_to_cart")
 async def add_to_cart(
     request: Request,
     supply_item_id: int = Form(...),
-    quantity_stems: int = Form(0),     # ← количество ШТУК (кратно размеру упаковки)
+    quantity_stems: int = Form(0),    # ← клиент вводит ШТУКИ
     db: Session = Depends(get_db),
     _csrf: None = Depends(check_csrf),
 ):
     """
-    Клиент вводит количество ШТУК. Внутри корзины храним УПАКОВКИ.
-    Пример: упаковка = 25 шт, клиент ввёл 50 шт → 2 упаковки.
+    Клиент вводит количество ШТУК.
+    Внутри корзины храним УПАКОВКИ, цена — за штуку.
+    Пример: упаковка = 25 шт, ввёл 50 шт → 2 упаковки × 25 шт.
     """
     user = get_current_user(request, db)
     if not user:
@@ -40,10 +62,8 @@ async def add_to_cart(
         raise HTTPException(status_code=404, detail="Товар не найден")
 
     product = item.product
-    pack = product.package_size if (product.package_size and
-                                    product.package_size > 0) else 1
-    min_packs = product.min_quantity if (product.min_quantity and
-                                         product.min_quantity > 0) else 1
+    pack = max(1, product.package_size or 1)
+    min_packs = max(1, product.min_quantity or 1)
     min_stems = pack * min_packs
     max_stems = item.stock * pack
 
@@ -52,6 +72,7 @@ async def add_to_cart(
         return RedirectResponse(url=f"/product/{supply_item_id}",
                                 status_code=303)
 
+    # Нормализуем введённое количество
     if quantity_stems <= 0:
         quantity_stems = min_stems
     if quantity_stems < min_stems:
@@ -75,7 +96,7 @@ async def add_to_cart(
                     f"Максимум {item.stock} упак. ({item.stock * pack} шт)"
                 )
             ci["quantity"] = new_packs
-            ci.setdefault("package_size", pack)
+            ci["package_size"] = pack
             break
     else:
         cart.append({
@@ -84,17 +105,20 @@ async def add_to_cart(
             "name": product.name,
             "unit": product.unit,
             "package_size": pack,
-            "price": item.price,
+            "price": item.price,          # ₽ за ШТУКУ
             "image_url": product.image_url,
-            "quantity": quantity_packs,      # ← УПАКОВКИ
+            "quantity": quantity_packs,   # УПАКОВКИ
         })
         request.session["flash"] = (
-            f"«{product.name}» — {quantity_packs} упак. ({quantity_stems} шт)"
+            f"«{product.name}» — {quantity_packs} упак. "
+            f"({quantity_stems} шт × {item.price:.2f} ₽)"
         )
 
     request.session["cart"] = cart
     return RedirectResponse(url="/catalog", status_code=303)
 
+
+# ───────── ПРОСМОТР ─────────
 
 @router.get("/cart", response_class=HTMLResponse)
 async def cart_page(request: Request, db: Session = Depends(get_db)):
@@ -104,8 +128,9 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
 
     cart = request.session.get("cart", [])
     if not cart:
-        return render(request, "cart.html", db,
-                      user=user, cart=[], total=0)
+        return render(request, "cart.html", db, user=user, cart=[],
+                      subtotal=0, discount_amount=0, total=0,
+                      discount_percent=0)
 
     ids = [c["supply_item_id"] for c in cart]
     alive = {
@@ -124,6 +149,7 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
             removed_names.append(c["name"])
             continue
         c["price"] = item.price
+        c["package_size"] = max(1, item.product.package_size or 1)
         c["quantity"] = min(c["quantity"], item.stock)
         if c["quantity"] <= 0:
             removed_names.append(c["name"])
@@ -138,8 +164,16 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
         )
         return RedirectResponse(url="/cart", status_code=303)
 
+    subtotal = _cart_subtotal(clean_cart)
+    discount_percent = user.discount_percent or 0
+    discount_amount, total = _apply_discount(subtotal, discount_percent)
+
     return render(request, "cart.html", db,
-                  user=user, cart=clean_cart, total=_cart_total(clean_cart))
+                  user=user, cart=clean_cart,
+                  subtotal=subtotal,
+                  discount_percent=discount_percent,
+                  discount_amount=discount_amount,
+                  total=total)
 
 
 @router.post("/remove_from_cart")
@@ -159,6 +193,8 @@ async def clear_cart(request: Request, _csrf: None = Depends(check_csrf)):
     return RedirectResponse(url="/cart", status_code=303)
 
 
+# ───────── ОФОРМЛЕНИЕ ─────────
+
 @router.get("/checkout", response_class=HTMLResponse)
 async def checkout_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
@@ -168,8 +204,17 @@ async def checkout_page(request: Request, db: Session = Depends(get_db)):
     if not cart:
         request.session["flash"] = "Корзина пуста"
         return RedirectResponse(url="/catalog", status_code=303)
+
+    subtotal = _cart_subtotal(cart)
+    discount_percent = user.discount_percent or 0
+    discount_amount, total = _apply_discount(subtotal, discount_percent)
+
     return render(request, "checkout.html", db,
-                  user=user, cart=cart, total=_cart_total(cart))
+                  user=user, cart=cart,
+                  subtotal=subtotal,
+                  discount_percent=discount_percent,
+                  discount_amount=discount_amount,
+                  total=total)
 
 
 @router.post("/place_order")
@@ -210,8 +255,18 @@ async def place_order(request: Request, comment: str = Form(""),
             )
             return RedirectResponse(url="/cart", status_code=303)
 
-    order = Order(user_id=user.id, total_price=_cart_total(cart),
-                  status="Новый", comment=comment)
+    subtotal = _cart_subtotal(cart)
+    discount_percent = user.discount_percent or 0
+    _, total = _apply_discount(subtotal, discount_percent)
+
+    order = Order(
+        user_id=user.id,
+        subtotal=subtotal,
+        discount_percent=discount_percent,
+        total_price=total,
+        status="Новый",
+        comment=comment,
+    )
     db.add(order)
     db.flush()
 
@@ -222,8 +277,9 @@ async def place_order(request: Request, comment: str = Form(""),
             supply_item_id=c["supply_item_id"],
             product_name=c["name"],
             unit=c.get("unit", ""),
-            price=c["price"],
-            quantity=c["quantity"],
+            price=c["price"],                              # ₽/шт
+            package_size=c.get("package_size") or 1,       # шт в упак
+            quantity=c["quantity"],                        # упак
         ))
         items_map[c["supply_item_id"]].stock -= c["quantity"]
 
