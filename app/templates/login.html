@@ -58,18 +58,17 @@
                     <input type="email" name="email" class="form-control" maxlength="120" value="{{ register_data.email or '' }}" required>
                 </div>
                 <div class="mb-3">
-                    <label class="form-label small fw-bold">ИНН</label>
+                    <label class="form-label small fw-bold">ИНН *</label>
                     <input type="text" name="inn" class="form-control"
                            maxlength="12" value="{{ register_data.inn or '' }}"
-                           placeholder="10 или 12 цифр">
-                    <div class="form-text">Необязательно. Для юрлиц — 10 цифр, для ИП — 12</div>
+                           placeholder="10 или 12 цифр" required>
+                    <div class="form-text">Для юрлиц — 10 цифр, для ИП — 12</div>
                 </div>
                 <div class="mb-3">
-                    <label class="form-label small fw-bold">Город</label>
+                    <label class="form-label small fw-bold">Город *</label>
                     <input type="text" name="city" class="form-control"
                            maxlength="100" value="{{ register_data.city or '' }}"
-                           placeholder="Москва">
-                    <div class="form-text">Необязательно</div>
+                           placeholder="Москва" required>
                 </div>
                 <div class="mb-3">
                     <label class="form-label small fw-bold">Пароль *</label>

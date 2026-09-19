@@ -71,10 +71,10 @@ def validate_company_name(name: str) -> str | None:
 
 
 def validate_inn(inn: str) -> str | None:
-    """ИНН: 10 цифр (юрлицо) или 12 цифр (ИП). Необязательное поле."""
+    """ИНН: 10 цифр (юрлицо) или 12 цифр (ИП). Обязательное поле."""
     inn = (inn or "").strip()
     if not inn:
-        return None
+        return "Укажите ИНН"  # Было return None
     if not inn.isdigit():
         return "ИНН должен содержать только цифры"
     if len(inn) not in (10, 12):
@@ -83,9 +83,10 @@ def validate_inn(inn: str) -> str | None:
 
 
 def validate_city(city: str) -> str | None:
+    """Город. Обязательное поле."""
     city = (city or "").strip()
     if not city:
-        return None
+        return "Укажите город"  # Было return None
     if len(city) < 2:
         return "Название города слишком короткое"
     if len(city) > 100:
