@@ -55,10 +55,9 @@
     {% set min_packs = item.product.min_quantity or 1 %}
     {% set min_stems = pack * min_packs %}
     {% set is_out = stems < 1 %}
-    {% set price_per_pack = item.price * pack %}
     
     <div class="product-card {% if is_out %}product-card--out{% endif %}">
-        <!-- Картинка с кнопкой быстрого добавления -->
+        <!-- Картинка (кнопка "+" убрана) -->
         <div class="product-card__image-wrap">
             <a href="/product/{{ item.id }}" class="product-card__image">
                 {% if item.product.image_url %}
@@ -67,11 +66,6 @@
                     <div class="product-card__placeholder"><i class="fas fa-seedling"></i></div>
                 {% endif %}
             </a>
-            {% if not is_out %}
-            <button class="quick-add-btn" onclick="document.getElementById('qty-{{ item.id }}').stepUp()" title="Добавить 1 упаковку">
-                <i class="fas fa-plus"></i>
-            </button>
-            {% endif %}
             {% if is_out %}<span class="product-card__badge product-card__badge--out">Нет</span>{% endif %}
         </div>
 
@@ -97,10 +91,11 @@
                 </div>
             </div>
 
-            <!-- Цена за упаковку (крупно) и за штуку (мелко) -->
+            <!-- Цена только за штуку -->
             <div class="product-card__price-block">
-                <div class="product-card__price">{{ "%.2f"|format(price_per_pack) }} ₽</div>
-                <div class="product-card__price-sub">{{ "%.2f"|format(item.price) }} ₽/шт</div>
+                <div class="product-card__price">
+                    {{ "%.2f"|format(item.price) }} ₽<span style="font-size: 0.7em; font-weight: normal; color: #777;">/шт</span>
+                </div>
             </div>
 
             {% set can_order = (not is_out) and (stems >= min_stems) %}
