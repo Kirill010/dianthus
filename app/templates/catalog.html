@@ -1,18 +1,26 @@
 {% extends "base.html" %}
 {% block content %}
 
-<div class="catalog-header">
+<!-- Заголовок и поиск (компактно для мобильных) -->
+<div class="catalog-top-bar">
     <h1 class="catalog-title">Каталог</h1>
     <span class="catalog-count">{{ total_items }}</span>
 </div>
 
-<div class="category-tabs">
-    <a href="{{ category_url('') }}" class="category-tab {% if not current_filters.category %}active{% endif %}">Все</a>
+<!-- Горизонтальный скролл категорий -->
+<div class="category-scroll">
+    <a href="{{ category_url('') }}" class="category-btn {% if not current_filters.category %}active{% endif %}">Все</a>
     {% for cat in active_categories %}
-        <a href="{{ category_url(cat) }}" class="category-tab {% if current_filters.category == cat %}active{% endif %}">{{ cat }}</a>
+        <a href="{{ category_url(cat) }}" class="category-btn {% if current_filters.category == cat %}active{% endif %}">{{ cat }}</a>
+    {% endfor %}
+    {% for cat in all_categories %}
+        {% if cat not in active_categories %}
+            <a href="{{ category_url(cat) }}" class="category-btn {% if current_filters.category == cat %}active{% endif %}">{{ cat }}</a>
+        {% endif %}
     {% endfor %}
 </div>
 
+<!-- Фильтры по наличию (можно скрыть в выпадающий список на мобильных, но оставим как табы) -->
 <div class="level-tabs">
     {% for key, label in quantity_levels %}
         {% set cnt = level_counts.get(key, 0) %}
@@ -26,6 +34,7 @@
     {% endfor %}
 </div>
 
+<!-- Поиск -->
 <form class="catalog-search" method="get" action="/catalog">
     {% if current_filters.category %}<input type="hidden" name="category" value="{{ current_filters.category }}">{% endif %}
     {% if current_filters.level and current_filters.level != 'available' %}
@@ -42,19 +51,30 @@
 <div class="product-grid">
     {% for item in items %}
     {% set pack = item.product.package_size or 1 %}
-    {% set stems = item.stock * pack %}          {# всего стеблей #}
+    {% set stems = item.stock * pack %}
     {% set min_packs = item.product.min_quantity or 1 %}
     {% set min_stems = pack * min_packs %}
     {% set is_out = stems < 1 %}
+    {% set price_per_pack = item.price * pack %}
+    
     <div class="product-card {% if is_out %}product-card--out{% endif %}">
-        <a href="/product/{{ item.id }}" class="product-card__image">
-            {% if item.product.image_url %}
-                <img src="{{ item.product.image_url }}" alt="{{ item.product.name }}" loading="lazy">
-            {% else %}
-                <div class="product-card__placeholder"><i class="fas fa-seedling"></i></div>
+        <!-- Картинка с кнопкой быстрого добавления -->
+        <div class="product-card__image-wrap">
+            <a href="/product/{{ item.id }}" class="product-card__image">
+                {% if item.product.image_url %}
+                    <img src="{{ item.product.image_url }}" alt="{{ item.product.name }}" loading="lazy">
+                {% else %}
+                    <div class="product-card__placeholder"><i class="fas fa-seedling"></i></div>
+                {% endif %}
+            </a>
+            {% if not is_out %}
+            <button class="quick-add-btn" onclick="document.getElementById('qty-{{ item.id }}').stepUp()" title="Добавить 1 упаковку">
+                <i class="fas fa-plus"></i>
+            </button>
             {% endif %}
             {% if is_out %}<span class="product-card__badge product-card__badge--out">Нет</span>{% endif %}
-        </a>
+        </div>
+
         <div class="product-card__body">
             <a href="/product/{{ item.id }}" class="product-card__name">{{ item.product.name }}</a>
 
@@ -66,22 +86,21 @@
                 </div>
                 {% endif %}
                 <div class="spec-row">
-                    <span class="spec-label">В упаковке:</span>
-                    <span class="spec-value">{{ pack }} шт</span>
+                    <span class="spec-label">Кол-во в уп:</span>
+                    <span class="spec-value">{{ pack }}шт</span>
                 </div>
                 <div class="spec-row">
                     <span class="spec-label">Доступно:</span>
-                    <span class="spec-value spec-value--stock">
-                        {{ item.stock }} упак. ({{ stems }} шт)
+                    <span class="spec-value spec-value--stock" style="color: #2e7d32; font-weight: 700;">
+                        {{ stems }}шт
                     </span>
                 </div>
             </div>
 
-            <div class="product-card__price">
-                {{ "%.2f"|format(item.price) }} ₽<small style="font-size:.65em;">/шт</small>
-            </div>
-            <div class="text-muted" style="font-size:.72rem; margin-top:-4px;">
-                {{ "%.0f"|format(item.price * pack) }} ₽ за упаковку
+            <!-- Цена за упаковку (крупно) и за штуку (мелко) -->
+            <div class="product-card__price-block">
+                <div class="product-card__price">{{ "%.2f"|format(price_per_pack) }} ₽</div>
+                <div class="product-card__price-sub">{{ "%.2f"|format(item.price) }} ₽/шт</div>
             </div>
 
             {% set can_order = (not is_out) and (stems >= min_stems) %}
@@ -89,28 +108,31 @@
             <form action="/add_to_cart" method="post" class="product-card__form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="supply_item_id" value="{{ item.id }}">
-                <div class="qty-control">
-                    <button type="button" onclick="this.nextElementSibling.stepDown()">−</button>
-                    <input type="number"
-                           name="quantity_stems"
-                           value="{{ min_stems }}"
-                           min="{{ min_stems }}"
-                           max="{{ stems }}"
-                           step="{{ pack }}"
-                           required>
-                    <button type="button" onclick="this.previousElementSibling.stepUp()">+</button>
+                
+                <!-- Комбинированный блок: [-] [кол-во] [+] и кнопка корзины -->
+                <div class="qty-cart-group">
+                    <div class="qty-control">
+                        <button type="button" onclick="this.nextElementSibling.stepDown()">−</button>
+                        <input type="number" id="qty-{{ item.id }}"
+                               name="quantity_stems"
+                               value="{{ min_stems }}"
+                               min="{{ min_stems }}"
+                               max="{{ stems }}"
+                               step="{{ pack }}"
+                               required>
+                        <button type="button" onclick="this.previousElementSibling.stepUp()">+</button>
+                    </div>
+                    <button type="submit" class="btn-cart-icon">
+                        <i class="fas fa-shopping-cart"></i>
+                    </button>
                 </div>
-                <button type="submit" class="btn-cart"><i class="fas fa-shopping-cart"></i></button>
             </form>
-            <small class="text-muted d-block mt-1">
-                {{ min_stems }} шт = {{ min_packs }} упак.
-            </small>
             {% elif not is_out %}
             <button class="btn-cart--disabled" disabled title="Минимум к заказу {{ min_stems }} шт, а на складе только {{ stems }} шт">
                 <i class="fas fa-info-circle"></i> Минимум {{ min_stems }} шт
             </button>
             {% else %}
-            <button class="btn-cart--disabled" disabled><i class="fas fa-ban"></i> Нет</button>
+            <button class="btn-cart--disabled" disabled><i class="fas fa-ban"></i> Нет в наличии</button>
             {% endif %}
         </div>
     </div>
