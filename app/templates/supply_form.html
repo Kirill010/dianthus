@@ -77,7 +77,6 @@
     </div>
 </form>
 
-{# Импорт накладной — только когда поставка уже существует #}
 {% if supply %}
 <div class="card p-4 mb-4">
     <h5 class="mb-3">
@@ -208,29 +207,11 @@
 {% endif %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Нумеруем строки автоматически (на случай изменения порядка)
     const rows = document.querySelectorAll('.supply-items-table tbody tr');
     rows.forEach((row, i) => {
         const badge = row.querySelector('.supply-items-table__num-badge');
         if (badge) badge.textContent = i + 1;
     });
-
-    // Ctrl+F работает и так, но если хочешь свой поиск — раскомментируй ниже
-    /*
-    const searchInput = document.createElement('input');
-    searchInput.type = 'text';
-    searchInput.placeholder = 'Поиск по товарам в поставке...';
-    searchInput.className = 'form-control mb-3';
-    const table = document.querySelector('.supply-items-table');
-    table.parentElement.parentElement.insertBefore(searchInput, table.parentElement);
-    searchInput.addEventListener('input', function() {
-        const q = this.value.toLowerCase();
-        rows.forEach(row => {
-            const name = row.querySelector('td:nth-child(2)')?.textContent.toLowerCase() || '';
-            row.style.display = name.includes(q) ? '' : 'none';
-        });
-    });
-    */
 });
 </script>
 {% endblock %}

@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Диантус · Оптовый магазин цветов</title>
     <link rel="icon" type="image/png" href="/static/logo-icon.png">
-
     <link href="/static/vendor/bootstrap.min.css" rel="stylesheet">
     <link href="/static/vendor/fontawesome/css/all.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
@@ -41,6 +40,10 @@
             {% endif %}
             <a href="/contacts" class="app-header__icon" title="Контакты">
                 <i class="fas fa-phone"></i>
+            </a>
+            <a href="/notifications" class="app-header__icon" title="Уведомления">
+                <i class="fas fa-bell"></i>
+                {% if unread_count %}<span class="app-header__badge">{{ unread_count }}</span>{% endif %}
             </a>
             <a href="/cart" class="app-header__icon" title="Корзина">
                 <i class="fas fa-shopping-bag"></i>

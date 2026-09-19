@@ -73,7 +73,9 @@
                     <tr>
                         <td>{{ u.id }}</td>
                         <td><strong>{{ u.company_name }}</strong></td>
-                        <td>{{ u.full_name }}<br><small class="text-muted">{{ u.email }}</small></td>
+                        <td>{{ u.full_name }}<br><small class="text-muted">{{ u.email }}</small>
+                            {% if u.city %}<br><small class="text-muted">г. {{ u.city }}</small>{% endif %}
+                        </td>
                         <td>
                             {% if u.is_admin %}<span class="badge bg-dark">Админ</span>
                             {% elif u.is_approved %}<span class="badge bg-success">Активен</span>
@@ -81,7 +83,6 @@
                         </td>
                         <td>
                             {% if not u.is_admin and not u.is_approved %}
-                                {# ─── Новая заявка: Одобрить / Отклонить ─── #}
                                 <form action="/admin/users/{{ u.id }}/approve" method="post" class="d-inline">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                     <button class="btn btn-sm btn-success">
@@ -95,7 +96,6 @@
                                 </form>
 
                             {% elif u.is_admin %}
-                                {# ─── Админ ─── #}
                                 {% if u.id == user.id %}
                                     <span class="badge bg-dark px-3 py-2">
                                         <i class="fas fa-user me-1"></i>Это вы
@@ -112,7 +112,6 @@
                                 {% endif %}
 
                             {% else %}
-                                {# ─── Обычный одобренный клиент ─── #}
                                 <form action="/admin/users/{{ u.id }}/make_admin" method="post"
                                     class="d-inline"
                                     onsubmit="return confirm('Сделать {{ u.full_name }} администратором?');">

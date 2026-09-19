@@ -1,4 +1,4 @@
-"""Корзина и оформление заказа. Продаём упаковками."""
+"""Корзина и оформление заказа. Продажа кратно упаковкам."""
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
@@ -21,13 +21,13 @@ def _cart_total(cart: list[dict]) -> float:
 async def add_to_cart(
     request: Request,
     supply_item_id: int = Form(...),
-    quantity_stems: int = Form(0),     # ← ШТУКИ (а не упаковки)
+    quantity_stems: int = Form(0),     # ← количество ШТУК (кратно размеру упаковки)
     db: Session = Depends(get_db),
     _csrf: None = Depends(check_csrf),
 ):
     """
-    Клиент вводит количество ШТУК (кратно размеру упаковки).
-    Внутри корзины храним УПАКОВКИ — так проще с остатками.
+    Клиент вводит количество ШТУК. Внутри корзины храним УПАКОВКИ.
+    Пример: упаковка = 25 шт, клиент ввёл 50 шт → 2 упаковки.
     """
     user = get_current_user(request, db)
     if not user:
@@ -52,7 +52,6 @@ async def add_to_cart(
         return RedirectResponse(url=f"/product/{supply_item_id}",
                                 status_code=303)
 
-    # ─── Нормализация введённого количества ШТУК ───
     if quantity_stems <= 0:
         quantity_stems = min_stems
     if quantity_stems < min_stems:

@@ -1,4 +1,4 @@
-"""Лёгкая авто-миграция: добавляет недостающие колонки и индексы."""
+"""Лёгкая авто-миграция: добавляет недостающие колонки, индексы и таблицы."""
 import logging
 
 from sqlalchemy import inspect, text
@@ -22,6 +22,8 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
     "users": {
         "phone":        "VARCHAR(30) DEFAULT ''",
         "company_name": "VARCHAR(200) DEFAULT ''",
+        "inn":          "VARCHAR(12) DEFAULT ''",
+        "city":         "VARCHAR(100) DEFAULT ''",
         "is_admin":     "BOOLEAN DEFAULT FALSE",
         "is_approved":  "BOOLEAN DEFAULT FALSE",
     },
@@ -41,6 +43,18 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
 EXPECTED_INDEXES: dict[str, list[tuple[str, str]]] = {
     "products": [("ix_products_category", "category")],
 }
+
+
+def ensure_notifications_table() -> None:
+    """Создаёт таблицу уведомлений, если её нет."""
+    try:
+        insp = inspect(engine)
+        if "notifications" not in insp.get_table_names():
+            from .models import Notification
+            Notification.__table__.create(bind=engine, checkfirst=True)
+            logger.info("🔧 Создана таблица notifications")
+    except Exception as e:
+        logger.error("Не удалось создать таблицу notifications: %s", e)
 
 
 def auto_migrate() -> None:

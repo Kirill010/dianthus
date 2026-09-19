@@ -26,6 +26,7 @@ def render(request: Request, template: str, db: Session, **context):
     csrf_token = ensure_csrf_token(request)
 
     active_supply = None
+    unread_count = 0
     if user:
         active_supply = (
             db.query(models.Supply)
@@ -33,6 +34,10 @@ def render(request: Request, template: str, db: Session, **context):
             .order_by(nulls_last(models.Supply.arrival_date.asc()))
             .first()
         )
+        unread_count = (db.query(models.Notification)
+                        .filter(models.Notification.user_id == user.id,
+                                models.Notification.is_read == False)  # noqa: E712
+                        .count())
 
     context.update({
         "user": user,
@@ -41,6 +46,7 @@ def render(request: Request, template: str, db: Session, **context):
         "active_supply": active_supply,
         "csrf_token": csrf_token,
         "config": config,
+        "unread_count": unread_count,
     })
     return templates.TemplateResponse(
         request=request, name=template, context=context,

@@ -70,6 +70,29 @@ def validate_company_name(name: str) -> str | None:
     return None
 
 
+def validate_inn(inn: str) -> str | None:
+    """ИНН: 10 цифр (юрлицо) или 12 цифр (ИП). Необязательное поле."""
+    inn = (inn or "").strip()
+    if not inn:
+        return None
+    if not inn.isdigit():
+        return "ИНН должен содержать только цифры"
+    if len(inn) not in (10, 12):
+        return "ИНН: 10 цифр для юрлица или 12 для ИП"
+    return None
+
+
+def validate_city(city: str) -> str | None:
+    city = (city or "").strip()
+    if not city:
+        return None
+    if len(city) < 2:
+        return "Название города слишком короткое"
+    if len(city) > 100:
+        return "Название города слишком длинное"
+    return None
+
+
 def validate_price(value: float | None) -> str | None:
     if value is None:
         return "Укажите цену"

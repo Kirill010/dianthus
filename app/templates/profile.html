@@ -56,6 +56,20 @@
                    maxlength="20" value="{{ user.phone }}" required>
         </div>
         <div class="mb-3">
+            <label class="form-label small fw-bold">ИНН</label>
+            <input type="text" name="inn" class="form-control"
+                   maxlength="12" value="{{ user.inn or '' }}"
+                   placeholder="10 или 12 цифр">
+            <div class="form-text">Необязательно</div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label small fw-bold">Город</label>
+            <input type="text" name="city" class="form-control"
+                   maxlength="100" value="{{ user.city or '' }}"
+                   placeholder="Москва">
+            <div class="form-text">Необязательно</div>
+        </div>
+        <div class="mb-3">
             <label class="form-label small fw-bold">Email</label>
             <input type="email" class="form-control"
                    value="{{ user.email }}" disabled>

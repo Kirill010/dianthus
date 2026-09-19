@@ -13,7 +13,7 @@ from .bootstrap import ensure_default_admin
 from .config import config
 from .database import Base, engine, get_db
 from .deps import get_current_user
-from .migrations import auto_migrate
+from .migrations import auto_migrate, ensure_notifications_table
 from .templating import render
 from .routers import admin, cart, catalog, profile
 
@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 try:
     Base.metadata.create_all(bind=engine)
     auto_migrate()
+    ensure_notifications_table()
     db_name = (config.DATABASE_URL.split("@")[-1]
                if "@" in config.DATABASE_URL else config.DATABASE_URL)
     logger.info("✅ Схема БД готова (%s)", db_name)

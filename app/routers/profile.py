@@ -12,7 +12,8 @@ from ..deps import get_current_user
 from ..security import check_csrf
 from ..templating import render
 from ..validators import (validate_company_name, validate_full_name,
-                          validate_password, validate_phone)
+                          validate_password, validate_phone,
+                          validate_inn, validate_city)
 from .. import models
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,8 @@ async def profile_update(
     full_name: str = Form(""),
     phone: str = Form(""),
     company_name: str = Form(""),
+    inn: str = Form(""),
+    city: str = Form(""),
     db: Session = Depends(get_db),
     _csrf: None = Depends(check_csrf),
 ):
@@ -65,12 +68,16 @@ async def profile_update(
     full_name = full_name.strip()
     phone = phone.strip()
     company_name = company_name.strip()
+    inn = inn.strip()
+    city = city.strip()
 
     errors: list[str] = []
     for check, value in [
         (validate_full_name, full_name),
         (validate_phone, phone),
         (validate_company_name, company_name),
+        (validate_inn, inn),
+        (validate_city, city),
     ]:
         msg = check(value)
         if msg:
@@ -83,6 +90,8 @@ async def profile_update(
     user.full_name = full_name
     user.phone = phone
     user.company_name = company_name
+    user.inn = inn
+    user.city = city
     db.commit()
     logger.info("Профиль обновлён: %s", user.email)
     request.session["profile_ok"] = "Данные профиля сохранены"
@@ -123,6 +132,46 @@ async def profile_change_password(
     logger.info("Пароль изменён: %s", user.email)
     request.session["password_ok"] = "Пароль успешно изменён"
     return RedirectResponse(url="/profile", status_code=303)
+
+
+# ═══════ УВЕДОМЛЕНИЯ ════════════════════════════════════════
+
+@router.get("/notifications", response_class=HTMLResponse)
+async def notifications_page(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    notes = (db.query(models.Notification)
+             .filter(models.Notification.user_id == user.id)
+             .order_by(models.Notification.created_at.desc())
+             .limit(50)
+             .all())
+
+    # Помечаем все как прочитанные при открытии
+    for n in notes:
+        n.is_read = True
+    db.commit()
+
+    return render(request, "notifications.html", db,
+                  user=user, notes=notes)
+
+
+@router.post("/notifications/{note_id}/delete")
+async def notification_delete(note_id: int, request: Request,
+                              db: Session = Depends(get_db),
+                              _csrf: None = Depends(check_csrf)):
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+    note = (db.query(models.Notification)
+            .filter(models.Notification.id == note_id,
+                    models.Notification.user_id == user.id)
+            .first())
+    if note:
+        db.delete(note)
+        db.commit()
+    return RedirectResponse(url="/notifications", status_code=303)
 
 
 # ═══════ КОНТАКТЫ ═══════════════════════════════════════════

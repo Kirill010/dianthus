@@ -11,7 +11,7 @@ from .database import get_db
 from .security import check_csrf, check_rate_limit, reset_rate_limit
 from .validators import (validate_company_name, validate_email,
                          validate_full_name, validate_password,
-                         validate_phone)
+                         validate_phone, validate_inn, validate_city)
 from . import models
 
 logger = logging.getLogger(__name__)
@@ -43,6 +43,8 @@ async def register(
     full_name: str = Form(""),
     phone: str = Form(""),
     company_name: str = Form(""),
+    inn: str = Form(""),
+    city: str = Form(""),
     db: Session = Depends(get_db),
     _csrf: None = Depends(check_csrf),
 ):
@@ -51,6 +53,8 @@ async def register(
     company_name = company_name.strip()
     full_name = full_name.strip()
     phone = phone.strip()
+    inn = inn.strip()
+    city = city.strip()
 
     errors: list[str] = []
     for check, value in [
@@ -59,6 +63,8 @@ async def register(
         (validate_phone, phone),
         (validate_email, email),
         (validate_password, password),
+        (validate_inn, inn),
+        (validate_city, city),
     ]:
         msg = check(value)
         if msg:
@@ -73,6 +79,7 @@ async def register(
         request.session["register_data"] = {
             "email": email, "full_name": full_name,
             "phone": phone, "company_name": company_name,
+            "inn": inn, "city": city,
         }
         return RedirectResponse(url="/login", status_code=303)
 
@@ -82,6 +89,8 @@ async def register(
         full_name=full_name,
         phone=phone,
         company_name=company_name,
+        inn=inn,
+        city=city,
         is_approved=False,
     )
     try:

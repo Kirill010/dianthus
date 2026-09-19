@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h1 class="catalog-title mb-4">
+    <i class="fas fa-bell me-2"></i>Уведомления
+</h1>
+
+{% if notes %}
+<div class="notifications-list">
+    {% for n in notes %}
+    <div class="notification-card {% if not n.is_read %}notification-card--unread{% endif %}">
+        <div class="notification-card__icon">
+            <i class="fas fa-info-circle"></i>
+        </div>
+        <div class="notification-card__body">
+            <div class="notification-card__text">{{ n.text }}</div>
+            <div class="notification-card__date">
+                {{ n.created_at.strftime('%d.%m.%Y %H:%M') }}
+            </div>
+        </div>
+        <form action="/notifications/{{ n.id }}/delete" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="notification-card__remove"><i class="fas fa-times"></i></button>
+        </form>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <i class="fas fa-bell-slash"></i>
+    <h4>Уведомлений нет</h4>
+    <a href="/catalog" class="btn btn-primary mt-2">В каталог</a>
+</div>
+{% endif %}
+
+{% endblock %}

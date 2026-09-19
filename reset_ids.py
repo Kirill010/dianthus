@@ -8,7 +8,7 @@ from sqlalchemy import inspect, text  # noqa: E402
 from app.database import engine        # noqa: E402
 
 TABLES = ["users", "products", "supplies",
-          "supply_items", "orders", "order_items"]
+          "supply_items", "orders", "order_items", "notifications"]
 
 
 def _reset_postgres(conn, table: str) -> None:

@@ -13,7 +13,8 @@ from sqlalchemy.orm import Session, selectinload
 from ..database import get_db
 from ..deps import require_admin
 from ..models import (ORDER_STATUSES, PRODUCT_CATEGORIES, SUPPLY_STATUSES,
-                      Order, OrderItem, Product, Supply, SupplyItem, User)
+                      Notification, Order, OrderItem, Product, Supply,
+                      SupplyItem, User)
 from ..security import check_csrf
 from ..services.excel_service import (
     build_products_import_template, export_customers_to_excel,
@@ -201,8 +202,28 @@ async def update_order_status(request: Request,
     if not order:
         request.session["flash"] = f"Заказ №{order_id} не найден"
         return RedirectResponse(url="/admin", status_code=303)
+
     order.status = status
     db.commit()
+
+    # Создаём уведомление для клиента
+    if order.user_id:
+        status_text = {
+            "Подтверждён": "Ваш заказ подтверждён",
+            "В работе": "Заказ собирается на складе",
+            "Отправлен": "Заказ отправлен в доставку",
+            "Выполнен": "Заказ выполнен. Спасибо за покупку!",
+            "Отменён": "Заказ отменён. Свяжитесь с менеджером.",
+        }.get(status, f"Статус заказа изменён на «{status}»")
+
+        note = Notification(
+            user_id=order.user_id,
+            order_id=order.id,
+            text=f"Заказ №{order.id}: {status_text}",
+        )
+        db.add(note)
+        db.commit()
+
     request.session["flash"] = f"Заказ №{order.id}: «{status}»"
     return RedirectResponse(url="/admin", status_code=303)
 
@@ -323,7 +344,7 @@ def _validate_product(name, length_cm, package_size, min_quantity) -> list[str]:
         elif length_cm > 500:
             errors.append("Длина > 500 см")
 
-    # ─── Проверка: минимум к заказу не должен быть больше 100 000 шт ───
+    # Проверка: минимум к заказу не должен быть больше 100 000 шт
     if package_size and min_quantity:
         total_min = package_size * min_quantity
         if total_min > 100_000:

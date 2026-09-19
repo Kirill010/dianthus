@@ -43,10 +43,14 @@ class User(Base):
     full_name = Column(String(120), nullable=False)
     phone = Column(String(30), default="")
     company_name = Column(String(200), nullable=False)
+    inn = Column(String(12), default="")
+    city = Column(String(100), default="")
     is_admin = Column(Boolean, default=False, nullable=False)
     is_approved = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
     orders = relationship("Order", back_populates="user")
+    notifications = relationship("Notification", back_populates="user",
+                                 cascade="all, delete-orphan")
 
 
 class Product(Base):
@@ -137,3 +141,16 @@ class OrderItem(Base):
     @property
     def subtotal(self) -> float:
         return self.price * self.quantity
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
+    text = Column(Text, nullable=False)
+    is_read = Column(Boolean, default=False, nullable=False, index=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+    user = relationship("User", back_populates="notifications")
+    order = relationship("Order")
