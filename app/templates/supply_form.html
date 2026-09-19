@@ -120,10 +120,8 @@
                     <th class="supply-items-table__num">#</th>
                     <th>Товар</th>
                     <th>Упак.</th>
-                    <th>Цена / Остаток</th>
+                    <th>Цена/шт · Кол-во (шт)</th> <!-- Изменили заголовок -->
                     <th>Остаток</th>
-                    <th>Всего шт</th>
-                    <th>Активно</th>
                     <th></th>
                 </tr>
             </thead>
@@ -142,37 +140,34 @@
                     <td><small>{{ pack }} шт</small></td>
                     <td>
                         <form action="/admin/supply_items/{{ item.id }}/update" method="post"
-                            class="d-flex gap-1" style="max-width:260px;">
+                            class="d-flex gap-1 align-items-center" style="max-width:280px;">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            
+                            <!-- Цена за штуку -->
                             <input type="number" step="0.01" name="price"
                                 class="form-control form-control-sm"
                                 value="{{ item.price }}" required
-                                title="Цена за ШТУКУ">
-                            <input type="number" name="stock"
+                                title="Цена за ШТУКУ" style="width:80px;">
+                            
+                            <!-- Количество в штуках -->
+                            <input type="number" name="quantity_stems"
                                 class="form-control form-control-sm"
-                                value="{{ item.stock }}" required
-                                title="Количество УПАКОВОК">
+                                value="{{ total_stems }}" required
+                                title="Количество ШТУК" style="width:90px;">
+                            <small class="text-muted">шт</small>
+                            
                             <button type="submit" class="btn btn-sm btn-primary">
                                 <i class="fas fa-check"></i>
                             </button>
                         </form>
-                        <small class="text-muted">цена/шт · кол-во упак.</small>
+                        <small class="text-muted">цена/шт · кол-во шт</small>
                     </td>
                     <td>
                         {% if item.stock > 0 %}
-                            <span class="badge bg-success">{{ item.stock }} упак.</span>
+                            <span class="badge bg-success">{{ item.stock }} упак.</span><br>
+                            <small class="text-muted">{{ total_stems }} шт</small>
                         {% else %}
                             <span class="badge bg-danger">0</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        <span class="supply-items-table__stems">{{ total_stems }} шт</span>
-                    </td>
-                    <td>
-                        {% if item.is_active %}
-                            <span class="badge bg-success">Да</span>
-                        {% else %}
-                            <span class="badge bg-secondary">Нет</span>
                         {% endif %}
                     </td>
                     <td>

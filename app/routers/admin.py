@@ -824,8 +824,8 @@ async def supply_item_add(
 @router.post("/supply_items/{item_id}/update")
 async def supply_item_update(
     item_id: int, request: Request,
-    price: float = Form(...),           # за ШТУКУ
-    stock: int = Form(...),             # УПАКОВОК
+    price: float = Form(...),           # Цена за ШТУКУ
+    quantity_stems: int = Form(...),    # Количество в ШТУКАХ (а не упаковках!)
     db: Session = Depends(get_db),
     _a=Depends(require_admin),
     _csrf: None = Depends(check_csrf),
@@ -833,19 +833,34 @@ async def supply_item_update(
     item = db.query(SupplyItem).filter(SupplyItem.id == item_id).first()
     if not item:
         raise HTTPException(404, "Позиция не найдена")
+
     errors = []
-    for check, v in [(validate_price, price), (validate_stock, stock)]:
+    for check, v in [(validate_price, price), (validate_stock, quantity_stems)]:
         msg = check(v)
         if msg:
             errors.append(msg)
+            
     if errors:
         _err(request, errors)
         return RedirectResponse(
             url=f"/admin/supplies/{item.supply_id}/edit", status_code=303)
+
+    # Пересчитываем штуки в упаковки
+    pack = max(1, item.product.package_size or 1)
+    packs = quantity_stems // pack
+    
+    if packs <= 0:
+        request.session["flash"] = f"❌ {quantity_stems} шт < 1 упак ({pack} шт)."
+        return RedirectResponse(
+            url=f"/admin/supplies/{item.supply_id}/edit", status_code=303)
+
     item.price = price
-    item.stock = stock
+    item.stock = packs  # Сохраняем УПАКОВКИ
     db.commit()
-    request.session["flash"] = "Позиция обновлена"
+    
+    request.session["flash"] = (
+        f"Обновлено: {packs} упак. ({packs * pack} шт)"
+    )
     return RedirectResponse(url=f"/admin/supplies/{item.supply_id}/edit",
                             status_code=303)
 
