@@ -48,7 +48,8 @@ class User(Base):
     is_admin = Column(Boolean, default=False, nullable=False)
     is_approved = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
-    orders = relationship("Order", back_populates="user")
+    orders = relationship("Order", back_populates="user",
+                          cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="user",
                                  cascade="all, delete-orphan")
 
