@@ -70,11 +70,15 @@ def validate_company_name(name: str) -> str | None:
     return None
 
 
-def validate_inn(inn: str) -> str | None:
-    """ИНН: 10 цифр (юрлицо) или 12 цифр (ИП). Обязательное поле."""
+def validate_inn(inn: str, required: bool = True) -> str | None:
+    """
+    ИНН: 10 цифр (юрлицо) или 12 цифр (ИП).
+
+    :param required: если False — пустое значение допустимо.
+    """
     inn = (inn or "").strip()
     if not inn:
-        return "Укажите ИНН"  # Было return None
+        return "Укажите ИНН" if required else None
     if not inn.isdigit():
         return "ИНН должен содержать только цифры"
     if len(inn) not in (10, 12):
@@ -82,11 +86,15 @@ def validate_inn(inn: str) -> str | None:
     return None
 
 
-def validate_city(city: str) -> str | None:
-    """Город. Обязательное поле."""
+def validate_city(city: str, required: bool = True) -> str | None:
+    """
+    Город.
+
+    :param required: если False — пустое значение допустимо.
+    """
     city = (city or "").strip()
     if not city:
-        return "Укажите город"  # Было return None
+        return "Укажите город" if required else None
     if len(city) < 2:
         return "Название города слишком короткое"
     if len(city) > 100:

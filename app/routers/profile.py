@@ -72,13 +72,15 @@ async def profile_update(
     city = city.strip()
 
     errors: list[str] = []
-    for check, value in [
+    # ИНН и город в профиле — НЕ обязательны
+    checks = [
         (validate_full_name, full_name),
         (validate_phone, phone),
         (validate_company_name, company_name),
-        (validate_inn, inn),
-        (validate_city, city),
-    ]:
+        (lambda v: validate_inn(v, required=False), inn),
+        (lambda v: validate_city(v, required=False), city),
+    ]
+    for check, value in checks:
         msg = check(value)
         if msg:
             errors.append(msg)
@@ -148,7 +150,6 @@ async def notifications_page(request: Request, db: Session = Depends(get_db)):
              .limit(50)
              .all())
 
-    # Помечаем все как прочитанные при открытии
     for n in notes:
         n.is_read = True
     db.commit()

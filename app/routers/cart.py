@@ -16,10 +16,7 @@ MAX_COMMENT_LENGTH = 1000
 # ───────── УТИЛИТЫ ─────────
 
 def _cart_subtotal(cart: list[dict]) -> float:
-    """
-    Сумма ДО скидки.
-    price — за ШТУКУ, quantity — УПАКОВКИ, package_size — штук в упаковке.
-    """
+    """Сумма ДО скидки."""
     total = 0.0
     for it in cart:
         pack = it.get("package_size") or 1
@@ -36,21 +33,21 @@ def _apply_discount(subtotal: float, discount_percent: float):
     return discount, subtotal - discount
 
 
+def _clean_cart(cart: list[dict]) -> list[dict]:
+    """Убирает позиции с нулевым или отрицательным количеством."""
+    return [c for c in cart if c.get("quantity", 0) > 0]
+
+
 # ───────── ДОБАВЛЕНИЕ ─────────
 
 @router.post("/add_to_cart")
 async def add_to_cart(
     request: Request,
     supply_item_id: int = Form(...),
-    quantity_stems: int = Form(0),    # ← клиент вводит ШТУКИ
+    quantity_stems: int = Form(0),
     db: Session = Depends(get_db),
     _csrf: None = Depends(check_csrf),
 ):
-    """
-    Клиент вводит количество ШТУК.
-    Внутри корзины храним УПАКОВКИ, цена — за штуку.
-    Пример: упаковка = 25 шт, ввёл 50 шт → 2 упаковки × 25 шт.
-    """
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
@@ -72,14 +69,12 @@ async def add_to_cart(
         return RedirectResponse(url=f"/product/{supply_item_id}",
                                 status_code=303)
 
-    # Нормализуем введённое количество
     if quantity_stems <= 0:
         quantity_stems = min_stems
     if quantity_stems < min_stems:
         quantity_stems = min_stems
     if quantity_stems > max_stems:
         quantity_stems = max_stems
-    # Округляем вниз до целой упаковки
     quantity_stems = (quantity_stems // pack) * pack
     if quantity_stems < min_stems:
         quantity_stems = min_stems
@@ -105,9 +100,9 @@ async def add_to_cart(
             "name": product.name,
             "unit": product.unit,
             "package_size": pack,
-            "price": item.price,          # ₽ за ШТУКУ
+            "price": item.price,
             "image_url": product.image_url,
-            "quantity": quantity_packs,   # УПАКОВКИ
+            "quantity": quantity_packs,
         })
         request.session["flash"] = (
             f"«{product.name}» — {quantity_packs} упак. "
@@ -200,7 +195,7 @@ async def checkout_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
-    cart = request.session.get("cart", [])
+    cart = _clean_cart(request.session.get("cart", []))
     if not cart:
         request.session["flash"] = "Корзина пуста"
         return RedirectResponse(url="/catalog", status_code=303)
@@ -225,8 +220,10 @@ async def place_order(request: Request, comment: str = Form(""),
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
-    cart = request.session.get("cart", [])
+    # Убираем позиции с нулевым количеством (защита от повреждённой сессии)
+    cart = _clean_cart(request.session.get("cart", []))
     if not cart:
+        request.session["flash"] = "Корзина пуста"
         return RedirectResponse(url="/catalog", status_code=303)
 
     comment = (comment or "").strip()
@@ -277,9 +274,9 @@ async def place_order(request: Request, comment: str = Form(""),
             supply_item_id=c["supply_item_id"],
             product_name=c["name"],
             unit=c.get("unit", ""),
-            price=c["price"],                              # ₽/шт
-            package_size=c.get("package_size") or 1,       # шт в упак
-            quantity=c["quantity"],                        # упак
+            price=c["price"],
+            package_size=c.get("package_size") or 1,
+            quantity=c["quantity"],
         ))
         items_map[c["supply_item_id"]].stock -= c["quantity"]
 

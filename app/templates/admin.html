@@ -2,135 +2,300 @@
 {% set hide_bottom_nav = true %}
 {% block content %}
 <h2 class="mb-3"><i class="fas fa-cog me-2"></i>Админка</h2>
+
 {% if pending_count %}
 <div class="alert alert-warning d-flex align-items-center mb-4">
     <i class="fas fa-user-clock fa-2x me-3"></i>
-    <div class="flex-grow-1"><strong>Новых заявок: {{ pending_count }}</strong><div class="small">Их нужно одобрить.</div></div>
+    <div class="flex-grow-1">
+        <strong>Новых заявок: {{ pending_count }}</strong>
+        <div class="small">Их нужно одобрить.</div>
+    </div>
 </div>
 {% endif %}
 
 <ul class="nav nav-tabs" role="tablist">
-    <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#orders"><i class="fas fa-box me-1"></i>Заказы <span class="badge bg-secondary ms-1">{{ orders|length }}</span></a></li>
-    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#clients"><i class="fas fa-users me-1"></i>Клиенты {% if pending_count %}<span class="badge bg-warning text-dark ms-1">{{ pending_count }}</span>{% else %}<span class="badge bg-secondary ms-1">{{ users|length }}</span>{% endif %}</a></li>
-    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#products"><i class="fas fa-seedling me-1"></i>Справочник <span class="badge bg-secondary ms-1">{{ products|length }}</span></a></li>
-    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#supplies"><i class="fas fa-truck-fast me-1"></i>Поставки <span class="badge bg-secondary ms-1">{{ supplies|length }}</span></a></li>
-    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#active"><i class="fas fa-check-circle me-1"></i>На складе <span class="badge bg-success ms-1">{{ active_items|length }}</span></a></li>
+    <li class="nav-item">
+        <a class="nav-link active" data-bs-toggle="tab" href="#orders">
+            <i class="fas fa-box me-1"></i>Заказы
+            <span class="badge bg-secondary ms-1">{{ total_orders }}</span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" data-bs-toggle="tab" href="#clients">
+            <i class="fas fa-users me-1"></i>Клиенты
+            {% if pending_count %}
+                <span class="badge bg-warning text-dark ms-1">{{ pending_count }}</span>
+            {% else %}
+                <span class="badge bg-secondary ms-1">{{ users|length }}</span>
+            {% endif %}
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" data-bs-toggle="tab" href="#products">
+            <i class="fas fa-seedling me-1"></i>Справочник
+            <span class="badge bg-secondary ms-1">{{ products|length }}</span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" data-bs-toggle="tab" href="#supplies">
+            <i class="fas fa-truck-fast me-1"></i>Поставки
+            <span class="badge bg-secondary ms-1">{{ supplies|length }}</span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" data-bs-toggle="tab" href="#active">
+            <i class="fas fa-check-circle me-1"></i>На складе
+            <span class="badge bg-success ms-1">{{ active_items|length }}</span>
+        </a>
+    </li>
 </ul>
 
 <div class="tab-content mt-3">
+    <!-- ═══════ ЗАКАЗЫ ═══════ -->
     <div class="tab-pane fade show active" id="orders">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h5 class="mb-0">Заказы</h5>
             <div class="d-flex gap-2">
-                <a href="/admin/orders/export" class="btn btn-outline-success btn-sm"><i class="fas fa-file-excel me-1"></i>Экспорт</a>
-                <a href="/admin/customers/export" class="btn btn-outline-success btn-sm"><i class="fas fa-users me-1"></i>Клиенты</a>
+                <a href="/admin/orders/export" class="btn btn-outline-success btn-sm">
+                    <i class="fas fa-file-excel me-1"></i>Экспорт
+                </a>
+                <a href="/admin/customers/export" class="btn btn-outline-success btn-sm">
+                    <i class="fas fa-users me-1"></i>Клиенты
+                </a>
             </div>
         </div>
+
+        <!-- Поиск и фильтр -->
+        <form action="/admin" method="get" class="row g-2 mb-3">
+            <div class="col-md-6">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                    <input type="text" name="q" class="form-control"
+                           placeholder="Номер заказа, компания, email…"
+                           value="{{ orders_q }}">
+                </div>
+            </div>
+            <div class="col-md-4">
+                <select name="status" class="form-select">
+                    <option value="">— Все статусы —</option>
+                    {% for s in statuses %}
+                        <option value="{{ s }}" {% if orders_status == s %}selected{% endif %}>
+                            {{ s }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button class="btn btn-primary w-100"><i class="fas fa-filter me-1"></i>Найти</button>
+                {% if orders_q or orders_status %}
+                    <a href="/admin" class="btn btn-outline-secondary" title="Сбросить">
+                        <i class="fas fa-times"></i>
+                    </a>
+                {% endif %}
+            </div>
+        </form>
+
         {% if orders %}
         <div class="table-responsive">
             <table class="table table-hover align-middle">
-                <thead><tr><th>№</th><th>Клиент</th><th>Сумма</th><th>Дата</th><th>Статус</th><th>Изменить</th></tr></thead>
+                <thead>
+                    <tr>
+                        <th>№</th>
+                        <th>Клиент</th>
+                        <th>Сумма</th>
+                        <th>Дата</th>
+                        <th>Статус</th>
+                        <th>Изменить</th>
+                    </tr>
+                </thead>
                 <tbody>
                 {% for o in orders %}
                     <tr>
-                        <td><strong>#{{ o.id }}</strong></td>
-                        <td>{% if o.user %}{{ o.user.company_name }}<br><small class="text-muted">{{ o.user.email }}</small>{% else %}<span class="text-muted">Гость</span>{% endif %}</td>
+                        <td>
+                            <a href="/admin/orders/{{ o.id }}" class="text-decoration-none">
+                                <strong>#{{ o.id }}</strong>
+                            </a>
+                        </td>
+                        <td>
+                            {% if o.user %}
+                                {{ o.user.company_name }}<br>
+                                <small class="text-muted">{{ o.user.email }}</small>
+                            {% else %}
+                                <span class="text-muted">Гость</span>
+                            {% endif %}
+                        </td>
                         <td><strong>{{ "%.0f"|format(o.total_price) }} ₽</strong></td>
                         <td>{{ o.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
                         <td>
-                            {% if o.status == "Выполнен" %}<span class="badge bg-success">{{ o.status }}</span>
-                            {% elif o.status == "Отменён" %}<span class="badge bg-danger">{{ o.status }}</span>
-                            {% elif o.status == "В работе" %}<span class="badge bg-warning text-dark">{{ o.status }}</span>
-                            {% elif o.status == "Отправлен" %}<span class="badge bg-primary">{{ o.status }}</span>
-                            {% else %}<span class="badge bg-secondary">{{ o.status }}</span>{% endif %}
+                            {% if o.status == "Выполнен" %}
+                                <span class="badge bg-success">{{ o.status }}</span>
+                            {% elif o.status == "Отменён" %}
+                                <span class="badge bg-danger">{{ o.status }}</span>
+                            {% elif o.status == "В работе" %}
+                                <span class="badge bg-warning text-dark">{{ o.status }}</span>
+                            {% elif o.status == "Отправлен" %}
+                                <span class="badge bg-primary">{{ o.status }}</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ o.status }}</span>
+                            {% endif %}
                         </td>
                         <td>
-                            <form action="/admin/update_order_status" method="post" class="d-flex">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                <input type="hidden" name="order_id" value="{{ o.id }}">
-                                <select name="status" class="form-select form-select-sm me-2">
-                                    {% for s in statuses %}<option value="{{ s }}" {% if o.status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
-                                </select>
-                                <button class="btn btn-sm btn-primary">ОК</button>
-                            </form>
+                            <div class="d-flex gap-1">
+                                <a href="/admin/orders/{{ o.id }}"
+                                   class="btn btn-sm btn-outline-primary"
+                                   title="Подробнее о заказе">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                <form action="/admin/update_order_status" method="post"
+                                      class="d-flex">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <input type="hidden" name="order_id" value="{{ o.id }}">
+                                    <select name="status" class="form-select form-select-sm me-1">
+                                        {% for s in statuses %}
+                                            <option value="{{ s }}" {% if o.status == s %}selected{% endif %}>
+                                                {{ s }}
+                                            </option>
+                                        {% endfor %}
+                                    </select>
+                                    <button class="btn btn-sm btn-primary">ОК</button>
+                                </form>
+                            </div>
                         </td>
                     </tr>
                 {% endfor %}
                 </tbody>
             </table>
         </div>
-        {% else %}<p class="text-muted py-4 text-center">Заказов нет.</p>{% endif %}
+
+        <!-- Пагинация -->
+        {% if orders_total_pages > 1 %}
+        <nav class="d-flex justify-content-center align-items-center gap-2 mt-3">
+            {% if orders_page > 1 %}
+                <a href="?q={{ orders_q }}&status={{ orders_status }}&page={{ orders_page - 1 }}"
+                   class="btn btn-sm btn-outline-secondary">
+                    <i class="fas fa-chevron-left"></i>
+                </a>
+            {% endif %}
+            <span class="text-muted">
+                Страница {{ orders_page }} из {{ orders_total_pages }}
+                (всего: {{ total_orders }})
+            </span>
+            {% if orders_page < orders_total_pages %}
+                <a href="?q={{ orders_q }}&status={{ orders_status }}&page={{ orders_page + 1 }}"
+                   class="btn btn-sm btn-outline-secondary">
+                    <i class="fas fa-chevron-right"></i>
+                </a>
+            {% endif %}
+        </nav>
+        {% endif %}
+
+        {% else %}
+            <p class="text-muted py-4 text-center">
+                {% if orders_q or orders_status %}
+                    По вашему запросу ничего не найдено.
+                {% else %}
+                    Заказов нет.
+                {% endif %}
+            </p>
+        {% endif %}
     </div>
 
+    <!-- ═══════ КЛИЕНТЫ ═══════ -->
     <div class="tab-pane fade" id="clients">
         <h5 class="mb-3">Клиенты и заявки</h5>
         {% if users %}
         <div class="table-responsive">
             <table class="table table-hover align-middle">
-                <thead><tr><th>ID</th><th>Компания</th><th>Контакт</th><th>Статус</th><th>Действия</th></tr></thead>
+                <thead>
+                    <tr>
+                        <th>ID</th><th>Компания</th><th>Контакт</th>
+                        <th>Статус</th><th>Действия</th>
+                    </tr>
+                </thead>
                 <tbody>
                 {% for u in users %}
                     <tr>
                         <td>{{ u.id }}</td>
                         <td><strong>{{ u.company_name }}</strong></td>
-                        <td>{{ u.full_name }}<br><small class="text-muted">{{ u.email }}</small>
-                            {% if u.city %}<br><small class="text-muted">г. {{ u.city }}</small>{% endif %}
-                        </td>
                         <td>
-                            {% if u.is_admin %}<span class="badge bg-dark">Админ</span>
-                            {% elif u.is_approved %}<span class="badge bg-success">Активен</span>
-                            {% else %}<span class="badge bg-warning text-dark">Ожидает</span>{% endif %}
-                            {% if u.discount_percent and u.discount_percent > 0 %}
-                                <span class="badge bg-warning text-dark ms-1">−{{ u.discount_percent }}%</span>
+                            {{ u.full_name }}<br>
+                            <small class="text-muted">{{ u.email }}</small>
+                            {% if u.city %}
+                                <br><small class="text-muted">г. {{ u.city }}</small>
                             {% endif %}
                         </td>
                         <td>
-                            <form action="/admin/users/{{ u.id }}/discount" method="post"
-                                class="d-inline-flex align-items-center gap-1 mb-1">
+                            {% if u.is_admin %}
+                                <span class="badge bg-dark">Админ</span>
+                            {% elif u.is_approved %}
+                                <span class="badge bg-success">Активен</span>
+                            {% else %}
+                                <span class="badge bg-warning text-dark">Ожидает</span>
+                            {% endif %}
+                            {% if u.discount_percent and u.discount_percent > 0 %}
+                                <span class="badge bg-warning text-dark ms-1">
+                                    −{{ u.discount_percent }}%
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <form action="/admin/users/{{ u.id }}/discount"
+                                  method="post"
+                                  class="d-inline-flex align-items-center gap-1 mb-1">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                <input type="number" name="discount_percent" min="0" max="100"
-                                    step="0.5" class="form-control form-control-sm"
-                                    style="width:80px;" value="{{ u.discount_percent or 0 }}">
+                                <input type="number" name="discount_percent"
+                                       min="0" max="100" step="0.5"
+                                       class="form-control form-control-sm"
+                                       style="width:80px;"
+                                       value="{{ u.discount_percent or 0 }}">
                                 <button class="btn btn-sm btn-outline-warning" title="Скидка">%</button>
                             </form>
+
                             {% if not u.is_admin and not u.is_approved %}
-                                <form action="/admin/users/{{ u.id }}/approve" method="post" class="d-inline">
+                                <form action="/admin/users/{{ u.id }}/approve"
+                                      method="post" class="d-inline">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                     <button class="btn btn-sm btn-success">
                                         <i class="fas fa-check me-1"></i>Одобрить
                                     </button>
                                 </form>
-                                <form action="/admin/users/{{ u.id }}/reject" method="post" class="d-inline"
-                                    onsubmit="return confirm('Отклонить заявку?');">
+                                <form action="/admin/users/{{ u.id }}/reject"
+                                      method="post" class="d-inline"
+                                      onsubmit="return confirm('Отклонить заявку?');">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                     <button class="btn btn-sm btn-outline-danger">Отклонить</button>
                                 </form>
                             {% elif u.is_admin %}
                                 {% if u.id != user.id %}
-                                    <form action="/admin/users/{{ u.id }}/demote" method="post"
-                                        class="d-inline"
-                                        onsubmit="return confirm('Снять права администратора?');">
+                                    <form action="/admin/users/{{ u.id }}/demote"
+                                          method="post" class="d-inline"
+                                          onsubmit="return confirm('Снять права администратора?');">
                                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                         <button class="btn btn-sm btn-outline-warning">
                                             <i class="fas fa-user-minus me-1"></i>Снять админа
                                         </button>
                                     </form>
                                 {% else %}
-                                    <span class="badge bg-dark px-2 py-1"><i class="fas fa-user me-1"></i>Это вы</span>
+                                    <span class="badge bg-dark px-2 py-1">
+                                        <i class="fas fa-user me-1"></i>Это вы
+                                    </span>
                                 {% endif %}
                             {% else %}
-                                <form action="/admin/users/{{ u.id }}/make_admin" method="post"
-                                    class="d-inline"
-                                    onsubmit="return confirm('Сделать администратором?');">
+                                <form action="/admin/users/{{ u.id }}/make_admin"
+                                      method="post" class="d-inline"
+                                      onsubmit="return confirm('Сделать администратором?');">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                     <button class="btn btn-sm btn-outline-primary">
                                         <i class="fas fa-user-shield me-1"></i>Админ
                                     </button>
                                 </form>
-                                <form action="/admin/users/{{ u.id }}/reject" method="post"
-                                    class="d-inline" onsubmit="return confirm('Удалить пользователя?');">
+                                <form action="/admin/users/{{ u.id }}/reject"
+                                      method="post" class="d-inline"
+                                      onsubmit="return confirm('Удалить пользователя?');">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                    <button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                                    <button class="btn btn-sm btn-outline-danger">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
                                 </form>
                             {% endif %}
                         </td>
@@ -139,36 +304,71 @@
                 </tbody>
             </table>
         </div>
-        {% else %}<p class="text-muted py-4 text-center">Клиентов нет.</p>{% endif %}
+        {% else %}
+            <p class="text-muted py-4 text-center">Клиентов нет.</p>
+        {% endif %}
     </div>
 
+    <!-- ═══════ СПРАВОЧНИК ═══════ -->
     <div class="tab-pane fade" id="products">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h5 class="mb-0">Справочник товаров</h5>
             <div class="d-flex gap-2 flex-wrap">
-                <a href="/admin/products/new" class="btn btn-primary btn-sm"><i class="fas fa-plus me-1"></i>Добавить</a>
-                <a href="/admin/products/import/template" class="btn btn-outline-secondary btn-sm"><i class="fas fa-download me-1"></i>Шаблон</a>
-                <button class="btn btn-outline-success btn-sm" data-bs-toggle="modal" data-bs-target="#importModal"><i class="fas fa-file-import me-1"></i>Импорт</button>
+                <a href="/admin/products/new" class="btn btn-primary btn-sm">
+                    <i class="fas fa-plus me-1"></i>Добавить
+                </a>
+                <a href="/admin/products/import/template"
+                   class="btn btn-outline-secondary btn-sm">
+                    <i class="fas fa-download me-1"></i>Шаблон
+                </a>
+                <button class="btn btn-outline-success btn-sm"
+                        data-bs-toggle="modal" data-bs-target="#importModal">
+                    <i class="fas fa-file-import me-1"></i>Импорт
+                </button>
             </div>
         </div>
         {% if products %}
         <div class="table-responsive">
             <table class="table table-hover align-middle">
-                <thead><tr><th>ID</th><th>Фото</th><th>Название</th><th>Категория</th><th>Страна</th><th>Упак.</th><th></th></tr></thead>
+                <thead>
+                    <tr>
+                        <th>ID</th><th>Фото</th><th>Название</th>
+                        <th>Категория</th><th>Страна</th><th>Упак.</th><th></th>
+                    </tr>
+                </thead>
                 <tbody>
                 {% for p in products %}
                     <tr>
                         <td>{{ p.id }}</td>
-                        <td>{% if p.image_url %}<img src="{{ p.image_url }}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;">{% else %}<i class="fas fa-seedling text-muted"></i>{% endif %}</td>
-                        <td>{{ p.name }}{% if p.length_cm %}<br><small class="text-muted">{{ p.length_cm }} см</small>{% endif %}</td>
+                        <td>
+                            {% if p.image_url %}
+                                <img src="{{ p.image_url }}"
+                                     style="width:40px;height:40px;object-fit:cover;border-radius:6px;">
+                            {% else %}
+                                <i class="fas fa-seedling text-muted"></i>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {{ p.name }}
+                            {% if p.length_cm %}
+                                <br><small class="text-muted">{{ p.length_cm }} см</small>
+                            {% endif %}
+                        </td>
                         <td><small>{{ p.category }}</small></td>
                         <td><small>{{ p.country or "—" }}</small></td>
                         <td><small>{{ p.package_size }} шт</small></td>
                         <td>
-                            <a href="/admin/products/{{ p.id }}/edit" class="btn btn-sm btn-outline-secondary"><i class="fas fa-edit"></i></a>
-                            <form action="/admin/products/{{ p.id }}/delete" method="post" class="d-inline" onsubmit="return confirm('Удалить из справочника?');">
+                            <a href="/admin/products/{{ p.id }}/edit"
+                               class="btn btn-sm btn-outline-secondary">
+                                <i class="fas fa-edit"></i>
+                            </a>
+                            <form action="/admin/products/{{ p.id }}/delete"
+                                  method="post" class="d-inline"
+                                  onsubmit="return confirm('Удалить из справочника?');">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                <button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                                <button class="btn btn-sm btn-outline-danger">
+                                    <i class="fas fa-trash"></i>
+                                </button>
                             </form>
                         </td>
                     </tr>
@@ -176,43 +376,79 @@
                 </tbody>
             </table>
         </div>
-        {% else %}<p class="text-muted py-4 text-center">Справочник пуст.</p>{% endif %}
+        {% else %}
+            <p class="text-muted py-4 text-center">Справочник пуст.</p>
+        {% endif %}
     </div>
 
+    <!-- ═══════ ПОСТАВКИ ═══════ -->
     <div class="tab-pane fade" id="supplies">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h5 class="mb-0">Поставки</h5>
-            <a href="/admin/supplies/new" class="btn btn-primary btn-sm"><i class="fas fa-plus me-1"></i>Новая поставка</a>
+            <a href="/admin/supplies/new" class="btn btn-primary btn-sm">
+                <i class="fas fa-plus me-1"></i>Новая поставка
+            </a>
         </div>
         {% if supplies %}
         <div class="table-responsive">
             <table class="table table-hover align-middle">
-                <thead><tr><th>ID</th><th>Страна</th><th>Прибытие</th><th>Статус</th><th>Товаров</th><th>Активных</th><th></th></tr></thead>
+                <thead>
+                    <tr>
+                        <th>ID</th><th>Страна</th><th>Прибытие</th>
+                        <th>Статус</th><th>Товаров</th><th>Активных</th><th></th>
+                    </tr>
+                </thead>
                 <tbody>
                 {% for s in supplies %}
                     <tr>
                         <td>{{ s.id }}</td>
                         <td><strong>{{ s.country }}</strong></td>
-                        <td>{% if s.arrival_date %}{{ s.arrival_date.strftime('%d.%m.%Y') }}{% else %}—{% endif %}</td>
                         <td>
-                            {% if s.status == "В пути" %}<span class="badge bg-primary">{{ s.status }}</span>
-                            {% elif s.status == "Прибыл" %}<span class="badge bg-warning text-dark">{{ s.status }}</span>
-                            {% elif s.status == "Разгружен" %}<span class="badge bg-success">{{ s.status }}</span>
-                            {% else %}<span class="badge bg-secondary">{{ s.status }}</span>{% endif %}
+                            {% if s.arrival_date %}
+                                {{ s.arrival_date.strftime('%d.%m.%Y') }}
+                            {% else %}—{% endif %}
+                        </td>
+                        <td>
+                            {% if s.status == "В пути" %}
+                                <span class="badge bg-primary">{{ s.status }}</span>
+                            {% elif s.status == "Прибыл" %}
+                                <span class="badge bg-warning text-dark">{{ s.status }}</span>
+                            {% elif s.status == "Разгружен" %}
+                                <span class="badge bg-success">{{ s.status }}</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ s.status }}</span>
+                            {% endif %}
                         </td>
                         <td><span class="badge bg-light text-dark">{{ s.items|length }}</span></td>
-                        <td>{% if s.active_items_count %}<span class="badge bg-success">{{ s.active_items_count }}</span>{% else %}<span class="badge bg-secondary">0</span>{% endif %}</td>
                         <td>
-                            <a href="/admin/supplies/{{ s.id }}/edit" class="btn btn-sm btn-outline-secondary"><i class="fas fa-edit"></i></a>
-                            {% if s.status in ['В пути', 'Прибыл'] %}
-                            <form action="/admin/supplies/{{ s.id }}/unload" method="post" class="d-inline" onsubmit="return confirm('Разгрузить?');">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                <button class="btn btn-sm btn-success"><i class="fas fa-box-open"></i></button>
-                            </form>
+                            {% if s.active_items_count %}
+                                <span class="badge bg-success">{{ s.active_items_count }}</span>
+                            {% else %}
+                                <span class="badge bg-secondary">0</span>
                             {% endif %}
-                            <form action="/admin/supplies/{{ s.id }}/delete" method="post" class="d-inline" onsubmit="return confirm('Удалить поставку?');">
+                        </td>
+                        <td>
+                            <a href="/admin/supplies/{{ s.id }}/edit"
+                               class="btn btn-sm btn-outline-secondary">
+                                <i class="fas fa-edit"></i>
+                            </a>
+                            {% if s.status in ['В пути', 'Прибыл'] %}
+                                <form action="/admin/supplies/{{ s.id }}/unload"
+                                      method="post" class="d-inline"
+                                      onsubmit="return confirm('Разгрузить?');">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <button class="btn btn-sm btn-success">
+                                        <i class="fas fa-box-open"></i>
+                                    </button>
+                                </form>
+                            {% endif %}
+                            <form action="/admin/supplies/{{ s.id }}/delete"
+                                  method="post" class="d-inline"
+                                  onsubmit="return confirm('Удалить поставку?');">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                <button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                                <button class="btn btn-sm btn-outline-danger">
+                                    <i class="fas fa-trash"></i>
+                                </button>
                             </form>
                         </td>
                     </tr>
@@ -220,47 +456,72 @@
                 </tbody>
             </table>
         </div>
-        {% else %}<p class="text-muted py-4 text-center">Поставок нет.</p>{% endif %}
+        {% else %}
+            <p class="text-muted py-4 text-center">Поставок нет.</p>
+        {% endif %}
     </div>
 
+    <!-- ═══════ НА СКЛАДЕ ═══════ -->
     <div class="tab-pane fade" id="active">
         <h5 class="mb-3">Что сейчас в каталоге</h5>
         {% if active_items %}
         <div class="table-responsive">
             <table class="table table-hover align-middle">
-                <thead><tr><th>Товар</th><th>Категория</th><th>Партия</th><th>Цена</th><th>Остаток</th></tr></thead>
+                <thead>
+                    <tr>
+                        <th>Товар</th><th>Категория</th>
+                        <th>Партия</th><th>Цена</th><th>Остаток</th>
+                    </tr>
+                </thead>
                 <tbody>
                 {% for i in active_items %}
                     <tr>
                         <td>{{ i.product.name }}</td>
                         <td><small>{{ i.product.category }}</small></td>
-                        <td><small>№{{ i.supply.id }} · {{ i.supply.country }}</small></td>
+                        <td>
+                            <small>№{{ i.supply.id }} · {{ i.supply.country }}</small>
+                        </td>
                         <td>{{ "%.2f"|format(i.price) }} ₽</td>
-                        <td>{% if i.stock > 0 %}<span class="badge bg-success">{{ i.stock }}</span>{% else %}<span class="badge bg-danger">0</span>{% endif %}</td>
+                        <td>
+                            {% if i.stock > 0 %}
+                                <span class="badge bg-success">{{ i.stock }}</span>
+                            {% else %}
+                                <span class="badge bg-danger">0</span>
+                            {% endif %}
+                        </td>
                     </tr>
                 {% endfor %}
                 </tbody>
             </table>
         </div>
-        {% else %}<p class="text-muted py-4 text-center">Каталог пуст.</p>{% endif %}
+        {% else %}
+            <p class="text-muted py-4 text-center">Каталог пуст.</p>
+        {% endif %}
     </div>
 </div>
 
+<!-- Модальное окно импорта -->
 <div class="modal fade" id="importModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form action="/admin/products/import" method="post" enctype="multipart/form-data">
+            <form action="/admin/products/import" method="post"
+                  enctype="multipart/form-data">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="modal-header">
                     <h5 class="modal-title">Импорт из Excel</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="text-muted small">Загрузите .xlsx по шаблону. <a href="/admin/products/import/template">Скачать шаблон</a>.</p>
-                    <input type="file" name="file" accept=".xlsx" class="form-control" required>
+                    <p class="text-muted small">
+                        Загрузите .xlsx по шаблону.
+                        <a href="/admin/products/import/template">Скачать шаблон</a>.
+                    </p>
+                    <input type="file" name="file" accept=".xlsx"
+                           class="form-control" required>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-secondary"
+                            data-bs-dismiss="modal">Отмена</button>
                     <button type="submit" class="btn btn-primary">Импортировать</button>
                 </div>
             </form>

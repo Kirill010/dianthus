@@ -6,7 +6,7 @@ from fastapi import (APIRouter, Depends, File, Form, HTTPException,
                      Request, UploadFile)
 from fastapi.responses import (HTMLResponse, RedirectResponse,
                                 StreamingResponse)
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
@@ -32,6 +32,7 @@ XLSX_MIME = ("application/vnd.openxmlformats-officedocument"
              ".spreadsheetml.sheet")
 MAX_EXCEL_SIZE = 10 * 1024 * 1024
 CHUNK = 64 * 1024
+ORDERS_PER_PAGE = 20
 
 
 def _xlsx(stream, filename: str) -> StreamingResponse:
@@ -58,11 +59,48 @@ def _err(request: Request, errors: list[str]) -> None:
 # ═══════ ДАШБОРД ════════════════════════════════════════════
 
 @router.get("", response_class=HTMLResponse)
-async def dashboard(request: Request, db: Session = Depends(get_db),
-                    admin=Depends(require_admin)):
-    orders = (db.query(Order)
-              .options(selectinload(Order.user), selectinload(Order.items))
-              .order_by(Order.created_at.desc()).all())
+async def dashboard(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin=Depends(require_admin),
+    q: str = "",
+    status: str = "",
+    page: int = 1,
+):
+    q = (q or "").strip()
+    status = (status or "").strip()
+    page = max(1, page)
+
+    # ── Заказы: поиск + фильтр + пагинация ──
+    orders_query = (
+        db.query(Order)
+        .options(selectinload(Order.user), selectinload(Order.items))
+    )
+    if q:
+        conditions = []
+        if q.isdigit():
+            conditions.append(Order.id == int(q))
+        conditions.append(User.company_name.ilike(f"%{q}%"))
+        conditions.append(User.email.ilike(f"%{q}%"))
+        conditions.append(User.full_name.ilike(f"%{q}%"))
+        orders_query = orders_query.outerjoin(User).filter(or_(*conditions))
+    if status:
+        orders_query = orders_query.filter(Order.status == status)
+
+    total_orders = orders_query.count()
+    orders_total_pages = max(
+        1, (total_orders + ORDERS_PER_PAGE - 1) // ORDERS_PER_PAGE
+    )
+    page = min(page, orders_total_pages)
+    orders = (
+        orders_query
+        .order_by(Order.created_at.desc())
+        .offset((page - 1) * ORDERS_PER_PAGE)
+        .limit(ORDERS_PER_PAGE)
+        .all()
+    )
+
+    # ── Остальные данные ──
     products = db.query(Product).order_by(Product.name).all()
     supplies = (db.query(Supply)
                 .options(selectinload(Supply.items))
@@ -75,14 +113,53 @@ async def dashboard(request: Request, db: Session = Depends(get_db),
                              selectinload(SupplyItem.supply))
                     .filter(SupplyItem.is_active == True,  # noqa: E712
                             SupplyItem.stock > 0).all())
-    return render(request, "admin.html", db,
-                  user=admin, orders=orders, products=products,
-                  supplies=supplies, users=users,
-                  pending_count=pending_count,
-                  active_items=active_items,
-                  statuses=ORDER_STATUSES,
-                  supply_statuses=SUPPLY_STATUSES,
-                  categories=PRODUCT_CATEGORIES)
+
+    return render(
+        request, "admin.html", db,
+        user=admin,
+        orders=orders,
+        total_orders=total_orders,
+        orders_page=page,
+        orders_total_pages=orders_total_pages,
+        orders_q=q,
+        orders_status=status,
+        products=products,
+        supplies=supplies,
+        users=users,
+        pending_count=pending_count,
+        active_items=active_items,
+        statuses=ORDER_STATUSES,
+        supply_statuses=SUPPLY_STATUSES,
+        categories=PRODUCT_CATEGORIES,
+    )
+
+
+# ═══════ ДЕТАЛИ ЗАКАЗА ══════════════════════════════════════
+
+@router.get("/orders/{order_id}", response_class=HTMLResponse)
+async def order_detail(
+    order_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin=Depends(require_admin),
+):
+    """Полная информация о заказе для админа."""
+    order = (
+        db.query(Order)
+        .options(selectinload(Order.user), selectinload(Order.items))
+        .filter(Order.id == order_id)
+        .first()
+    )
+    if not order:
+        request.session["flash"] = f"Заказ №{order_id} не найден"
+        return RedirectResponse(url="/admin", status_code=303)
+
+    return render(
+        request, "admin_order_detail.html", db,
+        user=admin,
+        order=order,
+        statuses=ORDER_STATUSES,
+    )
 
 
 # ═══════ МОДЕРАЦИЯ ══════════════════════════════════════════
@@ -172,14 +249,12 @@ async def user_reject(user_id: int, request: Request,
     db.query(Order).filter(Order.user_id == user.id).update(
         {Order.user_id: None}, synchronize_session=False
     )
-    name, email = user.full_name, user.email
+    name = user.full_name
     db.delete(user)
     db.commit()
     request.session["flash"] = f"🗑 «{name}» удалён"
     return RedirectResponse(url="/admin", status_code=303)
 
-
-# ─── НОВОЕ: управление скидкой клиента ───
 
 @router.post("/users/{user_id}/discount")
 async def user_set_discount(user_id: int, request: Request,
@@ -232,7 +307,6 @@ async def update_order_status(request: Request,
             "Выполнен": "Заказ выполнен. Спасибо за покупку!",
             "Отменён": "Заказ отменён. Свяжитесь с менеджером.",
         }.get(status, f"Статус заказа изменён на «{status}»")
-
         note = Notification(
             user_id=order.user_id,
             order_id=order.id,
@@ -242,7 +316,8 @@ async def update_order_status(request: Request,
         db.commit()
 
     request.session["flash"] = f"Заказ №{order.id}: «{status}»"
-    return RedirectResponse(url="/admin", status_code=303)
+    referer = request.headers.get("referer") or "/admin"
+    return RedirectResponse(url=referer, status_code=303)
 
 
 # ═══════ EXCEL ══════════════════════════════════════════════
@@ -614,7 +689,7 @@ async def supply_delete(supply_id: int, request: Request,
     return RedirectResponse(url="/admin", status_code=303)
 
 
-# ═══════ ИМПОРТ НАКЛАДНОЙ (ИСПРАВЛЕНО) ═══════════════════════
+# ═══════ ИМПОРТ НАКЛАДНОЙ ═══════════════════════════════════
 
 @router.post("/supplies/{supply_id}/import/invoice")
 async def supply_import_invoice(
@@ -666,12 +741,10 @@ async def supply_import_invoice(
 
     try:
         for it in items:
-            # 1) Ищем товар в справочнике
             product = (db.query(Product)
                        .filter(Product.name == it["name"])
                        .first())
 
-            # 2) Если нет — создаём с угаданным размером упаковки
             if not product:
                 pack = it.get("package_size") or guess_package_size(it["name"])
                 product = Product(
@@ -691,7 +764,6 @@ async def supply_import_invoice(
 
             pack = max(1, product.package_size or 1)
 
-            # 3) Переводим ШТУКИ → УПАКОВКИ
             packs = it["quantity"] // pack
             if packs <= 0:
                 skipped.append(
@@ -704,21 +776,20 @@ async def supply_import_invoice(
                     f"{it['name']}: {remainder} шт не вошли в целые упаковки"
                 )
 
-            # 4) Обновляем/создаём позицию поставки
             existing = (db.query(SupplyItem)
                         .filter(SupplyItem.supply_id == supply_id,
                                 SupplyItem.product_id == product.id)
                         .first())
             if existing:
-                existing.price = it["price"]   # цена за ШТУКУ
-                existing.stock += packs         # УПАКОВКИ
+                existing.price = it["price"]
+                existing.stock += packs
                 updated_items += 1
             else:
                 db.add(SupplyItem(
                     supply_id=supply_id,
                     product_id=product.id,
-                    price=it["price"],   # цена за ШТУКУ
-                    stock=packs,         # УПАКОВОК
+                    price=it["price"],
+                    stock=packs,
                 ))
                 new_items += 1
 
@@ -754,8 +825,8 @@ async def supply_import_invoice(
 async def supply_item_add(
     supply_id: int, request: Request,
     product_id: int = Form(...),
-    quantity_stems: int = Form(0),        # ← вводим в ШТУКАХ
-    price: float = Form(0),               # ← цена за ШТУКУ
+    quantity_stems: int = Form(0),
+    price: float = Form(0),
     db: Session = Depends(get_db),
     _a=Depends(require_admin),
     _csrf: None = Depends(check_csrf),
@@ -824,8 +895,8 @@ async def supply_item_add(
 @router.post("/supply_items/{item_id}/update")
 async def supply_item_update(
     item_id: int, request: Request,
-    price: float = Form(...),           # Цена за ШТУКУ
-    quantity_stems: int = Form(...),    # Количество в ШТУКАХ (а не упаковках!)
+    price: float = Form(...),
+    quantity_stems: int = Form(...),
     db: Session = Depends(get_db),
     _a=Depends(require_admin),
     _csrf: None = Depends(check_csrf),
@@ -839,25 +910,24 @@ async def supply_item_update(
         msg = check(v)
         if msg:
             errors.append(msg)
-            
+
     if errors:
         _err(request, errors)
         return RedirectResponse(
             url=f"/admin/supplies/{item.supply_id}/edit", status_code=303)
 
-    # Пересчитываем штуки в упаковки
     pack = max(1, item.product.package_size or 1)
     packs = quantity_stems // pack
-    
+
     if packs <= 0:
         request.session["flash"] = f"❌ {quantity_stems} шт < 1 упак ({pack} шт)."
         return RedirectResponse(
             url=f"/admin/supplies/{item.supply_id}/edit", status_code=303)
 
     item.price = price
-    item.stock = packs  # Сохраняем УПАКОВКИ
+    item.stock = packs
     db.commit()
-    
+
     request.session["flash"] = (
         f"Обновлено: {packs} упак. ({packs * pack} шт)"
     )
