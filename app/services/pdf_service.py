@@ -1,103 +1,162 @@
-"""Генерация PDF-счёта по заказу."""
+"""Генерация PDF-счёта по заказу — через xhtml2pdf (чистый Python).
+
+Работает на Windows, Linux, macOS — без системных библиотек.
+"""
 import logging
 from datetime import datetime
+from io import BytesIO
 
 logger = logging.getLogger(__name__)
 
 
 def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
-    """Генерирует PDF-счёт для заказа. Возвращает bytes."""
+    """
+    Генерирует PDF-счёт для заказа.
+
+    Возвращает bytes (содержимое PDF).
+    """
     try:
-        from weasyprint import HTML
+        from xhtml2pdf import pisa
     except ImportError:
-        logger.error("weasyprint не установлен: pip install weasyprint")
+        logger.error("xhtml2pdf не установлен: pip install xhtml2pdf")
         raise
 
+    # ── Данные клиента ──
     buyer_company = user.company_name if user else "Гость"
     buyer_name = user.full_name if user else "—"
     buyer_inn = (user.inn if user else "") or "—"
     buyer_phone = (user.phone if user else "") or "—"
     buyer_email = (user.email if user else "") or "—"
 
+    # ── Позиции заказа ──
     rows = []
     for i, item in enumerate(order.items, 1):
         pack = item.package_size or 1
         stems = item.quantity * pack
         rows.append(f"""
             <tr>
-                <td>{i}</td>
+                <td align="center">{i}</td>
                 <td>{item.product_name}</td>
-                <td style="text-align:center;">{item.quantity}</td>
-                <td style="text-align:center;">{pack}</td>
-                <td style="text-align:center;">{stems}</td>
-                <td style="text-align:right;">{item.price:.2f}</td>
-                <td style="text-align:right;">{item.subtotal:.2f}</td>
+                <td align="center">{item.quantity}</td>
+                <td align="center">{pack}</td>
+                <td align="center">{stems}</td>
+                <td align="right">{item.price:.2f}</td>
+                <td align="right">{item.subtotal:.2f}</td>
             </tr>
         """)
 
-    discount_html = ""
+    # ── Скидка ──
+    discount_row = ""
     if order.discount_percent and order.discount_percent > 0:
-        discount_html = f"""
+        discount_row = f"""
             <tr>
-                <td colspan="6" style="text-align:right;">
+                <td colspan="6" align="right">
                     Скидка {order.discount_percent:.0f}%:
                 </td>
-                <td style="text-align:right; color:#c97b4a;">
+                <td align="right" style="color:#c97b4a;">
                     −{order.discount_amount:.2f} ₽
                 </td>
             </tr>
         """
 
+    # ── Комментарий ──
+    comment_block = ""
+    if order.comment:
+        comment_block = f"""
+            <p style="background:#ecf1e8; padding:8px;
+                border-left:3px solid #4a6741;">
+                <b>Комментарий:</b> {order.comment}
+            </p>
+        """
+
+    # ── Адрес и телефон поставщика ──
+    shop_address = shop_info.get('address') or ''
+    shop_phone = shop_info.get('phone') or ''
+    supplier_extra = ''
+    if shop_address:
+        supplier_extra += f"<p>Адрес: {shop_address}</p>"
+    if shop_phone:
+        supplier_extra += f"<p>Тел: {shop_phone}</p>"
+
+    # ── HTML для PDF ──
+    # ⚠️ В xhtml2pdf стили пишем inline, flex не работает.
     html = f"""
     <!DOCTYPE html>
-    <html lang="ru">
+    <html>
     <head>
         <meta charset="UTF-8">
         <style>
-            @page {{ size: A4; margin: 1.5cm; }}
+            @page {{
+                size: A4;
+                margin: 1.5cm;
+            }}
             body {{
-                font-family: 'DejaVu Sans', Arial, sans-serif;
-                color: #222; font-size: 11pt; line-height: 1.4;
+                font-family: Helvetica, Arial, sans-serif;
+                font-size: 11pt;
+                color: #222;
             }}
             h1 {{
-                color: #35492f; text-align: center;
-                margin-bottom: 0.3em; font-size: 22pt;
+                color: #35492f;
+                text-align: center;
+                font-size: 20pt;
+                margin-bottom: 5px;
             }}
             .subtitle {{
-                text-align: center; color: #777;
-                margin-bottom: 2em; font-size: 10pt;
+                text-align: center;
+                color: #777;
+                font-size: 10pt;
+                margin-bottom: 20px;
             }}
-            .info-block {{
-                display: flex; justify-content: space-between;
-                margin-bottom: 2em; padding: 1em;
-                background: #faf6ef; border-radius: 8px;
+            .info-table {{
+                width: 100%;
+                margin-bottom: 20px;
+                background: #faf6ef;
             }}
-            .info-block > div {{ flex: 1; }}
-            .info-block h3 {{
-                margin: 0 0 0.5em; color: #4a6741; font-size: 11pt;
-            }}
-            .info-block p {{ margin: 0.2em 0; font-size: 10pt; }}
-            table {{
-                width: 100%; border-collapse: collapse;
-                margin-bottom: 1.5em;
-            }}
-            th {{
-                background: #4a6741; color: white;
-                padding: 8px; text-align: left; font-size: 10pt;
-            }}
-            th:first-child, th:nth-child(3) {{ text-align: center; }}
-            td {{
-                padding: 8px; border-bottom: 1px solid #e5dcc9;
+            .info-table td {{
+                vertical-align: top;
+                padding: 10px;
+                border: none;
                 font-size: 10pt;
             }}
-            tfoot td {{ padding: 8px; border: none; font-size: 11pt; }}
-            .total {{
-                font-size: 14pt; font-weight: bold; color: #35492f;
+            .info-table h3 {{
+                color: #4a6741;
+                font-size: 11pt;
+                margin: 0 0 5px;
+            }}
+            .info-table p {{
+                margin: 2px 0;
+            }}
+            table.items {{
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 15px;
+            }}
+            table.items th {{
+                background: #4a6741;
+                color: white;
+                padding: 8px;
+                font-size: 10pt;
+                text-align: left;
+            }}
+            table.items td {{
+                padding: 8px;
+                border-bottom: 1px solid #e5dcc9;
+                font-size: 10pt;
+            }}
+            .total-row td {{
+                font-size: 13pt;
+                font-weight: bold;
+                color: #35492f;
+                padding-top: 12px;
+                border: none;
             }}
             .footer {{
-                margin-top: 3em; padding-top: 1em;
+                text-align: center;
+                color: #777;
+                font-size: 9pt;
+                margin-top: 30px;
                 border-top: 1px solid #e5dcc9;
-                text-align: center; font-size: 9pt; color: #777;
+                padding-top: 10px;
             }}
         </style>
     </head>
@@ -107,33 +166,34 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
             от {order.created_at.strftime('%d.%m.%Y')}
         </div>
 
-        <div class="info-block">
-            <div>
-                <h3>Поставщик</h3>
-                <p><b>{shop_info.get('name', 'ООО «Диантус»')}</b></p>
-                {f"<p>Адрес: {shop_info.get('address')}</p>" if shop_info.get('address') else ""}
-                {f"<p>Тел: {shop_info.get('phone')}</p>" if shop_info.get('phone') else ""}
-            </div>
-            <div>
-                <h3>Покупатель</h3>
-                <p><b>{buyer_company}</b></p>
-                <p>Контакт: {buyer_name}</p>
-                <p>ИНН: {buyer_inn}</p>
-                <p>Тел: {buyer_phone}</p>
-                <p>Email: {buyer_email}</p>
-            </div>
-        </div>
+        <table class="info-table">
+            <tr>
+                <td width="50%">
+                    <h3>Поставщик</h3>
+                    <p><b>{shop_info.get('name', 'ООО «Диантус»')}</b></p>
+                    {supplier_extra}
+                </td>
+                <td width="50%">
+                    <h3>Покупатель</h3>
+                    <p><b>{buyer_company}</b></p>
+                    <p>Контакт: {buyer_name}</p>
+                    <p>ИНН: {buyer_inn}</p>
+                    <p>Тел: {buyer_phone}</p>
+                    <p>Email: {buyer_email}</p>
+                </td>
+            </tr>
+        </table>
 
-        <table>
+        <table class="items">
             <thead>
                 <tr>
-                    <th>№</th>
+                    <th align="center">№</th>
                     <th>Товар</th>
-                    <th>Упак.</th>
-                    <th>Шт/упак</th>
-                    <th>Всего шт</th>
-                    <th style="text-align:right;">Цена/шт</th>
-                    <th style="text-align:right;">Сумма</th>
+                    <th align="center">Упак.</th>
+                    <th align="center">Шт/упак</th>
+                    <th align="center">Всего шт</th>
+                    <th align="right">Цена/шт</th>
+                    <th align="right">Сумма</th>
                 </tr>
             </thead>
             <tbody>
@@ -141,22 +201,18 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
             </tbody>
             <tfoot>
                 <tr>
-                    <td colspan="6" style="text-align:right;">Подытог:</td>
-                    <td style="text-align:right;">{order.subtotal:.2f} ₽</td>
+                    <td colspan="6" align="right">Подытог:</td>
+                    <td align="right">{order.subtotal:.2f} ₽</td>
                 </tr>
-                {discount_html}
-                <tr>
-                    <td colspan="6" style="text-align:right;" class="total">
-                        ИТОГО:
-                    </td>
-                    <td style="text-align:right;" class="total">
-                        {order.total_price:.2f} ₽
-                    </td>
+                {discount_row}
+                <tr class="total-row">
+                    <td colspan="6" align="right">ИТОГО:</td>
+                    <td align="right">{order.total_price:.2f} ₽</td>
                 </tr>
             </tfoot>
         </table>
 
-        {f"<p><b>Комментарий:</b> {order.comment}</p>" if order.comment else ""}
+        {comment_block}
 
         <div class="footer">
             Счёт сгенерирован автоматически · {datetime.now().strftime('%d.%m.%Y %H:%M')}<br>
@@ -166,4 +222,17 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
     </html>
     """
 
-    return HTML(string=html).write_pdf()
+    # ── Генерация PDF ──
+    pdf_buffer = BytesIO()
+    pisa_status = pisa.CreatePDF(
+        src=html,
+        dest=pdf_buffer,
+        encoding="utf-8",
+    )
+
+    if pisa_status.err:
+        logger.error("xhtml2pdf вернул ошибку: %s", pisa_status.err)
+        raise RuntimeError("Не удалось сгенерировать PDF")
+
+    pdf_buffer.seek(0)
+    return pdf_buffer.getvalue()
