@@ -1,25 +1,26 @@
-"""Генерация PDF-счёта по заказу — через xhtml2pdf (чистый Python).
+"""Генерация PDF-счёта по заказу — через xhtml2pdf.
 
-Работает на Windows, Linux, macOS — без системных библиотек.
+Кириллица поддерживается через шрифт DejaVu Sans.
 """
 import logging
 from datetime import datetime
 from io import BytesIO
 
+from .pdf_fonts import register_pdf_fonts, FONT_NAME
+
 logger = logging.getLogger(__name__)
 
 
 def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
-    """
-    Генерирует PDF-счёт для заказа.
-
-    Возвращает bytes (содержимое PDF).
-    """
+    """Генерирует PDF-счёт. Возвращает bytes."""
     try:
         from xhtml2pdf import pisa
     except ImportError:
         logger.error("xhtml2pdf не установлен: pip install xhtml2pdf")
         raise
+
+    # Регистрируем шрифт (один раз при первом вызове)
+    font_name = register_pdf_fonts()
 
     # ── Данные клиента ──
     buyer_company = user.company_name if user else "Гость"
@@ -79,7 +80,6 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
         supplier_extra += f"<p>Тел: {shop_phone}</p>"
 
     # ── HTML для PDF ──
-    # ⚠️ В xhtml2pdf стили пишем inline, flex не работает.
     html = f"""
     <!DOCTYPE html>
     <html>
@@ -91,7 +91,7 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
                 margin: 1.5cm;
             }}
             body {{
-                font-family: Helvetica, Arial, sans-serif;
+                font-family: "{font_name}";
                 font-size: 11pt;
                 color: #222;
             }}
@@ -100,6 +100,7 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
                 text-align: center;
                 font-size: 20pt;
                 margin-bottom: 5px;
+                font-family: "{font_name}";
             }}
             .subtitle {{
                 text-align: center;
@@ -122,6 +123,7 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
                 color: #4a6741;
                 font-size: 11pt;
                 margin: 0 0 5px;
+                font-family: "{font_name}";
             }}
             .info-table p {{
                 margin: 2px 0;
@@ -137,6 +139,7 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
                 padding: 8px;
                 font-size: 10pt;
                 text-align: left;
+                font-family: "{font_name}";
             }}
             table.items td {{
                 padding: 8px;
@@ -149,6 +152,7 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
                 color: #35492f;
                 padding-top: 12px;
                 border: none;
+                font-family: "{font_name}";
             }}
             .footer {{
                 text-align: center;
