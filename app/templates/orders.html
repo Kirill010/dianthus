@@ -23,6 +23,23 @@
         {% endif %}
         <div class="order-card__sum">{{ "%.0f"|format(order.total_price) }} ₽</div>
         {% if order.comment %}<div class="order-card__comment">{{ order.comment }}</div>{% endif %}
+
+        <!-- ─── Кнопки действий ─── -->
+        <div class="order-card__actions">
+            <a href="/orders/{{ order.id }}/invoice"
+               target="_blank"
+               class="btn btn-sm btn-outline-secondary">
+                <i class="fas fa-file-pdf me-1"></i>Счёт PDF
+            </a>
+
+            <form action="/orders/{{ order.id }}/repeat"
+                  method="post" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-sm btn-outline-primary">
+                    <i class="fas fa-redo me-1"></i>Повторить
+                </button>
+            </form>
+        </div>
     </div>
     {% endfor %}
 </div>
@@ -33,4 +50,19 @@
     <a href="/catalog" class="btn btn-primary mt-2">В каталог</a>
 </div>
 {% endif %}
+
+<style>
+.order-card__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--border);
+}
+.order-card__actions .btn {
+    font-size: 0.8rem;
+    padding: 5px 12px;
+}
+</style>
 {% endblock %}

@@ -8,6 +8,11 @@
     <link href="/static/vendor/bootstrap.min.css" rel="stylesheet">
     <link href="/static/vendor/fontawesome/css/all.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#4a6741">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Диантус">
 </head>
 <body class="{% if user and not hide_bottom_nav %}has-bottom-nav{% endif %}">
 
@@ -97,5 +102,15 @@
 </footer>
 
 <script src="/static/vendor/bootstrap.bundle.min.js"></script>
+
+<script>
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/static/sw.js')
+            .then((reg) => console.log('SW зарегистрирован:', reg.scope))
+            .catch((err) => console.warn('SW не зарегистрирован:', err));
+    });
+}
+</script>
 </body>
 </html>

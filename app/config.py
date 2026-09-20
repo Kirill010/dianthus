@@ -39,6 +39,17 @@ class Config:
     SHOP_MAX_LINK: str = _str_env("SHOP_MAX_LINK", "")
     SHOP_MAP_URL: str = _str_env("SHOP_MAP_URL", "")
 
+    # ── Email-уведомления (SMTP) ──
+    SMTP_HOST: str = _str_env("SMTP_HOST", "")
+    SMTP_PORT: int = _int_env("SMTP_PORT", 465)
+    SMTP_USER: str = _str_env("SMTP_USER", "")
+    SMTP_PASSWORD: str = _str_env("SMTP_PASSWORD", "")
+    SMTP_FROM: str = _str_env("SMTP_FROM", "")
+    SMTP_TO: str = _str_env("SMTP_TO", "")
+    SMTP_USE_SSL: bool = (
+        _str_env("SMTP_USE_SSL", "true").lower() in ("1", "true", "yes", "on")
+    )
+
 
 config = Config()
 

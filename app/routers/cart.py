@@ -1,14 +1,20 @@
 """Корзина и оформление заказа. Цена — за штуку, количество — упаковки."""
+import logging
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import (HTMLResponse, RedirectResponse,
+                                Response)
 from sqlalchemy.orm import Session
 
+from ..config import config
 from ..database import get_db
 from ..deps import get_current_user
 from ..models import Order, OrderItem, SupplyItem
 from ..security import check_csrf
+from ..services.notifier import notify_admin_new_order
 from ..templating import render
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 MAX_COMMENT_LENGTH = 1000
 
@@ -16,7 +22,6 @@ MAX_COMMENT_LENGTH = 1000
 # ───────── УТИЛИТЫ ─────────
 
 def _cart_subtotal(cart: list[dict]) -> float:
-    """Сумма ДО скидки."""
     total = 0.0
     for it in cart:
         pack = it.get("package_size") or 1
@@ -25,7 +30,6 @@ def _cart_subtotal(cart: list[dict]) -> float:
 
 
 def _apply_discount(subtotal: float, discount_percent: float):
-    """Возвращает (размер скидки, итог)."""
     pct = max(0.0, min(100.0, float(discount_percent or 0)))
     if pct <= 0:
         return 0.0, subtotal
@@ -34,7 +38,6 @@ def _apply_discount(subtotal: float, discount_percent: float):
 
 
 def _clean_cart(cart: list[dict]) -> list[dict]:
-    """Убирает позиции с нулевым или отрицательным количеством."""
     return [c for c in cart if c.get("quantity", 0) > 0]
 
 
@@ -220,7 +223,6 @@ async def place_order(request: Request, comment: str = Form(""),
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
-    # Убираем позиции с нулевым количеством (защита от повреждённой сессии)
     cart = _clean_cart(request.session.get("cart", []))
     if not cart:
         request.session["flash"] = "Корзина пуста"
@@ -281,10 +283,20 @@ async def place_order(request: Request, comment: str = Form(""),
         items_map[c["supply_item_id"]].stock -= c["quantity"]
 
     db.commit()
+    db.refresh(order)
+
+    # ── Уведомление админу на email ──
+    try:
+        notify_admin_new_order(order, user)
+    except Exception as e:
+        logger.warning("Не удалось уведомить админа: %s", e)
+
     request.session["cart"] = []
     request.session["flash"] = f"Заказ №{order.id} оформлен!"
     return RedirectResponse(url="/orders", status_code=303)
 
+
+# ───────── ИСТОРИЯ ─────────
 
 @router.get("/orders", response_class=HTMLResponse)
 async def order_history(request: Request, db: Session = Depends(get_db)):
@@ -294,3 +306,130 @@ async def order_history(request: Request, db: Session = Depends(get_db)):
     orders = (db.query(Order).filter(Order.user_id == user.id)
               .order_by(Order.created_at.desc()).all())
     return render(request, "orders.html", db, user=user, orders=orders)
+
+
+# ───────── ПОВТОРИТЬ ЗАКАЗ ─────────
+
+@router.post("/orders/{order_id}/repeat")
+async def repeat_order(
+    order_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    _csrf: None = Depends(check_csrf),
+):
+    """Добавляет позиции старого заказа в корзину."""
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    order = (db.query(Order)
+             .filter(Order.id == order_id, Order.user_id == user.id)
+             .first())
+    if not order:
+        request.session["flash"] = "Заказ не найден"
+        return RedirectResponse(url="/orders", status_code=303)
+
+    cart = request.session.get("cart", [])
+    added = 0
+    skipped = []
+
+    for item in order.items:
+        if item.product_id is None:
+            skipped.append(item.product_name)
+            continue
+
+        si = (db.query(SupplyItem)
+              .filter(SupplyItem.product_id == item.product_id,
+                      SupplyItem.is_active == True,  # noqa: E712
+                      SupplyItem.stock > 0)
+              .first())
+        if not si:
+            skipped.append(item.product_name)
+            continue
+
+        pack = max(1, si.product.package_size or 1)
+        min_packs = max(1, si.product.min_quantity or 1)
+
+        want_packs = item.quantity or min_packs
+        want_packs = max(min_packs, min(want_packs, si.stock))
+
+        found = False
+        for ci in cart:
+            if ci["supply_item_id"] == si.id:
+                new_packs = ci["quantity"] + want_packs
+                if new_packs > si.stock:
+                    new_packs = si.stock
+                ci["quantity"] = new_packs
+                ci["package_size"] = pack
+                found = True
+                break
+
+        if not found:
+            cart.append({
+                "supply_item_id": si.id,
+                "product_id": si.product.id,
+                "name": si.product.name,
+                "unit": si.product.unit,
+                "package_size": pack,
+                "price": si.price,
+                "image_url": si.product.image_url,
+                "quantity": want_packs,
+            })
+        added += 1
+
+    request.session["cart"] = cart
+
+    msg = f"Добавлено в корзину из заказа №{order.id}: {added} поз."
+    if skipped:
+        msg += f" Недоступно: {len(skipped)}"
+    request.session["flash"] = msg
+
+    if added:
+        return RedirectResponse(url="/cart", status_code=303)
+    return RedirectResponse(url="/catalog", status_code=303)
+
+
+# ───────── PDF-СЧЁТ ─────────
+
+@router.get("/orders/{order_id}/invoice")
+async def download_invoice(
+    order_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Скачать счёт в PDF."""
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    order = (db.query(Order)
+             .filter(Order.id == order_id, Order.user_id == user.id)
+             .first())
+    if not order:
+        raise HTTPException(404, "Заказ не найден")
+
+    try:
+        from ..services.pdf_service import generate_invoice_pdf
+        shop_info = {
+            "name": config.SHOP_NAME,
+            "phone": config.SHOP_PHONE,
+            "address": config.SHOP_ADDRESS,
+        }
+        pdf_bytes = generate_invoice_pdf(order, user, shop_info)
+    except ImportError:
+        request.session["flash"] = "PDF-генерация недоступна (нет weasyprint)"
+        return RedirectResponse(url="/orders", status_code=303)
+    except Exception as e:
+        logger.exception("Ошибка генерации PDF: %s", e)
+        request.session["flash"] = "Не удалось создать PDF"
+        return RedirectResponse(url="/orders", status_code=303)
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f"inline; filename=invoice_{order.id}.pdf"
+            )
+        },
+    )
