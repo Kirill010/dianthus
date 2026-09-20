@@ -1,12 +1,9 @@
-"""Генерация PDF-счёта по заказу — через xhtml2pdf.
-
-Кириллица поддерживается через шрифт DejaVu Sans.
-"""
+"""Генерация PDF-счёта через xhtml2pdf (с поддержкой кириллицы)."""
 import logging
 from datetime import datetime
 from io import BytesIO
 
-from .pdf_fonts import register_pdf_fonts, FONT_NAME
+from .pdf_fonts import get_font_css, get_font_family, link_callback
 
 logger = logging.getLogger(__name__)
 
@@ -16,11 +13,13 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
     try:
         from xhtml2pdf import pisa
     except ImportError:
-        logger.error("xhtml2pdf не установлен: pip install xhtml2pdf")
+        logger.error("xhtml2pdf не установлен")
         raise
 
-    # Регистрируем шрифт (один раз при первом вызове)
-    font_name = register_pdf_fonts()
+    # ── Шрифт ──
+    font_css = get_font_css()
+    font_family = get_font_family()
+    logger.info("PDF: используем шрифт %s", font_family)
 
     # ── Данные клиента ──
     buyer_company = user.company_name if user else "Гость"
@@ -46,7 +45,6 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
             </tr>
         """)
 
-    # ── Скидка ──
     discount_row = ""
     if order.discount_percent and order.discount_percent > 0:
         discount_row = f"""
@@ -60,7 +58,6 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
             </tr>
         """
 
-    # ── Комментарий ──
     comment_block = ""
     if order.comment:
         comment_block = f"""
@@ -70,7 +67,6 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
             </p>
         """
 
-    # ── Адрес и телефон поставщика ──
     shop_address = shop_info.get('address') or ''
     shop_phone = shop_info.get('phone') or ''
     supplier_extra = ''
@@ -79,19 +75,20 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
     if shop_phone:
         supplier_extra += f"<p>Тел: {shop_phone}</p>"
 
-    # ── HTML для PDF ──
     html = f"""
     <!DOCTYPE html>
     <html>
     <head>
         <meta charset="UTF-8">
         <style>
+            {font_css}
+
             @page {{
                 size: A4;
                 margin: 1.5cm;
             }}
             body {{
-                font-family: "{font_name}";
+                font-family: "{font_family}";
                 font-size: 11pt;
                 color: #222;
             }}
@@ -100,7 +97,6 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
                 text-align: center;
                 font-size: 20pt;
                 margin-bottom: 5px;
-                font-family: "{font_name}";
             }}
             .subtitle {{
                 text-align: center;
@@ -116,21 +112,18 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
             .info-table td {{
                 vertical-align: top;
                 padding: 10px;
-                border: none;
                 font-size: 10pt;
             }}
             .info-table h3 {{
                 color: #4a6741;
                 font-size: 11pt;
                 margin: 0 0 5px;
-                font-family: "{font_name}";
             }}
             .info-table p {{
                 margin: 2px 0;
             }}
             table.items {{
                 width: 100%;
-                border-collapse: collapse;
                 margin-bottom: 15px;
             }}
             table.items th {{
@@ -139,11 +132,9 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
                 padding: 8px;
                 font-size: 10pt;
                 text-align: left;
-                font-family: "{font_name}";
             }}
             table.items td {{
                 padding: 8px;
-                border-bottom: 1px solid #e5dcc9;
                 font-size: 10pt;
             }}
             .total-row td {{
@@ -151,15 +142,12 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
                 font-weight: bold;
                 color: #35492f;
                 padding-top: 12px;
-                border: none;
-                font-family: "{font_name}";
             }}
             .footer {{
                 text-align: center;
                 color: #777;
                 font-size: 9pt;
                 margin-top: 30px;
-                border-top: 1px solid #e5dcc9;
                 padding-top: 10px;
             }}
         </style>
@@ -226,16 +214,17 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
     </html>
     """
 
-    # ── Генерация PDF ──
+    # ── PDF с link_callback ──
     pdf_buffer = BytesIO()
     pisa_status = pisa.CreatePDF(
         src=html,
         dest=pdf_buffer,
         encoding="utf-8",
+        link_callback=link_callback,  # ⚠️ ВОТ ЭТО ГЛАВНОЕ
     )
 
     if pisa_status.err:
-        logger.error("xhtml2pdf вернул ошибку: %s", pisa_status.err)
+        logger.error("xhtml2pdf ошибка: %s", pisa_status.err)
         raise RuntimeError("Не удалось сгенерировать PDF")
 
     pdf_buffer.seek(0)

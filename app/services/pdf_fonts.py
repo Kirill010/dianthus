@@ -1,129 +1,90 @@
-"""Регистрация шрифта с поддержкой кириллицы для PDF.
+"""Шрифт для PDF — правильная регистрация через @font-face + link_callback.
 
-xhtml2pdf по умолчанию использует Helvetica — в ней НЕТ русских букв.
-Поэтому мы подключаем DejaVu Sans (есть везде, поддерживает кириллицу).
+xhtml2pdf НЕ читает file:// URI напрямую.
+Нужно использовать относительный путь + link_callback в CreatePDF.
 """
 import logging
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Папка для наших шрифтов
+# Папка со шрифтами
 FONTS_DIR = Path(__file__).resolve().parent.parent / "static" / "fonts"
-FONTS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Имя шрифта, под которым будем использовать в HTML/CSS
-FONT_NAME = "DejaVuSans"
-FONT_BOLD = "DejaVuSans-Bold"
+# Имя шрифта
+FONT_FAMILY = "DianthusFont"
 
-_font_registered = False
+# Относительный путь от /static/ (для CSS)
+FONT_CSS_PATH_REGULAR = "fonts/DejaVuSans.ttf"
+FONT_CSS_PATH_BOLD = "fonts/DejaVuSans-Bold.ttf"
 
 
-def _find_dejavu_files() -> dict | None:
+def get_font_css() -> str:
     """
-    Ищет файлы DejaVu Sans в системе или в папке проекта.
-
-    Возвращает:
-        {
-            "regular": Path,
-            "bold": Path,
-        }
-        или None, если файлы не найдены.
+    CSS с @font-face. Использует ОТНОСИТЕЛЬНЫЙ путь,
+    который разрешается через link_callback в pisa.CreatePDF.
     """
-    # Кандидаты — файлы DejaVu в проекте (приоритет)
-    candidates = {
-        "regular": [
-            FONTS_DIR / "DejaVuSans.ttf",
-            FONTS_DIR / "DejaVuSans-Regular.ttf",
-        ],
-        "bold": [
-            FONTS_DIR / "DejaVuSans-Bold.ttf",
-        ],
-    }
+    regular = FONTS_DIR / "DejaVuSans.ttf"
+    bold = FONTS_DIR / "DejaVuSans-Bold.ttf"
 
-    # Системные пути (Linux)
-    system_paths = [
-        Path("/usr/share/fonts/truetype/dejavu"),
-        Path("/usr/share/fonts/dejavu"),
-        Path("/usr/local/share/fonts"),
-    ]
-    for sp in system_paths:
-        if sp.exists():
-            candidates["regular"].append(sp / "DejaVuSans.ttf")
-            candidates["bold"].append(sp / "DejaVuSans-Bold.ttf")
+    if not regular.exists():
+        logger.warning("⚠️  Шрифт не найден: %s", regular)
+        return ""
 
-    # Системные пути (Windows)
-    win_paths = [
-        Path("C:/Windows/Fonts"),
-        Path.home() / "AppData" / "Local" / "Microsoft" / "Windows" / "Fonts",
-    ]
-    for wp in win_paths:
-        if wp.exists():
-            candidates["regular"].append(wp / "DejaVuSans.ttf")
-            candidates["regular"].append(wp / "arial.ttf")  # fallback
-            candidates["bold"].append(wp / "DejaVuSans-Bold.ttf")
-            candidates["bold"].append(wp / "arialbd.ttf")
+    bold_path = FONT_CSS_PATH_BOLD if bold.exists() else FONT_CSS_PATH_REGULAR
 
-    # Ищем первый существующий файл
-    result = {}
-    for kind, paths in candidates.items():
-        for p in paths:
-            if p.exists():
-                result[kind] = p
-                break
-        else:
-            logger.warning("Не найден файл шрифта: %s", kind)
-            return None
-
-    return result
-
-
-def register_pdf_fonts() -> str:
+    css = f"""
+    @font-face {{
+        font-family: "{FONT_FAMILY}";
+        src: url("{FONT_CSS_PATH_REGULAR}");
+    }}
+    @font-face {{
+        font-family: "{FONT_FAMILY}";
+        font-weight: bold;
+        src: url("{bold_path}");
+    }}
     """
-    Регистрирует шрифт DejaVu Sans в xhtml2pdf.
+    logger.info("✅ CSS шрифта сгенерирован: %s", FONT_FAMILY)
+    return css
 
-    Возвращает имя шрифта (использовать в CSS как font-family).
-    Если шрифт не найден — возвращает "Helvetica" (будет с квадратиками).
-    """
-    global _font_registered
-    if _font_registered:
-        return FONT_NAME
 
-    try:
-        from reportlab.pdfbase import pdfmetrics
-        from reportlab.pdfbase.ttfonts import TTFont
-    except ImportError:
-        logger.error("reportlab не установлен")
+def get_font_family() -> str:
+    """Имя шрифта для font-family."""
+    if not (FONTS_DIR / "DejaVuSans.ttf").exists():
         return "Helvetica"
+    return FONT_FAMILY
 
-    files = _find_dejavu_files()
-    if not files:
-        logger.warning(
-            "⚠️  DejaVu Sans не найден. "
-            "Скачай его и положи в app/static/fonts/. "
-            "Или установи: pip install fonttools "
-            "и запусти: python download_fonts.py"
-        )
-        return "Helvetica"
 
-    try:
-        pdfmetrics.registerFont(TTFont(FONT_NAME, str(files["regular"])))
-        pdfmetrics.registerFont(TTFont(FONT_BOLD, str(files["bold"])))
+def link_callback(uri: str, rel: str) -> str:
+    """
+    Разрешает относительные URL к файлам.
 
-        # Регистрируем семейство (regular + bold)
-        from reportlab.pdfbase.pdfmetrics import registerFontFamily
-        registerFontFamily(
-            FONT_NAME,
-            normal=FONT_NAME,
-            bold=FONT_BOLD,
-            italic=FONT_NAME,
-            boldItalic=FONT_BOLD,
-        )
+    xhtml2pdf вызывает эту функцию для каждого ресурса (CSS, картинки, шрифты).
+    Мы должны вернуть АБСОЛЮТНЫЙ путь к файлу.
 
-        _font_registered = True
-        logger.info("✅ Шрифт DejaVu Sans зарегистрирован для PDF")
-        return FONT_NAME
+    :param uri: URI из HTML (например, "fonts/DejaVuSans.ttf")
+    :param rel: относительный путь HTML-документа
+    :return: абсолютный путь к файлу
+    """
+    # Уже абсолютный путь
+    if uri.startswith("file://"):
+        return uri[7:]
 
-    except Exception as e:
-        logger.exception("Ошибка регистрации шрифта: %s", e)
-        return "Helvetica"
+    # Убираем ведущий слэш
+    relative = uri.lstrip("/")
+
+    # Убираем "static/" если есть
+    if relative.startswith("static/"):
+        relative = relative[len("static/"):]
+
+    # Строим путь от /app/static/
+    static_dir = Path(__file__).resolve().parent.parent / "static"
+    full_path = static_dir / relative
+
+    if full_path.exists():
+        logger.debug("link_callback: %s → %s", uri, full_path)
+        return str(full_path)
+
+    # Не нашли — возвращаем как есть (для встроенных ресурсов)
+    logger.debug("link_callback: %s не найден, оставляем как есть", uri)
+    return uri
