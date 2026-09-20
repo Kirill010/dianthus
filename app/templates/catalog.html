@@ -20,7 +20,7 @@
     {% endfor %}
 </div>
 
-<!-- Фильтры по наличию (можно скрыть в выпадающий список на мобильных, но оставим как табы) -->
+<!-- Фильтры по наличию -->
 <div class="level-tabs">
     {% for key, label in quantity_levels %}
         {% set cnt = level_counts.get(key, 0) %}
@@ -34,7 +34,7 @@
     {% endfor %}
 </div>
 
-<!-- Поиск -->
+<!-- Поиск с автоподсказками -->
 <form class="catalog-search" method="get" action="/catalog">
     {% if current_filters.category %}<input type="hidden" name="category" value="{{ current_filters.category }}">{% endif %}
     {% if current_filters.level and current_filters.level != 'available' %}
@@ -42,7 +42,9 @@
     {% endif %}
     <div class="catalog-search__input">
         <i class="fas fa-search"></i>
-        <input type="text" name="q" placeholder="Поиск товара..." value="{{ current_filters.q }}">
+        <input type="text" name="q" id="searchInput" autocomplete="off"
+               placeholder="Поиск товара..." value="{{ current_filters.q }}">
+        <div id="suggestBox" class="suggest-box" style="display:none"></div>
     </div>
     {% if has_filters %}<a href="/catalog" class="btn-clear"><i class="fas fa-times"></i></a>{% endif %}
 </form>
@@ -55,9 +57,10 @@
     {% set min_packs = item.product.min_quantity or 1 %}
     {% set min_stems = pack * min_packs %}
     {% set is_out = stems < 1 %}
-    
+    {% set max_stems_valid = (stems // pack) * pack %}
+
     <div class="product-card {% if is_out %}product-card--out{% endif %}">
-        <!-- Картинка (кнопка "+" убрана) -->
+        <!-- Картинка -->
         <div class="product-card__image-wrap">
             <a href="/product/{{ item.id }}" class="product-card__image">
                 {% if item.product.image_url %}
@@ -103,8 +106,7 @@
             <form action="/add_to_cart" method="post" class="product-card__form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="supply_item_id" value="{{ item.id }}">
-                
-                <!-- Комбинированный блок: [-] [кол-во] [+] и кнопка корзины -->
+
                 <div class="qty-cart-group">
                     <div class="qty-control">
                         <button type="button" onclick="this.nextElementSibling.stepDown()">−</button>
@@ -112,7 +114,7 @@
                                name="quantity_stems"
                                value="{{ min_stems }}"
                                min="{{ min_stems }}"
-                               max="{{ stems }}"
+                               max="{{ max_stems_valid }}"
                                step="{{ pack }}"
                                required>
                         <button type="button" onclick="this.previousElementSibling.stepUp()">+</button>
@@ -149,5 +151,35 @@
     {% if has_filters %}<a href="/catalog" class="btn btn-primary mt-2">Сбросить</a>{% endif %}
 </div>
 {% endif %}
+
+<script>
+(function() {
+    const input = document.getElementById('searchInput');
+    const box = document.getElementById('suggestBox');
+    if (!input || !box) return;
+    let t = null;
+
+    input.addEventListener('input', () => {
+        clearTimeout(t);
+        const q = input.value.trim();
+        if (q.length < 2) { box.style.display = 'none'; return; }
+        t = setTimeout(async () => {
+            try {
+                const r = await fetch('/api/search-suggest?q=' + encodeURIComponent(q));
+                const d = await r.json();
+                if (!d.items.length) { box.style.display = 'none'; return; }
+                box.innerHTML = d.items.map(i =>
+                    `<a href="${i.url}" class="suggest-item">${i.name}</a>`
+                ).join('');
+                box.style.display = 'block';
+            } catch(e) { box.style.display = 'none'; }
+        }, 200);
+    });
+
+    document.addEventListener('click', e => {
+        if (!box.contains(e.target) && e.target !== input) box.style.display = 'none';
+    });
+})();
+</script>
 
 {% endblock %}

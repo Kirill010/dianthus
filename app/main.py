@@ -2,8 +2,8 @@
 import logging
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import Depends, FastAPI, Request, HTTPException
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
@@ -14,6 +14,7 @@ from .config import config
 from .database import Base, engine, get_db
 from .deps import get_current_user
 from .migrations import auto_migrate, ensure_notifications_table
+from .security import CsrfError
 from .templating import render
 from .routers import admin, cart, catalog, profile
 
@@ -72,6 +73,51 @@ app.include_router(profile.router)
 ensure_default_admin()
 
 
+# ─── Обработчики исключений ───────────────────────────────
+
+@app.exception_handler(CsrfError)
+async def csrf_error_handler(request: Request, exc: CsrfError):
+    """Красивый редирект при проблеме с CSRF."""
+    request.session["flash"] = f"⚠️ {exc.message}"
+    referer = request.headers.get("referer") or "/login"
+    return RedirectResponse(url=referer, status_code=303)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Красивые страницы для 404, 403, 429 вместо JSON."""
+    if exc.status_code in (301, 302, 303, 307, 308):
+        return RedirectResponse(
+            url=exc.headers.get("Location", "/login"),
+            status_code=exc.status_code,
+        )
+
+    if request.headers.get("accept", "").startswith("text/html"):
+        titles = {
+            403: "Доступ запрещён",
+            404: "Страница не найдена",
+            429: "Слишком много запросов",
+            500: "Ошибка сервера",
+        }
+        title = titles.get(exc.status_code, "Ошибка")
+        db = next(get_db())
+        try:
+            return render(
+                request, "error.html", db,
+                code=exc.status_code,
+                title=title,
+                message=exc.detail or "",
+            )
+        finally:
+            db.close()
+
+    return JSONResponse(
+        {"detail": exc.detail}, status_code=exc.status_code
+    )
+
+
+# ─── Маршруты ─────────────────────────────────────────────
+
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request, db: Session = Depends(get_db)):
     if get_current_user(request, db):
@@ -81,12 +127,16 @@ async def root(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, db: Session = Depends(get_db)):
-    if get_current_user(request, db):
+    user = get_current_user(request, db)
+    if user:
         return RedirectResponse(url="/catalog", status_code=303)
-    return render(request, "login.html", db,
-                  register_errors=request.session.pop("register_errors", None),
-                  register_data=request.session.pop("register_data", {}),
-                  login_error=request.session.pop("login_error", None))
+    return render(
+        request, "login.html", db,
+        user=None,
+        register_errors=request.session.pop("register_errors", None),
+        register_data=request.session.pop("register_data", {}),
+        login_error=request.session.pop("login_error", None),
+    )
 
 
 @app.get("/registration_pending", response_class=HTMLResponse)

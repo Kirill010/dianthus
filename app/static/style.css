@@ -1440,3 +1440,26 @@ a.contacts-item__value:hover { color: var(--primary); }
     font-size: 0.75rem;
     cursor: not-allowed;
 }
+/* ── АВТОПОДСКАЗКИ ── */
+.catalog-search { position: relative; }
+.suggest-box {
+    position: absolute; top: 100%; left: 0; right: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow-md);
+    z-index: 50;
+    margin-top: 4px;
+    overflow: hidden;
+}
+.suggest-item {
+    display: block;
+    padding: 10px 16px;
+    color: var(--text);
+    text-decoration: none;
+    font-size: .9rem;
+    border-bottom: 1px solid var(--border-soft);
+    transition: background .15s;
+}
+.suggest-item:last-child { border-bottom: none; }
+.suggest-item:hover { background: var(--primary-mist); color: var(--primary-dark); }

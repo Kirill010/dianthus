@@ -7,6 +7,7 @@
 {% set min_packs = product.min_quantity or 1 %}
 {% set min_stems = pack * min_packs %}
 {% set is_out = stems < 1 %}
+{% set max_stems_valid = (stems // pack) * pack %}
 
 <div class="product-detail">
     <div class="product-detail__image">
@@ -68,7 +69,7 @@
                    name="quantity_stems"
                    value="{{ min_stems }}"
                    min="{{ min_stems }}"
-                   max="{{ stems }}"
+                   max="{{ max_stems_valid }}"
                    step="{{ pack }}"
                    required>
             <button type="button" onclick="this.previousElementSibling.stepUp()">+</button>

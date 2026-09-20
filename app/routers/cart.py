@@ -57,7 +57,7 @@ async def add_to_cart(
 
     item = (db.query(SupplyItem)
             .filter(SupplyItem.id == supply_item_id,
-                    SupplyItem.is_active == True).first())  # noqa: E712
+                    SupplyItem.is_active.is_(True)).first())
     if not item:
         raise HTTPException(status_code=404, detail="Товар не найден")
 
@@ -135,7 +135,7 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
         i.id: i for i in
         db.query(SupplyItem)
         .filter(SupplyItem.id.in_(ids),
-                SupplyItem.is_active == True)  # noqa: E712
+                SupplyItem.is_active.is_(True))
         .all()
     }
 
@@ -236,7 +236,7 @@ async def place_order(request: Request, comment: str = Form(""),
     ids = [c["supply_item_id"] for c in cart]
     query = (db.query(SupplyItem)
              .filter(SupplyItem.id.in_(ids),
-                     SupplyItem.is_active == True))  # noqa: E712
+                     SupplyItem.is_active.is_(True)))
     if db.get_bind().dialect.name == "postgresql":
         query = query.with_for_update()
     items_map = {i.id: i for i in query.all()}
@@ -258,6 +258,11 @@ async def place_order(request: Request, comment: str = Form(""),
     discount_percent = user.discount_percent or 0
     _, total = _apply_discount(subtotal, discount_percent)
 
+    # 1. Сначала списываем со склада (атомарно под блокировкой)
+    for c in cart:
+        items_map[c["supply_item_id"]].stock -= c["quantity"]
+
+    # 2. Потом создаём заказ
     order = Order(
         user_id=user.id,
         subtotal=subtotal,
@@ -280,7 +285,6 @@ async def place_order(request: Request, comment: str = Form(""),
             package_size=c.get("package_size") or 1,
             quantity=c["quantity"],
         ))
-        items_map[c["supply_item_id"]].stock -= c["quantity"]
 
     db.commit()
     db.refresh(order)
@@ -340,7 +344,7 @@ async def repeat_order(
 
         si = (db.query(SupplyItem)
               .filter(SupplyItem.product_id == item.product_id,
-                      SupplyItem.is_active == True,  # noqa: E712
+                      SupplyItem.is_active.is_(True),
                       SupplyItem.stock > 0)
               .first())
         if not si:

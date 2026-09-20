@@ -1,6 +1,39 @@
 {% extends "base.html" %}
 {% set hide_bottom_nav = true %}
 {% block content %}
+
+<!-- ═══════ KPI-КАРТОЧКИ ═══════ -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card p-3 text-center h-100">
+            <i class="fas fa-shopping-bag fa-2x text-success mb-2"></i>
+            <div style="font-size:1.6rem;font-weight:700;color:#35492f">{{ stats.orders_today }}</div>
+            <div class="text-muted small">Заказов сегодня</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card p-3 text-center h-100">
+            <i class="fas fa-ruble-sign fa-2x text-warning mb-2"></i>
+            <div style="font-size:1.6rem;font-weight:700;color:#35492f">{{ "%.0f"|format(stats.revenue_today) }} ₽</div>
+            <div class="text-muted small">Выручка за день</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card p-3 text-center h-100">
+            <i class="fas fa-chart-line fa-2x mb-2" style="color:#c97b4a"></i>
+            <div style="font-size:1.6rem;font-weight:700;color:#35492f">{{ "%.0f"|format(stats.revenue_week) }} ₽</div>
+            <div class="text-muted small">Выручка за неделю</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card p-3 text-center h-100">
+            <i class="fas fa-user-plus fa-2x mb-2" style="color:#8ba38c"></i>
+            <div style="font-size:1.6rem;font-weight:700;color:#35492f">{{ stats.new_clients_week }}</div>
+            <div class="text-muted small">Новых клиентов</div>
+        </div>
+    </div>
+</div>
+
 <h2 class="mb-3"><i class="fas fa-cog me-2"></i>Админка</h2>
 
 {% if pending_count %}
@@ -65,7 +98,6 @@
             </div>
         </div>
 
-        <!-- Поиск и фильтр -->
         <form action="/admin" method="get" class="row g-2 mb-3">
             <div class="col-md-6">
                 <div class="input-group">
@@ -167,7 +199,6 @@
             </table>
         </div>
 
-        <!-- Пагинация -->
         {% if orders_total_pages > 1 %}
         <nav class="d-flex justify-content-center align-items-center gap-2 mt-3">
             {% if orders_page > 1 %}
@@ -528,4 +559,5 @@
         </div>
     </div>
 </div>
+
 {% endblock %}

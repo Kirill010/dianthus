@@ -34,10 +34,11 @@ def render(request: Request, template: str, db: Session, **context):
             .order_by(nulls_last(models.Supply.arrival_date.asc()))
             .first()
         )
-        unread_count = (db.query(models.Notification)
-                        .filter(models.Notification.user_id == user.id,
-                                models.Notification.is_read == False)  # noqa: E712
-                        .count())
+        if request.url.path != "/notifications":
+            unread_count = (db.query(models.Notification)
+                            .filter(models.Notification.user_id == user.id,
+                                    models.Notification.is_read.is_(False))
+                            .count())
 
     context.update({
         "user": user,

@@ -1,16 +1,4 @@
-"""Уведомления админам о важных событиях — через email (SMTP).
-
-Если SMTP не настроен в .env — тихо игнорирует, не ломает заказ.
-
-Настройки в .env:
-    SMTP_HOST=smtp.yandex.ru
-    SMTP_PORT=465
-    SMTP_USER=noobmaster6969@ya.ru
-    SMTP_PASSWORD=пароль_приложения
-    SMTP_FROM=noobmaster6969@ya.ru
-    SMTP_TO=noobmaster6969@ya.ru,manager@dianthus-opt.ru
-    SMTP_USE_SSL=true
-"""
+"""Уведомления админам о важных событиях — через email (SMTP)."""
 import logging
 import os
 import smtplib
@@ -18,10 +6,11 @@ import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+from ..config import config
+
 logger = logging.getLogger(__name__)
 
-TIMEOUT = 10  # секунд
-
+TIMEOUT = 10
 
 # ═══════════════════════════════════════════════════════════
 # КОНФИГУРАЦИЯ
@@ -38,7 +27,6 @@ def _get_smtp_config() -> dict | None:
     if not host or not user or not password or not recipients_raw:
         return None
 
-    # Список получателей через запятую
     recipients = [e.strip() for e in recipients_raw.split(",") if e.strip()]
     if not recipients:
         return None
@@ -67,59 +55,38 @@ def _get_smtp_config() -> dict | None:
 # ═══════════════════════════════════════════════════════════
 
 def send_email(subject: str, body_html: str) -> bool:
-    """
-    Отправляет email админам.
-
-    Возвращает True при успехе, False при ошибке.
-    НИКОГДА не бросает исключение — чтобы не сломать заказ клиента.
-    """
+    """Отправляет email админам. Никогда не бросает исключение."""
     cfg = _get_smtp_config()
     if not cfg:
         logger.debug("SMTP не настроен — письмо пропущено")
         return False
 
-    # Формируем письмо
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = cfg["sender"]
     msg["To"] = ", ".join(cfg["recipients"])
 
-    # Текстовая версия (для старых клиентов)
-    text_part = MIMEText(
-        "Откройте письмо в HTML-совместимом клиенте.",
-        "plain", "utf-8"
-    )
-    # HTML-версия
-    html_part = MIMEText(body_html, "html", "utf-8")
+    msg.attach(MIMEText("Откройте письмо в HTML-совместимом клиенте.",
+                        "plain", "utf-8"))
+    msg.attach(MIMEText(body_html, "html", "utf-8"))
 
-    msg.attach(text_part)
-    msg.attach(html_part)
-
-    # Отправка
     try:
         if cfg["use_ssl"]:
-            # SSL (порт 465)
             context = ssl.create_default_context()
-            with smtplib.SMTP_SSL(
-                cfg["host"], cfg["port"],
-                timeout=TIMEOUT, context=context,
-            ) as server:
+            with smtplib.SMTP_SSL(cfg["host"], cfg["port"],
+                                  timeout=TIMEOUT, context=context) as server:
                 server.login(cfg["user"], cfg["password"])
-                server.sendmail(
-                    cfg["sender"], cfg["recipients"], msg.as_string()
-                )
+                server.sendmail(cfg["sender"], cfg["recipients"],
+                                msg.as_string())
         else:
-            # STARTTLS (порт 587)
-            with smtplib.SMTP(
-                cfg["host"], cfg["port"], timeout=TIMEOUT
-            ) as server:
+            with smtplib.SMTP(cfg["host"], cfg["port"],
+                              timeout=TIMEOUT) as server:
                 server.ehlo()
                 server.starttls(context=ssl.create_default_context())
                 server.ehlo()
                 server.login(cfg["user"], cfg["password"])
-                server.sendmail(
-                    cfg["sender"], cfg["recipients"], msg.as_string()
-                )
+                server.sendmail(cfg["sender"], cfg["recipients"],
+                                msg.as_string())
 
         logger.info("📧 Письмо отправлено: %s", subject)
         return True
@@ -132,6 +99,39 @@ def send_email(subject: str, body_html: str) -> bool:
         return False
     except Exception as e:
         logger.warning("Не удалось отправить email: %s", e)
+        return False
+
+
+def send_email_to(to: str, subject: str, body_html: str) -> bool:
+    """Отправка конкретному получателю (клиенту)."""
+    cfg = _get_smtp_config()
+    if not cfg:
+        return False
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = cfg["sender"]
+        msg["To"] = to
+        msg.attach(MIMEText("Откройте в HTML-клиенте.", "plain", "utf-8"))
+        msg.attach(MIMEText(body_html, "html", "utf-8"))
+
+        if cfg["use_ssl"]:
+            with smtplib.SMTP_SSL(cfg["host"], cfg["port"],
+                                  timeout=TIMEOUT) as s:
+                s.login(cfg["user"], cfg["password"])
+                s.sendmail(cfg["sender"], [to], msg.as_string())
+        else:
+            with smtplib.SMTP(cfg["host"], cfg["port"],
+                              timeout=TIMEOUT) as s:
+                s.ehlo()
+                s.starttls()
+                s.ehlo()
+                s.login(cfg["user"], cfg["password"])
+                s.sendmail(cfg["sender"], [to], msg.as_string())
+        logger.info("📧 Клиенту %s: %s", to, subject)
+        return True
+    except Exception as e:
+        logger.warning("Письмо клиенту %s: %s", to, e)
         return False
 
 
@@ -168,7 +168,6 @@ def notify_admin_new_order(order, user) -> None:
     if not user:
         return
 
-    # Позиции заказа
     items_html = ""
     for item in order.items:
         pack = item.package_size or 1
@@ -255,11 +254,11 @@ def notify_admin_new_order(order, user) -> None:
 
         {comment_html}
 
-        <a href="https://dianthus-opt.ru/admin/orders/{order.id}"
+        <a href="{config.APP_URL}/admin/orders/{order.id}"
            class="btn">Открыть заказ в админке</a>
 
         <div class="footer">
-          ООО «Диантус» · Оптовые поставки цветов<br>
+          {config.SHOP_NAME} · Оптовые поставки цветов<br>
           {order.created_at.strftime('%d.%m.%Y %H:%M')}
         </div>
       </div>
@@ -296,17 +295,72 @@ def notify_admin_new_client(user) -> None:
               <td>{user.city or '—'}</td></tr>
         </table>
 
-        <a href="https://dianthus-opt.ru/admin"
+        <a href="{config.APP_URL}/admin"
            class="btn">Открыть админку</a>
 
         <div class="footer">
-          ООО «Диантус» · Оптовые поставки цветов
+          {config.SHOP_NAME} · Оптовые поставки цветов
         </div>
       </div>
     </body></html>
     """
 
     send_email(f"👤 Новая заявка: {user.company_name}", body)
+
+
+def notify_client_status_changed(order, status: str) -> None:
+    """Письмо клиенту при смене статуса заказа."""
+    if not order or not order.user:
+        return
+    user = order.user
+
+    emoji = {
+        "Подтверждён": "✅",
+        "В работе": "📦",
+        "Отправлен": "🚚",
+        "Выполнен": "🎉",
+        "Отменён": "❌",
+    }.get(status, "🔄")
+
+    text = {
+        "Подтверждён": "Ваш заказ принят в работу. Мы свяжемся для уточнения доставки.",
+        "В работе": "Собираем ваш заказ на складе.",
+        "Отправлен": "Заказ передан в доставку.",
+        "Выполнен": "Заказ выполнен. Спасибо, что выбрали Диантус!",
+        "Отменён": "Заказ отменён. Если это ошибка — свяжитесь с менеджером.",
+    }.get(status, f"Статус изменён на «{status}»")
+
+    body = f"""
+    <!DOCTYPE html>
+    <html><head><meta charset="UTF-8">{_BASE_STYLE}</head>
+    <body>
+      <div class="card">
+        <h1>{emoji} Заказ №{order.id}: {status}</h1>
+        <p style="font-size:16px;">Здравствуйте, <b>{user.full_name}</b>!</p>
+        <p>{text}</p>
+
+        <table>
+          <tr><td>Сумма:</td>
+              <td><b>{order.total_price:.2f} ₽</b></td></tr>
+          <tr><td>Позиций:</td>
+              <td>{len(order.items)}</td></tr>
+        </table>
+
+        <a href="{config.APP_URL}/orders" class="btn">
+            Открыть мои заказы
+        </a>
+
+        <div class="footer">
+          {config.SHOP_NAME} · {config.SHOP_PHONE}
+        </div>
+      </div>
+    </body></html>
+    """
+    send_email_to(
+        to=user.email,
+        subject=f"{emoji} Заказ №{order.id}: {status}",
+        body_html=body,
+    )
 
 
 def notify_admin_status_changed(order, status: str) -> None:
@@ -327,7 +381,7 @@ def notify_admin_status_changed(order, status: str) -> None:
           Клиент: {order.user.company_name if order.user else '—'}
         </p>
 
-        <a href="https://dianthus-opt.ru/admin/orders/{order.id}"
+        <a href="{config.APP_URL}/admin/orders/{order.id}"
            class="btn">Открыть заказ</a>
       </div>
     </body></html>

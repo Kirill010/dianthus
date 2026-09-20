@@ -1,12 +1,12 @@
 """Админка: заказы, клиенты, справочник, поставки, разгрузка, Excel."""
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import (APIRouter, Depends, File, Form, HTTPException,
                      Request, UploadFile)
 from fastapi.responses import (HTMLResponse, RedirectResponse,
                                 StreamingResponse)
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
@@ -20,6 +20,10 @@ from ..services.excel_service import (
     build_products_import_template, export_customers_to_excel,
     export_orders_to_excel, guess_package_size,
     import_products_from_excel, parse_invoice,
+)
+from ..services.notifier import (
+    notify_admin_new_order,
+    notify_client_status_changed,
 )
 from ..services.upload_service import delete_upload, save_upload
 from ..templating import render
@@ -80,10 +84,16 @@ async def dashboard(
         conditions = []
         if q.isdigit():
             conditions.append(Order.id == int(q))
+        # Поиск по данным клиента (включая гостевые заказы)
         conditions.append(User.company_name.ilike(f"%{q}%"))
         conditions.append(User.email.ilike(f"%{q}%"))
         conditions.append(User.full_name.ilike(f"%{q}%"))
-        orders_query = orders_query.outerjoin(User).filter(or_(*conditions))
+
+        orders_query = (
+            orders_query
+            .outerjoin(User, Order.user_id == User.id)
+            .filter(or_(*conditions))
+        )
     if status:
         orders_query = orders_query.filter(Order.status == status)
 
@@ -100,6 +110,27 @@ async def dashboard(
         .all()
     )
 
+    # ── Статистика ──
+    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    week_ago = today - timedelta(days=7)
+
+    stats = {
+        "orders_today": db.query(Order).filter(Order.created_at >= today).count(),
+        "orders_week": db.query(Order).filter(Order.created_at >= week_ago).count(),
+        "revenue_today": db.query(func.coalesce(func.sum(Order.total_price), 0))
+            .filter(Order.created_at >= today,
+                    Order.status != "Отменён").scalar() or 0,
+        "revenue_week": db.query(func.coalesce(func.sum(Order.total_price), 0))
+            .filter(Order.created_at >= week_ago,
+                    Order.status != "Отменён").scalar() or 0,
+        "avg_check": db.query(func.coalesce(func.avg(Order.total_price), 0))
+            .filter(Order.status != "Отменён").scalar() or 0,
+        "new_clients_week": db.query(User)
+            .filter(User.created_at >= week_ago,
+                    User.is_admin.is_(False)).count(),
+        "pending_orders": db.query(Order).filter(Order.status == "Новый").count(),
+    }
+
     # ── Остальные данные ──
     products = db.query(Product).order_by(Product.name).all()
     supplies = (db.query(Supply)
@@ -111,7 +142,7 @@ async def dashboard(
     active_items = (db.query(SupplyItem)
                     .options(selectinload(SupplyItem.product),
                              selectinload(SupplyItem.supply))
-                    .filter(SupplyItem.is_active == True,  # noqa: E712
+                    .filter(SupplyItem.is_active.is_(True),
                             SupplyItem.stock > 0).all())
 
     return render(
@@ -131,6 +162,7 @@ async def dashboard(
         statuses=ORDER_STATUSES,
         supply_statuses=SUPPLY_STATUSES,
         categories=PRODUCT_CATEGORIES,
+        stats=stats,
     )
 
 
@@ -201,7 +233,7 @@ async def user_demote(user_id: int, request: Request,
         request.session["flash"] = "Пользователь и так не админ"
         return RedirectResponse(url="/admin", status_code=303)
     admins_count = (db.query(User)
-                    .filter(User.is_admin == True).count())  # noqa: E712
+                    .filter(User.is_admin.is_(True)).count())
     if admins_count <= 1:
         request.session["flash"] = "❌ Нельзя снять последнего администратора"
         return RedirectResponse(url="/admin", status_code=303)
@@ -315,6 +347,18 @@ async def update_order_status(request: Request,
         db.add(note)
         db.commit()
 
+        # Email клиенту
+        try:
+            order_loaded = (
+                db.query(Order)
+                .options(selectinload(Order.user), selectinload(Order.items))
+                .filter(Order.id == order.id).first()
+            )
+            if order_loaded:
+                notify_client_status_changed(order_loaded, status)
+        except Exception as e:
+            logger.warning("Не удалось отправить письмо клиенту: %s", e)
+
     request.session["flash"] = f"Заказ №{order.id}: «{status}»"
     referer = request.headers.get("referer") or "/admin"
     return RedirectResponse(url=referer, status_code=303)
@@ -376,14 +420,19 @@ async def products_import(request: Request, file: UploadFile = File(...),
         return RedirectResponse(url="/admin", status_code=303)
 
     content = bytearray()
-    while True:
-        chunk = await file.read(CHUNK)
-        if not chunk:
-            break
-        content.extend(chunk)
-        if len(content) > MAX_EXCEL_SIZE:
-            request.session["flash"] = "Файл слишком большой (>10 МБ)"
-            return RedirectResponse(url="/admin", status_code=303)
+    try:
+        while True:
+            chunk = await file.read(CHUNK)
+            if not chunk:
+                break
+            content.extend(chunk)
+            if len(content) > MAX_EXCEL_SIZE:
+                raise ValueError("too big")
+    except ValueError:
+        request.session["flash"] = "Файл слишком большой (>10 МБ)"
+        return RedirectResponse(url="/admin", status_code=303)
+    finally:
+        await file.close()
 
     if not content:
         request.session["flash"] = "Файл пустой"
@@ -710,15 +759,20 @@ async def supply_import_invoice(
                                 status_code=303)
 
     content = bytearray()
-    while True:
-        chunk = await file.read(CHUNK)
-        if not chunk:
-            break
-        content.extend(chunk)
-        if len(content) > MAX_EXCEL_SIZE:
-            request.session["flash"] = "Файл слишком большой (>10 МБ)"
-            return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit",
-                                    status_code=303)
+    try:
+        while True:
+            chunk = await file.read(CHUNK)
+            if not chunk:
+                break
+            content.extend(chunk)
+            if len(content) > MAX_EXCEL_SIZE:
+                raise ValueError("too big")
+    except ValueError:
+        request.session["flash"] = "Файл слишком большой (>10 МБ)"
+        return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit",
+                                status_code=303)
+    finally:
+        await file.close()
 
     if not content:
         request.session["flash"] = "Файл пустой"
@@ -974,7 +1028,7 @@ async def supply_unload(supply_id: int, request: Request,
     others = (db.query(SupplyItem)
               .filter(SupplyItem.product_id.in_(product_ids),
                       SupplyItem.supply_id != supply_id,
-                      SupplyItem.is_active == True).all())  # noqa: E712
+                      SupplyItem.is_active.is_(True)).all())
     for o in others:
         o.is_active = False
         o.stock = 0

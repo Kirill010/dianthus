@@ -3,7 +3,7 @@ from typing import Optional
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -32,7 +32,7 @@ def _stems_expr():
 def _base_query(db: Session):
     return (db.query(SupplyItem)
             .join(Product, SupplyItem.product_id == Product.id)
-            .filter(SupplyItem.is_active == True))  # noqa: E712
+            .filter(SupplyItem.is_active.is_(True)))
 
 
 def _apply_quantity_filter(query, level: str):
@@ -100,7 +100,7 @@ def _count_by_level(db: Session, category: str) -> dict[str, int]:
     stems = _stems_expr()
     base = (db.query(SupplyItem)
             .join(Product, SupplyItem.product_id == Product.id)
-            .filter(SupplyItem.is_active == True))  # noqa: E712
+            .filter(SupplyItem.is_active.is_(True)))
     if category:
         base = base.filter(Product.category == category)
     return {
@@ -188,7 +188,7 @@ async def catalog(
         row[0] for row in
         db.query(Product.category)
         .join(SupplyItem, SupplyItem.product_id == Product.id)
-        .filter(SupplyItem.is_active == True)  # noqa: E712
+        .filter(SupplyItem.is_active.is_(True))
         .distinct().all() if row[0]
     })
 
@@ -229,6 +229,28 @@ async def catalog(
                   level_url=lambda l: _level_url(current_filters, l))
 
 
+@router.get("/api/search-suggest")
+async def search_suggest(q: str = "", db: Session = Depends(get_db)):
+    """Подсказки для поиска. Публичный (без авторизации)."""
+    q = (q or "").strip()
+    if len(q) < 2:
+        return JSONResponse({"items": []})
+
+    rows = (
+        db.query(Product.id, Product.name, SupplyItem.id.label("si"))
+        .join(SupplyItem, SupplyItem.product_id == Product.id)
+        .filter(SupplyItem.is_active.is_(True),
+                Product.name.ilike(f"%{q}%"))
+        .limit(8).all()
+    )
+    return JSONResponse({
+        "items": [
+            {"name": r.name, "url": f"/product/{r.si}"}
+            for r in rows
+        ]
+    })
+
+
 @router.get("/product/{item_id}", response_class=HTMLResponse)
 async def product_detail(item_id: int, request: Request,
                          db: Session = Depends(get_db)):
@@ -239,7 +261,7 @@ async def product_detail(item_id: int, request: Request,
     item = (db.query(SupplyItem)
             .join(Product, SupplyItem.product_id == Product.id)
             .filter(SupplyItem.id == item_id,
-                    SupplyItem.is_active == True)  # noqa: E712
+                    SupplyItem.is_active.is_(True))
             .first())
     if not item:
         raise HTTPException(status_code=404, detail="Товар не найден")

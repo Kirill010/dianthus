@@ -10,6 +10,13 @@ from fastapi import Form, HTTPException, Request, status
 logger = logging.getLogger(__name__)
 
 
+class CsrfError(Exception):
+    """CSRF не прошёл. Ловим в main.py и редиректим красиво."""
+    def __init__(self, message: str = "Сессия истекла. Обновите страницу."):
+        self.message = message
+        super().__init__(message)
+
+
 def ensure_csrf_token(request: Request) -> str:
     token = request.session.get("csrf_token")
     if not token:
@@ -21,11 +28,9 @@ def ensure_csrf_token(request: Request) -> str:
 async def check_csrf(request: Request, csrf_token: str = Form("")) -> None:
     expected = request.session.get("csrf_token")
     if not expected:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Сессия истекла. Обновите страницу.")
+        raise CsrfError("Сессия истекла. Обновите страницу.")
     if not csrf_token or not secrets.compare_digest(expected, csrf_token):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Недействительный CSRF-токен.")
+        raise CsrfError("Недействительный CSRF-токен. Обновите страницу.")
 
 
 _RATE_WINDOW = 60

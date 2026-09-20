@@ -1,0 +1,10 @@
+User-agent: *
+Disallow: /admin
+Disallow: /cart
+Disallow: /checkout
+Disallow: /profile
+Allow: /catalog
+Allow: /product/
+Allow: /login
+
+Sitemap: https://dianthus-opt.ru/sitemap.xml

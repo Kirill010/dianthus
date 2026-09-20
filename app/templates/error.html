@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6 text-center py-5">
+        <div style="font-size:5rem;">{% if code == 404 %}🌷{% elif code == 403 %}🔒{% elif code == 429 %}⏳{% else %}🌸{% endif %}</div>
+        <h1 class="catalog-title mb-2">{{ code }}</h1>
+        <h3 class="mb-3">{{ title }}</h3>
+        {% if message %}<p class="text-muted">{{ message }}</p>{% endif %}
+        <a href="/catalog" class="btn btn-primary mt-2">
+            <i class="fas fa-home me-2"></i>В каталог
+        </a>
+        <a href="/login" class="btn btn-outline-secondary mt-2">
+            <i class="fas fa-sign-in-alt me-2"></i>Войти заново
+        </a>
+    </div>
+</div>
+{% endblock %}
