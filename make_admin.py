@@ -1,11 +1,11 @@
-"""Выдать права администратора по email."""
+# Выдать права администратора по email.
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from app.database import SessionLocal  # noqa: E402
-from app import models                  # noqa: E402
+from app.database import SessionLocal
+from app import models
 
 
 def make_admin(email: str) -> int:

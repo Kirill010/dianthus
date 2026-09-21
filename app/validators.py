@@ -1,4 +1,4 @@
-"""Валидация пользовательских данных."""
+# Валидация пользовательских данных.
 import re
 
 _EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
@@ -71,11 +71,7 @@ def validate_company_name(name: str) -> str | None:
 
 
 def validate_inn(inn: str, required: bool = True) -> str | None:
-    """
-    ИНН: 10 цифр (юрлицо) или 12 цифр (ИП).
-
-    :param required: если False — пустое значение допустимо.
-    """
+    # ИНН: 10 цифр (юрлицо) или 12 цифр (ИП). :param required: если False — пустое значение допустимо.
     inn = (inn or "").strip()
     if not inn:
         return "Укажите ИНН" if required else None
@@ -87,11 +83,7 @@ def validate_inn(inn: str, required: bool = True) -> str | None:
 
 
 def validate_city(city: str, required: bool = True) -> str | None:
-    """
-    Город.
-
-    :param required: если False — пустое значение допустимо.
-    """
+    # Город. :param required: если False — пустое значение допустимо.
     city = (city or "").strip()
     if not city:
         return "Укажите город" if required else None

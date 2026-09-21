@@ -1,4 +1,4 @@
-"""Скачивает Bootstrap и Font Awesome в app/static/vendor/."""
+# Скачивает Bootstrap и Font Awesome в app/static/vendor/.
 import sys
 from pathlib import Path
 

@@ -1,4 +1,4 @@
-"""Корзина и оформление заказа. Цена — за штуку, количество — упаковки."""
+# Корзина и оформление заказа. Цена — за штуку, количество — упаковки.
 import logging
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -19,7 +19,7 @@ router = APIRouter()
 MAX_COMMENT_LENGTH = 1000
 
 
-# ───────── УТИЛИТЫ ─────────
+# УТИЛИТЫ
 
 def _cart_subtotal(cart: list[dict]) -> float:
     total = 0.0
@@ -41,7 +41,7 @@ def _clean_cart(cart: list[dict]) -> list[dict]:
     return [c for c in cart if c.get("quantity", 0) > 0]
 
 
-# ───────── ДОБАВЛЕНИЕ ─────────
+# ДОБАВЛЕНИЕ
 
 @router.post("/add_to_cart")
 async def add_to_cart(
@@ -116,7 +116,7 @@ async def add_to_cart(
     return RedirectResponse(url="/catalog", status_code=303)
 
 
-# ───────── ПРОСМОТР ─────────
+# ПРОСМОТР
 
 @router.get("/cart", response_class=HTMLResponse)
 async def cart_page(request: Request, db: Session = Depends(get_db)):
@@ -191,7 +191,7 @@ async def clear_cart(request: Request, _csrf: None = Depends(check_csrf)):
     return RedirectResponse(url="/cart", status_code=303)
 
 
-# ───────── ОФОРМЛЕНИЕ ─────────
+# ОФОРМЛЕНИЕ
 
 @router.get("/checkout", response_class=HTMLResponse)
 async def checkout_page(request: Request, db: Session = Depends(get_db)):
@@ -289,7 +289,7 @@ async def place_order(request: Request, comment: str = Form(""),
     db.commit()
     db.refresh(order)
 
-    # ── Уведомление админу на email ──
+    # Уведомление админу на email
     try:
         notify_admin_new_order(order, user)
     except Exception as e:
@@ -300,7 +300,7 @@ async def place_order(request: Request, comment: str = Form(""),
     return RedirectResponse(url="/orders", status_code=303)
 
 
-# ───────── ИСТОРИЯ ─────────
+# ИСТОРИЯ
 
 @router.get("/orders", response_class=HTMLResponse)
 async def order_history(request: Request, db: Session = Depends(get_db)):
@@ -312,7 +312,7 @@ async def order_history(request: Request, db: Session = Depends(get_db)):
     return render(request, "orders.html", db, user=user, orders=orders)
 
 
-# ───────── ПОВТОРИТЬ ЗАКАЗ ─────────
+# ПОВТОРИТЬ ЗАКАЗ
 
 @router.post("/orders/{order_id}/repeat")
 async def repeat_order(
@@ -321,7 +321,7 @@ async def repeat_order(
     db: Session = Depends(get_db),
     _csrf: None = Depends(check_csrf),
 ):
-    """Добавляет позиции старого заказа в корзину."""
+    # Добавляет позиции старого заказа в корзину.
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
@@ -393,7 +393,7 @@ async def repeat_order(
     return RedirectResponse(url="/catalog", status_code=303)
 
 
-# ───────── PDF-СЧЁТ ─────────
+# PDF-СЧЁТ
 
 @router.get("/orders/{order_id}/invoice")
 async def download_invoice(
@@ -401,7 +401,7 @@ async def download_invoice(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    """Скачать счёт в PDF."""
+    # Скачать счёт в PDF.
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)

@@ -1,4 +1,4 @@
-"""CSRF-токены и rate limiting."""
+# CSRF-токены и rate limiting.
 import logging
 import secrets
 import time
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class CsrfError(Exception):
-    """CSRF не прошёл. Ловим в main.py и редиректим красиво."""
+    # CSRF не прошёл. Ловим в main.py и редиректим красиво.
     def __init__(self, message: str = "Сессия истекла. Обновите страницу."):
         self.message = message
         super().__init__(message)

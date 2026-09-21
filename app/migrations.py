@@ -1,4 +1,4 @@
-"""Лёгкая авто-миграция: добавляет недостающие колонки, индексы и таблицы."""
+# Лёгкая авто-миграция: добавляет недостающие колонки, индексы и таблицы.
 import logging
 
 from sqlalchemy import inspect, text
@@ -26,7 +26,7 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
         "city":             "VARCHAR(100) DEFAULT ''",
         "is_admin":         "BOOLEAN DEFAULT FALSE",
         "is_approved":      "BOOLEAN DEFAULT FALSE",
-        "discount_percent": "FLOAT DEFAULT 0",       # ← новое
+        "discount_percent": "FLOAT DEFAULT 0",       
     },
     "supplies": {
         "status": "VARCHAR(30) DEFAULT 'Ожидается'",
@@ -38,11 +38,11 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
     "orders": {
         "status":           "VARCHAR(30) DEFAULT 'Новый'",
         "comment":          "TEXT DEFAULT ''",
-        "subtotal":         "FLOAT DEFAULT 0",       # ← новое
-        "discount_percent": "FLOAT DEFAULT 0",       # ← новое
+        "subtotal":         "FLOAT DEFAULT 0",       
+        "discount_percent": "FLOAT DEFAULT 0",       
     },
     "order_items": {
-        "package_size": "INTEGER DEFAULT 1",         # ← новое
+        "package_size": "INTEGER DEFAULT 1",         
     },
 }
 
@@ -63,7 +63,7 @@ def ensure_notifications_table() -> None:
 
 
 def _backfill_order_subtotals() -> None:
-    """Заполняет subtotal для старых заказов (subtotal = total_price)."""
+    # Заполняет subtotal для старых заказов (subtotal = total_price).
     try:
         with engine.begin() as conn:
             conn.execute(text(
@@ -75,7 +75,7 @@ def _backfill_order_subtotals() -> None:
 
 
 def _backfill_order_item_pack_sizes() -> None:
-    """Заполняет package_size в order_items для старых заказов."""
+    # Заполняет package_size в order_items для старых заказов.
     try:
         with engine.begin() as conn:
             conn.execute(text("""

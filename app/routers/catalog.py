@@ -1,4 +1,4 @@
-"""Каталог: категории + уровни наличия."""
+# Каталог: категории + уровни наличия.
 from typing import Optional
 from urllib.parse import urlencode
 
@@ -231,7 +231,7 @@ async def catalog(
 
 @router.get("/api/search-suggest")
 async def search_suggest(q: str = "", db: Session = Depends(get_db)):
-    """Подсказки для поиска. Публичный (без авторизации)."""
+    # Подсказки для поиска. Публичный (без авторизации).
     q = (q or "").strip()
     if len(q) < 2:
         return JSONResponse({"items": []})

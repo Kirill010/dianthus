@@ -1,4 +1,4 @@
-"""Админка: заказы, клиенты, справочник, поставки, разгрузка, Excel."""
+# Админка: заказы, клиенты, справочник, поставки, разгрузка, Excel.
 import logging
 from datetime import datetime, timedelta
 
@@ -60,7 +60,7 @@ def _err(request: Request, errors: list[str]) -> None:
     request.session["flash"] = "Ошибки: " + "; ".join(errors)
 
 
-# ═══════ ДАШБОРД ════════════════════════════════════════════
+# ДАШБОРД
 
 @router.get("", response_class=HTMLResponse)
 async def dashboard(
@@ -75,7 +75,7 @@ async def dashboard(
     status = (status or "").strip()
     page = max(1, page)
 
-    # ── Заказы: поиск + фильтр + пагинация ──
+    # Заказы: поиск + фильтр + пагинация
     orders_query = (
         db.query(Order)
         .options(selectinload(Order.user), selectinload(Order.items))
@@ -110,7 +110,7 @@ async def dashboard(
         .all()
     )
 
-    # ── Статистика ──
+    # Статистика
     today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     week_ago = today - timedelta(days=7)
 
@@ -131,7 +131,7 @@ async def dashboard(
         "pending_orders": db.query(Order).filter(Order.status == "Новый").count(),
     }
 
-    # ── Остальные данные ──
+    # Остальные данные
     products = db.query(Product).order_by(Product.name).all()
     supplies = (db.query(Supply)
                 .options(selectinload(Supply.items))
@@ -166,7 +166,7 @@ async def dashboard(
     )
 
 
-# ═══════ ДЕТАЛИ ЗАКАЗА ══════════════════════════════════════
+# ДЕТАЛИ ЗАКАЗА
 
 @router.get("/orders/{order_id}", response_class=HTMLResponse)
 async def order_detail(
@@ -175,7 +175,7 @@ async def order_detail(
     db: Session = Depends(get_db),
     admin=Depends(require_admin),
 ):
-    """Полная информация о заказе для админа."""
+    # Полная информация о заказе для админа.
     order = (
         db.query(Order)
         .options(selectinload(Order.user), selectinload(Order.items))
@@ -194,7 +194,7 @@ async def order_detail(
     )
 
 
-# ═══════ МОДЕРАЦИЯ ══════════════════════════════════════════
+# МОДЕРАЦИЯ
 
 @router.post("/users/{user_id}/make_admin")
 async def user_make_admin(user_id: int, request: Request,
@@ -294,7 +294,7 @@ async def user_set_discount(user_id: int, request: Request,
                             db: Session = Depends(get_db),
                             current_admin=Depends(require_admin),
                             _csrf: None = Depends(check_csrf)):
-    """Установить персональную скидку клиента (0..100 %)."""
+    # Установить персональную скидку клиента (0..100 %).
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         request.session["flash"] = "Пользователь не найден"
@@ -312,7 +312,7 @@ async def user_set_discount(user_id: int, request: Request,
     return RedirectResponse(url="/admin", status_code=303)
 
 
-# ═══════ ЗАКАЗЫ ═════════════════════════════════════════════
+# ЗАКАЗЫ
 
 @router.post("/update_order_status")
 async def update_order_status(request: Request,
@@ -364,7 +364,7 @@ async def update_order_status(request: Request,
     return RedirectResponse(url=referer, status_code=303)
 
 
-# ═══════ EXCEL ══════════════════════════════════════════════
+# EXCEL
 
 @router.get("/orders/export")
 async def orders_export(db: Session = Depends(get_db),
@@ -463,7 +463,7 @@ async def products_import(request: Request, file: UploadFile = File(...),
     return RedirectResponse(url="/admin", status_code=303)
 
 
-# ═══════ СПРАВОЧНИК ТОВАРОВ ═════════════════════════════════
+# СПРАВОЧНИК ТОВАРОВ
 
 def _validate_product(name, length_cm, package_size, min_quantity) -> list[str]:
     errors = []
@@ -622,7 +622,7 @@ async def product_delete(product_id: int, request: Request,
     return RedirectResponse(url="/admin", status_code=303)
 
 
-# ═══════ ПОСТАВКИ ═══════════════════════════════════════════
+# ПОСТАВКИ
 
 @router.get("/supplies/new", response_class=HTMLResponse)
 async def supply_new_page(request: Request, db: Session = Depends(get_db),
@@ -738,7 +738,7 @@ async def supply_delete(supply_id: int, request: Request,
     return RedirectResponse(url="/admin", status_code=303)
 
 
-# ═══════ ИМПОРТ НАКЛАДНОЙ ═══════════════════════════════════
+# ИМПОРТ НАКЛАДНОЙ
 
 @router.post("/supplies/{supply_id}/import/invoice")
 async def supply_import_invoice(
@@ -873,7 +873,7 @@ async def supply_import_invoice(
                             status_code=303)
 
 
-# ═══════ ПОЗИЦИИ ПОСТАВКИ ═══════════════════════════════════
+# ПОЗИЦИИ ПОСТАВКИ
 
 @router.post("/supplies/{supply_id}/items/add")
 async def supply_item_add(
@@ -1009,7 +1009,7 @@ async def supply_item_delete(item_id: int, request: Request,
     return RedirectResponse(url="/admin", status_code=303)
 
 
-# ═══════ РАЗГРУЗКА ПОСТАВКИ ═════════════════════════════════
+# РАЗГРУЗКА ПОСТАВКИ
 
 @router.post("/supplies/{supply_id}/unload")
 async def supply_unload(supply_id: int, request: Request,

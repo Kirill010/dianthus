@@ -1,4 +1,4 @@
-"""Профиль клиента и страница контактов."""
+# Профиль клиента и страница контактов.
 import logging
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# ═══════ ПРОФИЛЬ ════════════════════════════════════════════
+# ПРОФИЛЬ
 
 @router.get("/profile", response_class=HTMLResponse)
 async def profile_page(request: Request, db: Session = Depends(get_db)):
@@ -136,7 +136,7 @@ async def profile_change_password(
     return RedirectResponse(url="/profile", status_code=303)
 
 
-# ═══════ УВЕДОМЛЕНИЯ ════════════════════════════════════════
+# УВЕДОМЛЕНИЯ
 
 @router.get("/notifications", response_class=HTMLResponse)
 async def notifications_page(request: Request, db: Session = Depends(get_db)):
@@ -175,7 +175,7 @@ async def notification_delete(note_id: int, request: Request,
     return RedirectResponse(url="/notifications", status_code=303)
 
 
-# ═══════ КОНТАКТЫ ═══════════════════════════════════════════
+# КОНТАКТЫ
 
 @router.get("/contacts", response_class=HTMLResponse)
 async def contacts_page(request: Request, db: Session = Depends(get_db)):

@@ -1,29 +1,26 @@
-"""Очистка клиентов (не админов) с ВОЗВРАТОМ остатков их заказов.
+# Очистка клиентов (не админов) с ВОЗВРАТОМ остатков их заказов.
 
-Порядок действий:
-  1. Находим всех клиентов (is_admin = False)
-  2. Для их заказов возвращаем остатки на склад
-  3. Удаляем уведомления клиентов
-  4. Удаляем позиции их заказов
-  5. Удаляем их заказы
-  6. Удаляем самих клиентов
+# Порядок действий:
+#   1. Находим всех клиентов (is_admin = False)
+#   2. Для их заказов возвращаем остатки на склад
+#   3. Удаляем уведомления клиентов
+#   4. Удаляем позиции их заказов
+#   5. Удаляем их заказы
+#   6. Удаляем самих клиентов
 
-Что НЕ трогает:
-  - Админов (is_admin = True)
-  - Товары справочника
-  - Поставки
+# Что НЕ трогает:
+#   - Админов (is_admin = True)
+#   - Товары справочника
+#   - Поставки
 
-Запуск:  python clear_clients_return_stock.py
-"""
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from app.database import SessionLocal  # noqa: E402
-from app.models import (Notification, Order, OrderItem,  # noqa: E402
-                        User)
-from cleanup_utils import print_stock_report, return_stock_for_order_items  # noqa: E402
+from app.database import SessionLocal
+from app.models import (Notification, Order, OrderItem, User)
+from cleanup_utils import print_stock_report, return_stock_for_order_items
 
 
 def clear_clients_return_stock(keep_admins: bool = True) -> None:
@@ -45,7 +42,7 @@ def clear_clients_return_stock(keep_admins: bool = True) -> None:
     try:
         q = db.query(User)
         if keep_admins:
-            q = q.filter(User.is_admin == False)  # noqa: E712
+            q = q.filter(User.is_admin == False)
         clients = q.all()
 
         if not clients:

@@ -1,4 +1,4 @@
-"""Сборка приложения и общие маршруты."""
+# Сборка приложения и общие маршруты.
 import logging
 from pathlib import Path
 
@@ -73,11 +73,11 @@ app.include_router(profile.router)
 ensure_default_admin()
 
 
-# ─── Обработчики исключений ───────────────────────────────
+# Обработчики исключений
 
 @app.exception_handler(CsrfError)
 async def csrf_error_handler(request: Request, exc: CsrfError):
-    """Красивый редирект при проблеме с CSRF."""
+    # Красивый редирект при проблеме с CSRF.
     request.session["flash"] = f"⚠️ {exc.message}"
     referer = request.headers.get("referer") or "/login"
     return RedirectResponse(url=referer, status_code=303)
@@ -85,7 +85,7 @@ async def csrf_error_handler(request: Request, exc: CsrfError):
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    """Красивые страницы для 404, 403, 429 вместо JSON."""
+    # Красивые страницы для 404, 403, 429 вместо JSON.
     if exc.status_code in (301, 302, 303, 307, 308):
         return RedirectResponse(
             url=exc.headers.get("Location", "/login"),
@@ -116,7 +116,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     )
 
 
-# ─── Маршруты ─────────────────────────────────────────────
+# Маршруты
 
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request, db: Session = Depends(get_db)):

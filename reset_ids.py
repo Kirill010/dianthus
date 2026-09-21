@@ -1,11 +1,11 @@
-"""Сброс счётчиков ID во всех таблицах. Данные НЕ удаляются."""
+# Сброс счётчиков ID во всех таблицах. Данные НЕ удаляются.
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from sqlalchemy import inspect, text  # noqa: E402
-from app.database import engine        # noqa: E402
+from sqlalchemy import inspect, text
+from app.database import engine
 
 TABLES = ["users", "products", "supplies",
           "supply_items", "orders", "order_items", "notifications"]

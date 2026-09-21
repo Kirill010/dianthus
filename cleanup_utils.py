@@ -1,16 +1,16 @@
-"""Общие утилиты для скриптов очистки.
+# Общие утилиты для скриптов очистки.
 
-Главная задача — возврат остатков на склад перед удалением заказов.
-"""
+# Главная задача — возврат остатков на склад перед удалением заказов.
+
 import sys
 from pathlib import Path
 from typing import Iterable
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from sqlalchemy.orm import Session  # noqa: E402
+from sqlalchemy.orm import Session
 
-from app.models import OrderItem, SupplyItem  # noqa: E402
+from app.models import OrderItem, SupplyItem
 
 
 def return_stock_for_order_items(
@@ -67,7 +67,7 @@ def return_stock_for_order_items(
 
 
 def print_stock_report(report: dict) -> None:
-    """Красиво печатает отчёт о возврате остатков."""
+    # Красиво печатает отчёт о возврате остатков.
     print(f"   ✅ Возвращено на склад:  {report['returned_packs']} упаковок")
     print(f"   ✅ Затронуто позиций:    {report['supply_items_touched']}")
     if report["without_supply_link"]:

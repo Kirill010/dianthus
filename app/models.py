@@ -1,4 +1,4 @@
-"""Модели БД."""
+# Модели БД.
 from datetime import datetime, timezone
 
 from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey,
@@ -47,7 +47,7 @@ class User(Base):
     city = Column(String(100), default="")
     is_admin = Column(Boolean, default=False, nullable=False)
     is_approved = Column(Boolean, default=False, nullable=False)
-    # ↓ Персональная скидка клиента в процентах (0..100)
+    # Персональная скидка клиента в процентах (0..100)
     discount_percent = Column(Float, default=0, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
     orders = relationship("Order", back_populates="user",
@@ -64,7 +64,7 @@ class Product(Base):
     country = Column(String(100), default="", index=True)
     length_cm = Column(Integer, default=0)
     unit = Column(String(30), default="упаковка")
-    # ↓ Сколько штук (стеблей) в одной упаковке
+    # Сколько штук (стеблей) в одной упаковке
     package_size = Column(Integer, default=1)
     min_quantity = Column(Integer, default=1)   # минимум упаковок к заказу
     image_url = Column(String(500), default="")
@@ -96,17 +96,15 @@ class Supply(Base):
 
 
 class SupplyItem(Base):
-    """
-    Позиция поставки.
+    # Позиция поставки.
 
-    price  — цена ЗА ШТУКУ (как в накладной поставщика).
-    stock  — количество УПАКОВОК (целое число).
-    """
+    # price  — цена ЗА ШТУКУ (как в накладной поставщика).
+    # stock  — количество УПАКОВОК (целое число).
     __tablename__ = "supply_items"
     id = Column(Integer, primary_key=True, index=True)
     supply_id = Column(Integer, ForeignKey("supplies.id"), nullable=False)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
-    price = Column(Float, nullable=False, default=0)  # ₽ за ШТУКУ
+    price = Column(Float, nullable=False, default=0)  # за ШТУКУ
     stock = Column(Integer, default=0)                # УПАКОВОК
     is_active = Column(Boolean, default=False, nullable=False, index=True)
     created_at = Column(DateTime, default=_utcnow)
@@ -121,12 +119,12 @@ class SupplyItem(Base):
 
     @property
     def total_stems(self) -> int:
-        """Всего стеблей = упаковок × штук в упаковке."""
+        # Всего стеблей = упаковок × штук в упаковке.
         return self.stock * self.pack_size
 
     @property
     def price_per_pack(self) -> float:
-        """Цена за упаковку = цена за штуку × штук в упаковке."""
+        # Цена за упаковку = цена за штуку × штук в упаковке.
         return self.price * self.pack_size
 
     @property

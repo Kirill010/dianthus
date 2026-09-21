@@ -1,6 +1,4 @@
-/* ═══════════════════════════════════════════════════════════════
-   ДИАНТУС — фирменный стиль
-   ═══════════════════════════════════════════════════════════════ */
+/* ДИАНТУС — фирменный стиль */
 
 :root {
     --bg:            #f5efe4;
@@ -65,7 +63,7 @@ hr {
     opacity: 1;
 }
 
-/* ── БАННЕР ── */
+/* БАННЕР */
 .supply-banner {
     background: linear-gradient(90deg,
                 var(--primary-dark) 0%,
@@ -93,7 +91,7 @@ hr {
     50%      { transform: scale(1.08); }
 }
 
-/* ── КНОПКИ ── */
+/* КНОПКИ */
 .btn-primary {
     background: linear-gradient(180deg, var(--primary) 0%, var(--primary-dark) 100%);
     border: none;
@@ -178,7 +176,7 @@ hr {
 .btn-link { color: var(--rose); text-decoration: none; }
 .btn-link:hover { color: #a95f68; text-decoration: underline; }
 
-/* ── КАРТОЧКИ ── */
+/* КАРТОЧКИ */
 .card {
     border: 1px solid var(--border-soft);
     border-radius: 20px;
@@ -192,7 +190,7 @@ hr {
     transform: translateY(-3px);
 }
 
-/* ── ФОРМЫ ── */
+/* ФОРМЫ */
 .form-control, .form-select {
     border-radius: 12px;
     border: 1.5px solid var(--border);
@@ -210,7 +208,7 @@ hr {
 .form-label { color: var(--primary-dark); }
 .form-text  { color: var(--text-soft); font-size: .8rem; }
 
-/* ── УТИЛИТЫ ── */
+/* УТИЛИТЫ */
 .text-primary-custom { color: var(--primary) !important; }
 .table thead th {
     background: var(--primary-mist);
@@ -238,7 +236,7 @@ hr {
 .badge.bg-dark      { background: var(--primary-dark) !important; }
 .badge.bg-light     { background: var(--bg-warm) !important; color: var(--text) !important; }
 
-/* ── ШАПКА ── */
+/* ШАПКА */
 .app-header {
     background: var(--bg-card);
     box-shadow: 0 2px 20px rgba(74, 103, 65, .08);
@@ -321,7 +319,7 @@ hr {
     letter-spacing: .3px;
 }
 
-/* ── НИЖНЯЯ НАВИГАЦИЯ ── */
+/* НИЖНЯЯ НАВИГАЦИЯ */
 .bottom-nav {
     position: fixed; bottom: 0; left: 0; right: 0;
     background: var(--bg-card);
@@ -351,7 +349,7 @@ hr {
 }
 .has-bottom-nav main { padding-bottom: 80px; }
 
-/* ── ПОДВАЛ ── */
+/* ПОДВАЛ */
 .app-footer {
     background: var(--bg-card);
     border-top: 1px solid var(--border-soft);
@@ -373,7 +371,7 @@ hr {
 }
 .app-footer a { color: var(--primary); }
 
-/* ── КАТАЛОГ ── */
+/* КАТАЛОГ */
 .catalog-header {
     display: flex; justify-content: space-between; align-items: baseline;
     margin-bottom: 1rem;
@@ -502,7 +500,7 @@ hr {
     color: #a95f68;
 }
 
-/* ── КАРТОЧКА ТОВАРА ── */
+/* КАРТОЧКА ТОВАРА */
 .product-grid {
     display: grid; gap: 18px;
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -670,7 +668,7 @@ hr {
     font-size: .85rem;
 }
 
-/* ── ПАГИНАЦИЯ ── */
+/* ПАГИНАЦИЯ */
 .pagination-nav {
     display: flex; justify-content: center; align-items: center;
     gap: 14px; margin-top: 28px;
@@ -697,7 +695,7 @@ hr {
     font-family: 'Playfair Display', Georgia, serif;
 }
 
-/* ── ПУСТОЕ СОСТОЯНИЕ ── */
+/* ПУСТОЕ СОСТОЯНИЕ */
 .empty-state {
     text-align: center; padding: 60px 20px; color: var(--text-muted);
 }
@@ -712,7 +710,7 @@ hr {
     font-family: 'Playfair Display', Georgia, serif;
 }
 
-/* ── ДЕТАЛЬНАЯ СТРАНИЦА ── */
+/* ДЕТАЛЬНАЯ СТРАНИЦА */
 .product-detail { max-width: 640px; margin: 0 auto; }
 .product-detail__image {
     aspect-ratio: 1;
@@ -771,7 +769,7 @@ hr {
     border-radius: 8px;
 }
 
-/* ── КОРЗИНА ── */
+/* КОРЗИНА */
 .cart-items {
     display: flex; flex-direction: column; gap: 12px; margin-bottom: 22px;
 }
@@ -854,7 +852,7 @@ hr {
 }
 .cart-actions .btn { flex: 1; }
 
-/* ── ЗАКАЗЫ ── */
+/* ЗАКАЗЫ */
 .orders-list { display: flex; flex-direction: column; gap: 14px; }
 .order-card {
     background: var(--bg-card);
@@ -902,7 +900,7 @@ hr {
     font-style: italic;
 }
 
-/* ── PENDING ── */
+/* PENDING */
 .pending-card {
     background: var(--bg-card);
     border-radius: 22px;
@@ -954,7 +952,7 @@ hr {
     position: relative; z-index: 1;
 }
 
-/* ── ПОДСКАЗКА ПОД СЧЁТЧИКОМ ── */
+/* ПОДСКАЗКА ПОД СЧЁТЧИКОМ */
 .qty-hint {
     display: block;
     font-size: .72rem;
@@ -970,7 +968,7 @@ hr {
     color: var(--primary);
 }
 
-/* ── ПРОФИЛЬ ── */
+/* ПРОФИЛЬ */
 .profile-stat {
     background: var(--bg-card);
     border: 1px solid var(--border-soft);
@@ -996,7 +994,7 @@ hr {
     margin-top: 2px;
 }
 
-/* ── КОНТАКТЫ ── */
+/* КОНТАКТЫ */
 .contacts-list {
     display: flex;
     flex-direction: column;
@@ -1040,7 +1038,7 @@ a.contacts-item__value:hover { color: var(--primary); }
 }
 .contacts-steps li::marker { color: var(--bronze); font-weight: 700; }
 
-/* ── УВЕДОМЛЕНИЯ ── */
+/* УВЕДОМЛЕНИЯ */
 .notifications-list {
     display: flex;
     flex-direction: column;
@@ -1097,7 +1095,7 @@ a.contacts-item__value:hover { color: var(--primary); }
     color: var(--rose);
 }
 
-/* ── НУМЕРАЦИЯ В ТАБЛИЦЕ ПОСТАВКИ ── */
+/* НУМЕРАЦИЯ В ТАБЛИЦЕ ПОСТАВКИ */
 .supply-items-table__num {
     width: 56px;
     text-align: center;
@@ -1131,7 +1129,7 @@ a.contacts-item__value:hover { color: var(--primary); }
     }
 }
 
-/* ── КАРТА НА КОНТАКТАХ ── */
+/* КАРТА НА КОНТАКТАХ */
 .map-container {
     position: relative;
     width: 100%;
@@ -1154,7 +1152,7 @@ a.contacts-item__value:hover { color: var(--primary); }
     }
 }
 
-/* ── МОБИЛЬНАЯ АДАПТАЦИЯ ── */
+/* МОБИЛЬНАЯ АДАПТАЦИЯ */
 @media (max-width: 576px) {
     .product-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
     .product-card__body { padding: 10px; }
@@ -1169,9 +1167,6 @@ a.contacts-item__value:hover { color: var(--primary); }
     .profile-stat { padding: 14px; }
     .profile-stat__value { font-size: 1.2rem; }
 }
-/* ═══════════════════════════════════════════════════════════════
-   НОВЫЙ ДИЗАЙН КАТАЛОГА (по референсу)
-   ═══════════════════════════════════════════════════════════════ */
 
 /* Верхняя панель */
 .catalog-top-bar {
@@ -1440,7 +1435,7 @@ a.contacts-item__value:hover { color: var(--primary); }
     font-size: 0.75rem;
     cursor: not-allowed;
 }
-/* ── АВТОПОДСКАЗКИ ── */
+/* АВТОПОДСКАЗКИ */
 .catalog-search { position: relative; }
 .suggest-box {
     position: absolute; top: 100%; left: 0; right: 0;

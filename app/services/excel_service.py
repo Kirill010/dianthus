@@ -1,4 +1,4 @@
-"""Excel: экспорт заказов/клиентов, импорт товаров, парсер накладных."""
+# Excel: экспорт заказов/клиентов, импорт товаров, парсер накладных."""
 import logging
 import re
 from io import BytesIO
@@ -13,9 +13,7 @@ HEADER_FONT = Font(bold=True, color="FFFFFF")
 HEADER_ALIGN = Alignment(horizontal="center", vertical="center")
 
 
-# ═══════════════════════════════════════════════════════════
 # ОБЩИЕ УТИЛИТЫ
-# ═══════════════════════════════════════════════════════════
 
 def _header(ws) -> None:
     for c in ws[1]:
@@ -37,9 +35,7 @@ def _stream(wb: Workbook) -> BytesIO:
     return s
 
 
-# ═══════════════════════════════════════════════════════════
 # ЭКСПОРТ ЗАКАЗОВ И КЛИЕНТОВ
-# ═══════════════════════════════════════════════════════════
 
 def export_orders_to_excel(orders: list) -> BytesIO:
     wb = Workbook()
@@ -106,9 +102,7 @@ def export_customers_to_excel(customers: list[dict]) -> BytesIO:
     return _stream(wb)
 
 
-# ═══════════════════════════════════════════════════════════
 # ИМПОРТ СПРАВОЧНИКА ТОВАРОВ
-# ═══════════════════════════════════════════════════════════
 
 PRODUCT_IMPORT_HEADERS = ["Название", "Страна", "Длина, см",
                           "Единица", "В упаковке", "Мин. заказ",
@@ -164,9 +158,7 @@ def build_products_import_template() -> BytesIO:
     return _stream(wb)
 
 
-# ═══════════════════════════════════════════════════════════
 # ПАРСЕР НАКЛАДНЫХ
-# ═══════════════════════════════════════════════════════════
 
 _COL_ALIASES: dict[str, list[str]] = {
     "name":         ["товар", "наименование", "название"],
@@ -209,7 +201,7 @@ _DEFAULT_PACK_BY_NAME: list[tuple[str, int]] = [
 
 
 def guess_package_size(name: str) -> int:
-    """Пытается угадать размер упаковки по названию товара."""
+    # Пытается угадать размер упаковки по названию товара.
     low = name.lower()
     for pattern, size in _DEFAULT_PACK_BY_NAME:
         if re.search(pattern, low):

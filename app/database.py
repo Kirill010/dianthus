@@ -1,4 +1,4 @@
-"""Подключение к БД. SQLite и PostgreSQL."""
+# Подключение к БД. SQLite и PostgreSQL.
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 

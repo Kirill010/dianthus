@@ -1,4 +1,4 @@
-"""Загрузка и оптимизация изображений (WebP)."""
+# Загрузка и оптимизация изображений (WebP).
 import io
 import logging
 import uuid

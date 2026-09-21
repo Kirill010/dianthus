@@ -1,4 +1,4 @@
-"""Генерация PDF-счёта через xhtml2pdf (с поддержкой кириллицы)."""
+# Генерация PDF-счёта через xhtml2pdf (с поддержкой кириллицы).
 import logging
 from datetime import datetime
 from io import BytesIO
@@ -9,26 +9,26 @@ logger = logging.getLogger(__name__)
 
 
 def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
-    """Генерирует PDF-счёт. Возвращает bytes."""
+    # Генерирует PDF-счёт. Возвращает bytes.
     try:
         from xhtml2pdf import pisa
     except ImportError:
         logger.error("xhtml2pdf не установлен")
         raise
 
-    # ── Шрифт ──
+    # Шрифт
     font_css = get_font_css()
     font_family = get_font_family()
     logger.info("PDF: используем шрифт %s", font_family)
 
-    # ── Данные клиента ──
+    # Данные клиента
     buyer_company = user.company_name if user else "Гость"
     buyer_name = user.full_name if user else "—"
     buyer_inn = (user.inn if user else "") or "—"
     buyer_phone = (user.phone if user else "") or "—"
     buyer_email = (user.email if user else "") or "—"
 
-    # ── Позиции заказа ──
+    # Позиции заказа
     rows = []
     for i, item in enumerate(order.items, 1):
         pack = item.package_size or 1
@@ -214,13 +214,13 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
     </html>
     """
 
-    # ── PDF с link_callback ──
+    # PDF с link_callback
     pdf_buffer = BytesIO()
     pisa_status = pisa.CreatePDF(
         src=html,
         dest=pdf_buffer,
         encoding="utf-8",
-        link_callback=link_callback,  # ⚠️ ВОТ ЭТО ГЛАВНОЕ
+        link_callback=link_callback,
     )
 
     if pisa_status.err:

@@ -1,27 +1,25 @@
-"""Очистка ВСЕХ заказов с возвратом остатков на склад.
+# Очистка ВСЕХ заказов с возвратом остатков на склад.
 
-Порядок действий:
-  1. Считаем, сколько упаковок надо вернуть (по каждой позиции заказа)
-  2. Возвращаем остатки в supply_items.stock
-  3. Удаляем уведомления, связанные с заказами
-  4. Удаляем позиции заказов (order_items)
-  5. Удаляем сами заказы (orders)
+# Порядок действий:
+#   1. Считаем, сколько упаковок надо вернуть (по каждой позиции заказа)
+#   2. Возвращаем остатки в supply_items.stock
+#   3. Удаляем уведомления, связанные с заказами
+#   4. Удаляем позиции заказов (order_items)
+#   5. Удаляем сами заказы (orders)
 
-Что НЕ трогает:
-  - Клиентов (users)
-  - Товары справочника (products)
-  - Поставки (supplies)
+# Что НЕ трогает:
+#   - Клиентов (users)
+#   - Товары справочника (products)
+#   - Поставки (supplies)
 
-Запуск:  python clear_orders_return_stock.py
-"""
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from app.database import SessionLocal  # noqa: E402
-from app.models import Notification, Order, OrderItem  # noqa: E402
-from cleanup_utils import print_stock_report, return_stock_for_order_items  # noqa: E402
+from app.database import SessionLocal
+from app.models import Notification, Order, OrderItem
+from cleanup_utils import print_stock_report, return_stock_for_order_items
 
 
 def clear_orders_return_stock() -> None:
@@ -69,25 +67,25 @@ def clear_orders_return_stock() -> None:
             print("Отменено.")
             return
 
-        # ── 1. Возвращаем остатки ──
-        print("\n⏳ Возвращаем остатки на склад…")
+        # 1. Возвращаем остатки
+        print("\n⏳ Возвращаем остатки на склад")
         report = return_stock_for_order_items(db, items)
         print_stock_report(report)
 
-        # ── 2. Удаляем уведомления по заказам ──
-        print("\n⏳ Удаляем уведомления о заказах…")
+        # 2. Удаляем уведомления по заказам
+        print("\n⏳ Удаляем уведомления о заказах...")
         n_notif = (db.query(Notification)
                    .filter(Notification.order_id.isnot(None))
                    .delete(synchronize_session=False))
         print(f"   ✅ Удалено уведомлений: {n_notif}")
 
-        # ── 3. Удаляем позиции заказов ──
-        print("\n⏳ Удаляем позиции заказов…")
+        # 3. Удаляем позиции заказов
+        print("\n⏳ Удаляем позиции заказов...")
         n_items = db.query(OrderItem).delete(synchronize_session=False)
         print(f"   ✅ Удалено позиций: {n_items}")
 
-        # ── 4. Удаляем сами заказы ──
-        print("\n⏳ Удаляем заказы…")
+        # 4. Удаляем сами заказы
+        print("\n⏳ Удаляем заказы...")
         n_orders = db.query(Order).delete(synchronize_session=False)
         print(f"   ✅ Удалено заказов: {n_orders}")
 

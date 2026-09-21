@@ -1,18 +1,16 @@
-"""Удаляет ВСЕ товары из справочника.
+# Удаляет ВСЕ товары из справочника.
 
-Важно: удаляет и партии товаров в поставках (т.к. FK).
-История заказов СОХРАНЯЕТСЯ — в OrderItem остаётся снимок product_name и price.
-Поставки (сами рейсы), клиенты, сами заказы — НЕ трогаются.
+# Важно: удаляет и партии товаров в поставках (т.к. FK).
+# История заказов СОХРАНЯЕТСЯ — в OrderItem остаётся снимок product_name и price.
+# Поставки (сами рейсы), клиенты, сами заказы — НЕ трогаются.
 
-Запуск:  python clear_products.py
-"""
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from app.database import SessionLocal  # noqa: E402
-from app.models import OrderItem, Product, SupplyItem  # noqa: E402
+from app.database import SessionLocal
+from app.models import OrderItem, Product, SupplyItem
 
 
 def clear_products() -> None:

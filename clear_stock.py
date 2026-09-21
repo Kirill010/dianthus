@@ -1,20 +1,18 @@
-"""Снимает ВСЕ активные позиции с полок.
+# Снимает ВСЕ активные позиции с полок.
 
-У всех SupplyItem: is_active = False, stock = 0.
-После этого каталог у клиентов пуст.
+# У всех SupplyItem: is_active = False, stock = 0.
+# После этого каталог у клиентов пуст.
 
-Заказы, поставки, справочник, клиенты — НЕ трогаются.
-Чтобы вернуть товары — снова разгрузите нужную поставку.
+# Заказы, поставки, справочник, клиенты — НЕ трогаются.
+# Чтобы вернуть товары — снова разгрузите нужную поставку.
 
-Запуск:  python clear_stock.py
-"""
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from app.database import SessionLocal  # noqa: E402
-from app.models import SupplyItem  # noqa: E402
+from app.database import SessionLocal
+from app.models import SupplyItem
 
 
 def clear_stock() -> None:

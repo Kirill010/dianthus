@@ -1,4 +1,4 @@
-"""Зависимости FastAPI."""
+# Зависимости FastAPI.
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 

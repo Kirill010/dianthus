@@ -24,7 +24,7 @@
         <div class="order-card__sum">{{ "%.0f"|format(order.total_price) }} ₽</div>
         {% if order.comment %}<div class="order-card__comment">{{ order.comment }}</div>{% endif %}
 
-        <!-- ─── Кнопки действий ─── -->
+        <!-- Кнопки действий -->
         <div class="order-card__actions">
             <a href="/orders/{{ order.id }}/invoice"
                target="_blank"

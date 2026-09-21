@@ -1,4 +1,4 @@
-"""Настройки из .env."""
+# Настройки из .env.
 import logging
 import os
 

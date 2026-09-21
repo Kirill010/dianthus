@@ -1,4 +1,4 @@
-"""Общий рендер шаблонов."""
+# Общий рендер шаблонов.
 from pathlib import Path
 
 from fastapi import Request

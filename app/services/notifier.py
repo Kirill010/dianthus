@@ -1,4 +1,4 @@
-"""Уведомления админам о важных событиях — через email (SMTP)."""
+# Уведомления админам о важных событиях — через email (SMTP).
 import logging
 import os
 import smtplib
@@ -12,12 +12,10 @@ logger = logging.getLogger(__name__)
 
 TIMEOUT = 10
 
-# ═══════════════════════════════════════════════════════════
 # КОНФИГУРАЦИЯ
-# ═══════════════════════════════════════════════════════════
 
 def _get_smtp_config() -> dict | None:
-    """Возвращает конфиг SMTP или None, если не настроено."""
+    # Возвращает конфиг SMTP или None, если не настроено.
     host = (os.getenv("SMTP_HOST") or "").strip()
     user = (os.getenv("SMTP_USER") or "").strip()
     password = (os.getenv("SMTP_PASSWORD") or "").strip()
@@ -50,12 +48,10 @@ def _get_smtp_config() -> dict | None:
     }
 
 
-# ═══════════════════════════════════════════════════════════
 # ОТПРАВКА
-# ═══════════════════════════════════════════════════════════
 
 def send_email(subject: str, body_html: str) -> bool:
-    """Отправляет email админам. Никогда не бросает исключение."""
+    # Отправляет email админам. Никогда не бросает исключение.
     cfg = _get_smtp_config()
     if not cfg:
         logger.debug("SMTP не настроен — письмо пропущено")
@@ -103,7 +99,7 @@ def send_email(subject: str, body_html: str) -> bool:
 
 
 def send_email_to(to: str, subject: str, body_html: str) -> bool:
-    """Отправка конкретному получателю (клиенту)."""
+    # Отправка конкретному получателю (клиенту).
     cfg = _get_smtp_config()
     if not cfg:
         return False
@@ -135,9 +131,7 @@ def send_email_to(to: str, subject: str, body_html: str) -> bool:
         return False
 
 
-# ═══════════════════════════════════════════════════════════
 # HTML-ШАБЛОНЫ ПИСЕМ
-# ═══════════════════════════════════════════════════════════
 
 _BASE_STYLE = """
 <style>
@@ -164,7 +158,7 @@ _BASE_STYLE = """
 
 
 def notify_admin_new_order(order, user) -> None:
-    """Уведомление о новом заказе на email админам."""
+    # Уведомление о новом заказе на email админам.
     if not user:
         return
 
@@ -269,7 +263,7 @@ def notify_admin_new_order(order, user) -> None:
 
 
 def notify_admin_new_client(user) -> None:
-    """Уведомление о новом клиенте (заявке на регистрацию)."""
+    # Уведомление о новом клиенте (заявке на регистрацию).
     if not user:
         return
 
@@ -309,7 +303,7 @@ def notify_admin_new_client(user) -> None:
 
 
 def notify_client_status_changed(order, status: str) -> None:
-    """Письмо клиенту при смене статуса заказа."""
+    # Письмо клиенту при смене статуса заказа.
     if not order or not order.user:
         return
     user = order.user
@@ -364,7 +358,7 @@ def notify_client_status_changed(order, status: str) -> None:
 
 
 def notify_admin_status_changed(order, status: str) -> None:
-    """Уведомление админу о смене статуса заказа (опционально)."""
+    # Уведомление админу о смене статуса заказа (опционально).
     if not order:
         return
 

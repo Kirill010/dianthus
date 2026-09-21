@@ -1,7 +1,4 @@
-"""Скачивает шрифты DejaVu Sans (Regular + Bold) для PDF.
-
-Запуск:  python download_fonts.py
-"""
+# Скачивает шрифты DejaVu Sans (Regular + Bold) для PDF.
 import sys
 from pathlib import Path
 
@@ -15,7 +12,7 @@ BASE_DIR = Path(__file__).resolve().parent
 FONTS_DIR = BASE_DIR / "app" / "static" / "fonts"
 FONTS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Прямые ссылки на TTF-файлы через CDN jsDelivr (надёжно и быстро)
+# Прямые ссылки на TTF-файлы через CDN jsDelivr
 FILES = {
     "DejaVuSans.ttf":
         "https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf/DejaVuSans.ttf",

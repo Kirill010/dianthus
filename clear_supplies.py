@@ -1,16 +1,11 @@
-"""Удаляет ВСЕ поставки и их позиции.
-
-Товары справочника, клиенты и заказы — НЕ трогаются.
-
-Запуск:  python clear_supplies.py
-"""
+# Удаляет ВСЕ поставки и их позиции. Товары справочника, клиенты и заказы — НЕ трогаются.
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from app.database import SessionLocal  # noqa: E402
-from app.models import OrderItem, Supply, SupplyItem  # noqa: E402
+from app.database import SessionLocal
+from app.models import OrderItem, Supply, SupplyItem
 
 
 def clear_supplies() -> None:
