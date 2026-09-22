@@ -39,6 +39,8 @@ class Config:
     SHOP_MAX_LINK: str = _str_env("SHOP_MAX_LINK", "")
     SHOP_MAP_URL: str = _str_env("SHOP_MAP_URL", "")
 
+    INTEGRATION_SECRET: str = _str_env("INTEGRATION_SECRET", "")
+
     # ── Email-уведомления (SMTP) ──
     SMTP_HOST: str = _str_env("SMTP_HOST", "")
     SMTP_PORT: int = _int_env("SMTP_PORT", 465)

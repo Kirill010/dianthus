@@ -60,6 +60,7 @@ class Product(Base):
     __tablename__ = "products"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(200), nullable=False, index=True)
+    sku = Column(String(100), default="", index=True)
     description = Column(Text, default="")
     country = Column(String(100), default="", index=True)
     length_cm = Column(Integer, default=0)

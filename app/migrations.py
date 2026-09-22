@@ -18,6 +18,7 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
         "min_quantity": "INTEGER DEFAULT 1",
         "image_url":    "VARCHAR(500) DEFAULT ''",
         "category":     "VARCHAR(100) DEFAULT 'Прочее'",
+        "sku":          "VARCHAR(100) DEFAULT ''",
     },
     "users": {
         "phone":            "VARCHAR(30) DEFAULT ''",

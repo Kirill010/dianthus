@@ -16,7 +16,7 @@ from .deps import get_current_user
 from .migrations import auto_migrate, ensure_notifications_table
 from .security import CsrfError
 from .templating import render
-from .routers import admin, cart, catalog, profile
+from .routers import admin, cart, catalog, profile, integration_1c
 
 logging.basicConfig(
     level=logging.INFO,
@@ -69,6 +69,8 @@ app.include_router(catalog.router)
 app.include_router(cart.router)
 app.include_router(admin.router)
 app.include_router(profile.router)
+
+app.include_router(integration_1c.router)
 
 ensure_default_admin()
 
