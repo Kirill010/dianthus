@@ -147,15 +147,17 @@
     <div class="product-card {% if is_out %}product-card--out{% endif %}">
         <div class="product-card__image-wrap">
             {% if photos %}
-                <div class="product-card__gallery">
-                    {% for url in photos %}
-                        <img src="{{ url }}"
-                            alt="{{ item.product.name }}"
-                            class="product-card__photo {% if loop.first %}active{% endif %}"
-                            loading="lazy"
-                            data-index="{{ loop.index0 }}">
-                    {% endfor %}
-                </div>
+                <a href="/product/{{ item.id }}" class="product-card__gallery-link">
+                    <div class="product-card__gallery">
+                        {% for url in photos %}
+                            <img src="{{ url }}"
+                                alt="{{ item.product.name }}"
+                                class="product-card__photo {% if loop.first %}active{% endif %}"
+                                loading="lazy"
+                                data-index="{{ loop.index0 }}">
+                        {% endfor %}
+                    </div>
+                </a>
                 {% if photos|length > 1 %}
                     <div class="product-card__dots">
                         {% for url in photos %}

@@ -70,7 +70,9 @@
     {% for p in preorder %}
     <div class="cart-item cart-item--preorder">
         <div class="cart-item__image">
-            {% if p.image_url %}<img src="{{ p.image_url }}" alt="">{% endif %}
+            {% if p.image_url %}
+                <img src="{{ p.image_url }}" alt="{{ p.name }}" class="preorder-item__image">
+            {% endif %}
         </div>
         <div class="cart-item__body">
             <div class="cart-item__name">{{ p.name }}</div>

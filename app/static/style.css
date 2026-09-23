@@ -1843,3 +1843,10 @@ a.contacts-item__value:hover { color: var(--primary); }
     background: rgba(0,0,0,.5);
     padding: 4px 12px; border-radius: 12px;
 }
+.preorder-item__image {
+    width: 60px;      /* уменьшаем ширину */
+    height: 60px;     /* и высоту */
+    object-fit: cover;
+    border-radius: 8px; /* скругление углов */
+    flex-shrink: 0;    /* чтобы не растягивалось */
+}

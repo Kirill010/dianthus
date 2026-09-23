@@ -202,3 +202,11 @@ class Notification(Base):
     created_at = Column(DateTime, default=_utcnow)
     user = relationship("User", back_populates="notifications")
     order = relationship("Order")
+
+class Preorder(Base):
+    __tablename__ = "preorders"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    supply_item_id = Column(Integer, ForeignKey("supply_items.id"), nullable=False)
+    quantity = Column(Integer, nullable=False)  # в упаковках
+    created_at = Column(DateTime, default=_utcnow)
