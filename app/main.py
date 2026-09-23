@@ -16,9 +16,11 @@ from .database import Base, engine, get_db
 from .deps import get_current_user
 from .migrations import auto_migrate, ensure_notifications_table
 from .scheduler import start_scheduler, stop_scheduler
-from .security import CsrfError
+from .security import (CsrfError, init_rate_limiter, close_rate_limiter)
 from .templating import render
 from .routers import admin, cart, catalog, profile, integration_1c
+from .middleware import SecurityHeadersMiddleware
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,11 +45,15 @@ except Exception as e:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Запускаем планировщик при старте.
-    start_scheduler()
+    # ── ЗАПУСК ──
+    await init_rate_limiter()   # Redis (или in-memory, если Redis нет)
+    start_scheduler()           # планировщик с файловым lock
+
     yield
-    # Останавливаем при выключении.
+
+    # ── ОСТАНОВКА ──
     stop_scheduler()
+    await close_rate_limiter()
 
 
 app = FastAPI(
@@ -93,6 +99,7 @@ app.include_router(cart.router)
 app.include_router(admin.router)
 app.include_router(profile.router)
 app.include_router(integration_1c.router)
+app.add_middleware(SecurityHeadersMiddleware)
 
 ensure_default_admin()
 

@@ -234,3 +234,7 @@ app/static/vendor/
 .DS_Store
 
 *.jpg
+# .gitignore
+clear_*.py
+reset_*.py
+cleanup_*.py
