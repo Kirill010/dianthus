@@ -99,7 +99,7 @@ app.include_router(cart.router)
 app.include_router(admin.router)
 app.include_router(profile.router)
 app.include_router(integration_1c.router)
-app.add_middleware(SecurityHeadersMiddleware)
+# app.add_middleware(SecurityHeadersMiddleware)
 
 ensure_default_admin()
 
