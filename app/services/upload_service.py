@@ -19,7 +19,7 @@ MAX_DIM = 1200
 CHUNK = 64 * 1024
 
 
-def _read_limited(file: UploadFile, limit: int) -> bytes | None:
+def _read_limited(file: UploadFile, limit: int):
     data = bytearray()
     while True:
         chunk = file.file.read(CHUNK)
@@ -32,6 +32,7 @@ def _read_limited(file: UploadFile, limit: int) -> bytes | None:
 
 
 def save_upload(file: UploadFile | None) -> str:
+    """Сохраняет один файл, возвращает URL или ''."""
     if not file or not file.filename:
         return ""
     if Path(file.filename).suffix.lower() not in ALLOWED_EXT:
@@ -55,6 +56,18 @@ def save_upload(file: UploadFile | None) -> str:
         return ""
 
 
+def save_uploads(files: list[UploadFile] | None) -> list[str]:
+    """Сохраняет несколько файлов. Возвращает список URL-ов."""
+    if not files:
+        return []
+    result = []
+    for f in files:
+        url = save_upload(f)
+        if url:
+            result.append(url)
+    return result
+
+
 def delete_upload(url: str) -> None:
     if not url or not url.startswith("/static/uploads/"):
         return
@@ -65,3 +78,8 @@ def delete_upload(url: str) -> None:
         (UPLOAD_DIR / filename).unlink(missing_ok=True)
     except OSError as e:
         logger.warning("Не удалось удалить %s: %s", filename, e)
+
+
+def delete_uploads(urls: list[str]) -> None:
+    for u in urls or []:
+        delete_upload(u)

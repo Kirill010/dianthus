@@ -156,8 +156,22 @@ if ('serviceWorker' in navigator) {
             if (Math.abs(dx) > 40) show(index + (dx < 0 ? 1 : -1));
         });
         wrap.addEventListener('click', e => {
-            if (e.target.closest('.product-card__zoom')) return;
-            if (photos.length > 1) show(index + 1);
+            // клик по точке-индикатору → переход на слайд
+            const dot = e.target.closest('.product-card__dot');
+            if (dot) {
+                show(parseInt(dot.dataset.index) || 0);
+                return;
+            }
+            // клик по картинке или лупе → открыть лайтбокс
+            const allPhotos = Array.from(
+                wrap.querySelectorAll('.product-card__photo')
+            ).map(p => p.src).filter(Boolean);
+            if (allPhotos.length) {
+                const startIdx = Array.from(
+                    wrap.querySelectorAll('.product-card__photo')
+                ).findIndex(p => p.classList.contains('active'));
+                lbOpen(allPhotos, startIdx >= 0 ? startIdx : 0);
+            }
         });
     });
 

@@ -6,7 +6,9 @@
         {% if product %}<i class="fas fa-edit me-2"></i>Редактировать
         {% else %}<i class="fas fa-plus me-2"></i>Новый товар{% endif %}
     </h2>
-    <a href="/admin" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i>Назад</a>
+    <a href="/admin" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-arrow-left me-1"></i>Назад
+    </a>
 </div>
 <form method="post" enctype="multipart/form-data"
       action="{% if product %}/admin/products/{{ product.id }}/edit{% else %}/admin/products/new{% endif %}">
@@ -16,24 +18,33 @@
             <div class="col-md-8">
                 <div class="mb-3">
                     <label class="form-label fw-bold">Название *</label>
-                    <input type="text" name="name" class="form-control" maxlength="200" value="{{ product.name if product else '' }}" required>
+                    <input type="text" name="name" class="form-control"
+                           maxlength="200"
+                           value="{{ product.name if product else '' }}" required>
                 </div>
                 <div class="row g-3 mb-3">
                     <div class="col-md-4">
                         <label class="form-label fw-bold">Категория</label>
                         <select name="category" class="form-select">
                             {% for c in categories %}
-                                <option value="{{ c }}" {% if product and product.category == c %}selected{% endif %}>{{ c }}</option>
+                                <option value="{{ c }}"
+                                    {% if product and product.category == c %}selected{% endif %}>
+                                    {{ c }}
+                                </option>
                             {% endfor %}
                         </select>
                     </div>
                     <div class="col-md-4">
                         <label class="form-label fw-bold">Страна</label>
-                        <input type="text" name="country" class="form-control" maxlength="100" value="{{ product.country if product else '' }}">
+                        <input type="text" name="country" class="form-control"
+                               maxlength="100"
+                               value="{{ product.country if product else '' }}">
                     </div>
                     <div class="col-md-4">
                         <label class="form-label fw-bold">Длина, см</label>
-                        <input type="number" name="length_cm" class="form-control" min="0" max="500" value="{{ product.length_cm if product else 0 }}">
+                        <input type="number" name="length_cm" class="form-control"
+                               min="0" max="500"
+                               value="{{ product.length_cm if product else 0 }}">
                     </div>
                 </div>
                 <div class="row g-3 mb-3">
@@ -51,75 +62,141 @@
                     <div class="col-md-4">
                         <label class="form-label fw-bold">В упаковке, шт</label>
                         <input type="number" name="package_size" id="packageSize"
-                            class="form-control" min="1" max="10000"
-                            value="{{ product.package_size if product else 25 }}"
-                            oninput="updateMinHint()" required>
-                        <div class="form-text">
-                            Сколько штук в одной упаковке. Роза — 25, гвоздика — 20, тюльпан — 50.
-                        </div>
+                               class="form-control" min="1" max="10000"
+                               value="{{ product.package_size if product else 25 }}"
+                               oninput="updateMinHint()" required>
                     </div>
                     <div class="col-md-4">
                         <label class="form-label fw-bold">Мин. заказ, упак.</label>
                         <input type="number" name="min_quantity" id="minQty"
-                            class="form-control" min="1" max="10000"
-                            value="{{ product.min_quantity if product else 1 }}"
-                            oninput="updateMinHint()" required>
-                        <div class="form-text">Обычно 1. Меняй только если есть причина.</div>
+                               class="form-control" min="1" max="10000"
+                               value="{{ product.min_quantity if product else 1 }}"
+                               oninput="updateMinHint()" required>
                     </div>
                 </div>
 
                 <div class="alert alert-info py-2 px-3 small mb-3" id="minHint">
                     <i class="fas fa-info-circle me-1"></i>
-                    <span id="minHintText">Минимум к заказу: 25 шт (1 упак. × 25 шт)</span>
+                    <span id="minHintText">Минимум к заказу: 25 шт</span>
                 </div>
 
-                <script>
-                function updateMinHint() {
-                    const pack = parseInt(document.getElementById('packageSize').value) || 1;
-                    const minQty = parseInt(document.getElementById('minQty').value) || 1;
-                    const total = pack * minQty;
-                    const el = document.getElementById('minHintText');
-                    if (el) {
-                        el.textContent = `Минимум к заказу: ${total} шт (${minQty} упак. × ${pack} шт)`;
-                    }
-                }
-                document.addEventListener('DOMContentLoaded', updateMinHint);
-                </script>
                 <div class="mb-3">
                     <label class="form-label fw-bold">Описание</label>
-                    <textarea name="description" class="form-control" rows="3">{{ product.description if product else '' }}</textarea>
+                    <textarea name="description" class="form-control"
+                              rows="3">{{ product.description if product else '' }}</textarea>
                 </div>
             </div>
+
             <div class="col-md-4">
-                <label class="form-label fw-bold">Картинка</label>
-                <div class="mb-3 text-center">
-                    <img id="image-preview" src="{{ product.image_url if product and product.image_url else '' }}"
-                         class="img-fluid rounded {% if not product or not product.image_url %}d-none{% endif %}"
-                         style="max-height:200px;" alt="">
+                <label class="form-label fw-bold">Фотографии</label>
+
+                {% if product and product.all_photos %}
+                <div class="mb-2">
+                    <div class="text-muted small mb-2">
+                        Текущие ({{ product.all_photos|length }}). Отметь — что удалить:
+                    </div>
+                    <div class="photo-grid">
+                        {% for url in product.all_photos %}
+                        <label class="photo-item">
+                            <img src="{{ url }}" alt="">
+                            <input type="checkbox"
+                                   name="remove_photos"
+                                   value="{{ url }}"
+                                   class="photo-item__check">
+                            <span class="photo-item__x">
+                                <i class="fas fa-times"></i>
+                            </span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="mb-3">
+                    <label class="form-label small">
+                        Добавить новые (можно несколько сразу)
+                    </label>
+                    <input type="file" name="image_files"
+                           class="form-control" accept="image/*" multiple>
+                    <div class="form-text">
+                        JPG / PNG / WebP · до 5 МБ каждое · 1000×1000 идеально
+                    </div>
                 </div>
                 <div class="mb-3">
-                    <input type="file" name="image_file" class="form-control" accept="image/*" onchange="previewImage(this)">
-                </div>
-                <div class="mb-3">
-                    <input type="text" name="image_url" class="form-control" maxlength="500" placeholder="или ссылка" value="{{ product.image_url if product else '' }}">
+                    <label class="form-label small">Или вставить URL</label>
+                    <input type="text" name="image_url" class="form-control"
+                           maxlength="500" placeholder="https://...">
                 </div>
             </div>
         </div>
         <hr>
         <div class="d-flex justify-content-between">
             <a href="/admin" class="btn btn-secondary">Отмена</a>
-            <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i>Сохранить</button>
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-save me-1"></i>Сохранить
+            </button>
         </div>
     </div>
 </form>
+
 <script>
-function previewImage(input) {
-    const p = document.getElementById('image-preview');
-    if (input.files && input.files[0]) {
-        const r = new FileReader();
-        r.onload = e => { p.src = e.target.result; p.classList.remove('d-none'); };
-        r.readAsDataURL(input.files[0]);
-    }
+function updateMinHint() {
+    const pack = parseInt(document.getElementById('packageSize').value) || 1;
+    const minQty = parseInt(document.getElementById('minQty').value) || 1;
+    const total = pack * minQty;
+    const el = document.getElementById('minHintText');
+    if (el) el.textContent =
+        `Минимум к заказу: ${total} шт (${minQty} упак. × ${pack} шт)`;
 }
+document.addEventListener('DOMContentLoaded', updateMinHint);
 </script>
+
+<style>
+.photo-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 12px;
+}
+.photo-item {
+    position: relative;
+    aspect-ratio: 1;
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: border-color .15s;
+}
+.photo-item img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+}
+.photo-item__check {
+    position: absolute;
+    top: 6px; left: 6px;
+    width: 20px; height: 20px;
+    z-index: 2;
+    cursor: pointer;
+    accent-color: var(--rose, #c88a92);
+}
+.photo-item__x {
+    position: absolute;
+    top: 6px; right: 6px;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: rgba(0,0,0,.55);
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .7rem;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .15s;
+}
+.photo-item:has(.photo-item__check:checked) {
+    border-color: var(--rose, #c88a92);
+    opacity: .5;
+}
+.photo-item:has(.photo-item__check:checked) .photo-item__x {
+    opacity: 1;
+}
+</style>
 {% endblock %}

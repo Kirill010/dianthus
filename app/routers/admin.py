@@ -25,7 +25,9 @@ from ..services.notifier import (
     notify_admin_new_order,
     notify_client_status_changed,
 )
-from ..services.upload_service import delete_upload, save_upload
+from ..services.upload_service import (
+    delete_upload, save_upload, save_uploads,
+)
 from ..templating import render
 from ..validators import (validate_country, validate_positive_int,
                           validate_price, validate_stock)
@@ -512,6 +514,7 @@ async def product_new(
     min_quantity: int = Form(1), category: str = Form("Прочее"),
     image_url: str = Form(""),
     image_file: UploadFile | None = File(None),
+    image_files: list[UploadFile] = File(default=[]),
     db: Session = Depends(get_db),
     _a=Depends(require_admin),
     _csrf: None = Depends(check_csrf),
@@ -521,17 +524,27 @@ async def product_new(
         _err(request, errors)
         return RedirectResponse(url="/admin/products/new", status_code=303)
 
-    uploaded = save_upload(image_file)
-    final_image = uploaded or image_url.strip()
+    # Собираем фото: сначала мультизагрузка, потом одиночное, потом URL
+    photos: list[str] = []
+    photos.extend(save_uploads(image_files))
+    single = save_upload(image_file)
+    if single:
+        photos.append(single)
+    if image_url.strip():
+        photos.append(image_url.strip())
+
+    main_image = photos[0] if photos else ""
 
     db.add(Product(
         name=name.strip(), description=description.strip(),
         country=country.strip(), length_cm=length_cm,
         unit=unit, package_size=package_size, min_quantity=min_quantity,
-        category=category, image_url=final_image,
+        category=category, image_url=main_image, photos=photos,
     ))
     db.commit()
-    request.session["flash"] = "Товар добавлен в справочник"
+    request.session["flash"] = (
+        f"Товар добавлен в справочник ({len(photos)} фото)"
+    )
     return RedirectResponse(url="/admin", status_code=303)
 
 
@@ -555,6 +568,8 @@ async def product_edit(
     min_quantity: int = Form(1), category: str = Form("Прочее"),
     image_url: str = Form(""),
     image_file: UploadFile | None = File(None),
+    image_files: list[UploadFile] = File(default=[]),
+    remove_photos: list[str] = Form(default=[]),
     db: Session = Depends(get_db),
     _a=Depends(require_admin),
     _csrf: None = Depends(check_csrf),
@@ -578,16 +593,40 @@ async def product_edit(
     product.min_quantity = min_quantity
     product.category = category
 
-    uploaded = save_upload(image_file)
-    if uploaded:
-        if product.image_url and product.image_url.startswith("/static/uploads/"):
-            delete_upload(product.image_url)
-        product.image_url = uploaded
-    elif image_url.strip():
-        product.image_url = image_url.strip()
+    # Текущие фото
+    current = list(product.photos or [])
+    if not current and product.image_url:
+        current = [product.image_url]
+
+    # Удаляем отмеченные
+    if remove_photos:
+        for url in remove_photos:
+            if url in current:
+                current.remove(url)
+                if url.startswith("/static/uploads/"):
+                    delete_upload(url)
+
+    # Добавляем новые
+    current.extend(save_uploads(image_files))
+    single = save_upload(image_file)
+    if single:
+        current.append(single)
+    if image_url.strip():
+        current.append(image_url.strip())
+
+    # Убираем дубликаты, сохраняя порядок
+    seen = set()
+    final = []
+    for u in current:
+        if u and u not in seen:
+            seen.add(u)
+            final.append(u)
+
+    product.photos = final
+    product.image_url = final[0] if final else ""
 
     db.commit()
-    request.session["flash"] = "Товар обновлён"
+    request.session["flash"] = f"Товар обновлён ({len(final)} фото)"
     return RedirectResponse(url="/admin", status_code=303)
 
 
