@@ -75,12 +75,26 @@ class Product(Base):
 
     @property
     def all_photos(self) -> list:
-        """Все фото товара: photos + image_url, если photos пусто."""
+        """
+        Возвращает только ВАЛИДНЫЕ URL-ы фото.
+        Отбрасывает ID (числа от 1С), пустые строки, мусор.
+        """
         result = []
+
+        def _valid(s: str) -> bool:
+            if not s:
+                return False
+            return s.startswith(("http://", "https://", "/static/"))
+
         if self.photos and isinstance(self.photos, list):
-            result = [str(p) for p in self.photos if p]
-        if not result and self.image_url:
+            for p in self.photos:
+                s = str(p).strip()
+                if _valid(s):
+                    result.append(s)
+
+        if not result and _valid(self.image_url or ""):
             result = [self.image_url]
+
         return result
 
 

@@ -121,6 +121,7 @@
 <script src="/static/vendor/bootstrap.bundle.min.js"></script>
 
 <script>
+/* ─── Service Worker ─── */
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('/static/sw.js')
@@ -128,6 +129,152 @@ if ('serviceWorker' in navigator) {
             .catch((err) => console.warn('SW:', err));
     });
 }
+
+/* ─── Галерея + лайтбокс (делегирование событий) ─── */
+(function() {
+    'use strict';
+
+    // 1. Создаём лайтбокс один раз
+    const lb = document.createElement('div');
+    lb.className = 'lightbox';
+    lb.innerHTML = `
+        <button type="button" class="lightbox__close" aria-label="Закрыть">
+            <i class="fas fa-times"></i>
+        </button>
+        <button type="button" class="lightbox__nav lightbox__nav--prev">
+            <i class="fas fa-chevron-left"></i>
+        </button>
+        <img class="lightbox__img" alt="">
+        <button type="button" class="lightbox__nav lightbox__nav--next">
+            <i class="fas fa-chevron-right"></i>
+        </button>
+        <div class="lightbox__counter"></div>
+    `;
+    document.body.appendChild(lb);
+
+    const imgEl   = lb.querySelector('.lightbox__img');
+    const counter = lb.querySelector('.lightbox__counter');
+    let lbPhotos = [];
+    let lbIndex  = 0;
+
+    function lbShow(i) {
+        if (!lbPhotos.length) return;
+        lbIndex = (i + lbPhotos.length) % lbPhotos.length;
+        imgEl.src = lbPhotos[lbIndex];
+        counter.textContent = (lbIndex + 1) + ' / ' + lbPhotos.length;
+    }
+
+    function lbOpen(photos, startIdx) {
+        if (!photos || !photos.length) return;
+        lbPhotos = photos.slice();
+        lbShow(startIdx || 0);
+        lb.classList.add('open');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function lbClose() {
+        lb.classList.remove('open');
+        document.body.style.overflow = '';
+        imgEl.src = '';
+    }
+
+    lb.querySelector('.lightbox__close').addEventListener('click', lbClose);
+    lb.querySelector('.lightbox__nav--prev').addEventListener('click',
+        () => lbShow(lbIndex - 1));
+    lb.querySelector('.lightbox__nav--next').addEventListener('click',
+        () => lbShow(lbIndex + 1));
+    lb.addEventListener('click', (e) => { if (e.target === lb) lbClose(); });
+
+    document.addEventListener('keydown', (e) => {
+        if (!lb.classList.contains('open')) return;
+        if (e.key === 'Escape')      lbClose();
+        if (e.key === 'ArrowLeft')   lbShow(lbIndex - 1);
+        if (e.key === 'ArrowRight')  lbShow(lbIndex + 1);
+    });
+
+    let lbTouchX = 0;
+    lb.addEventListener('touchstart', (e) => {
+        lbTouchX = e.touches[0].clientX;
+    }, {passive: true});
+    lb.addEventListener('touchend', (e) => {
+        const dx = e.changedTouches[0].clientX - lbTouchX;
+        if (Math.abs(dx) > 50) lbShow(lbIndex + (dx < 0 ? 1 : -1));
+    });
+
+    // 2. Состояние каждой галереи: id → текущий индекс
+    const galleryState = new WeakMap();
+
+    // 3. Делегирование клика на уровне документа — работает даже если
+    //    карточки подгрузились позже (AJAX, пагинация, что угодно).
+    document.addEventListener('click', function(e) {
+        const wrap = e.target.closest('.product-card__image-wrap');
+        if (!wrap) return;
+
+        const photos = wrap.querySelectorAll('.product-card__photo');
+        if (!photos.length) return;
+
+        const urls = Array.from(photos)
+            .map(p => p.getAttribute('src'))
+            .filter(Boolean);
+        if (!urls.length) return;
+
+        // а) клик по точке-индикатору → переключить слайд
+        const dot = e.target.closest('.product-card__dot');
+        if (dot) {
+            const idx = parseInt(dot.dataset.index || '0', 10) || 0;
+            photos.forEach((p, n) => p.classList.toggle('active', n === idx));
+            wrap.querySelectorAll('.product-card__dot').forEach((d, n) =>
+                d.classList.toggle('active', n === idx));
+            galleryState.set(wrap, idx);
+            return;
+        }
+
+        // б) клик по кнопке-лупе или по самому фото → открыть лайтбокс
+        const currentIdx = (() => {
+            const active = wrap.querySelector('.product-card__photo.active');
+            if (!active) return 0;
+            const i = Array.from(photos).indexOf(active);
+            return i >= 0 ? i : 0;
+        })();
+
+        lbOpen(urls, currentIdx);
+    });
+
+    // 4. Свайп по карточке — переключение слайдов
+    document.addEventListener('touchstart', function(e) {
+        const wrap = e.target.closest('.product-card__image-wrap');
+        if (!wrap) return;
+        wrap._touchX = e.touches[0].clientX;
+        wrap._touchMoved = false;
+    }, {passive: true});
+
+    document.addEventListener('touchmove', function(e) {
+        const wrap = e.target.closest('.product-card__image-wrap');
+        if (!wrap || wrap._touchX == null) return;
+        if (Math.abs(e.touches[0].clientX - wrap._touchX) > 10) {
+            wrap._touchMoved = true;
+        }
+    }, {passive: true});
+
+    document.addEventListener('touchend', function(e) {
+        const wrap = e.target.closest('.product-card__image-wrap');
+        if (!wrap || wrap._touchX == null) return;
+        const dx = e.changedTouches[0].clientX - wrap._touchX;
+        wrap._touchX = null;
+        if (!wrap._touchMoved) return;
+
+        const photos = wrap.querySelectorAll('.product-card__photo');
+        const dots   = wrap.querySelectorAll('.product-card__dot');
+        if (photos.length < 2) return;
+
+        let idx = Array.from(photos).findIndex(p => p.classList.contains('active'));
+        if (idx < 0) idx = 0;
+        idx = (idx + (dx < 0 ? 1 : -1) + photos.length) % photos.length;
+
+        photos.forEach((p, n) => p.classList.toggle('active', n === idx));
+        dots.forEach((d, n) => d.classList.toggle('active', n === idx));
+    });
+})();
 </script>
 
 <script>

@@ -72,21 +72,25 @@ def _verify_basic(
 
 
 def _normalize_photos(raw) -> list:
-    """Приводит photo к списку строк (максимум 20)."""
+    """
+    Приводит photo к списку ВАЛИДНЫХ URL-ов.
+    ID (числа), пустые строки, мусор — отбрасываются.
+    """
     if raw is None:
         return []
+
     if isinstance(raw, str):
-        return [p.strip() for p in raw.split(",") if p.strip()]
-    if not isinstance(raw, list):
+        parts = [p.strip() for p in raw.split(",")]
+    elif isinstance(raw, list):
+        parts = [str(p).strip() for p in raw if p is not None]
+    else:
         return []
-    out = []
-    for p in raw:
-        if p is None:
-            continue
-        s = str(p).strip()
-        if s:
-            out.append(s)
-    return out[:20]
+
+    result = []
+    for s in parts:
+        if s and s.startswith(("http://", "https://", "/static/")):
+            result.append(s)
+    return result[:20]
 
 
 def _ensure_1c_supply(db: Session) -> Supply:

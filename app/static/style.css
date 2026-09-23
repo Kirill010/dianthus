@@ -1588,25 +1588,23 @@ a.contacts-item__value:hover { color: var(--primary); }
 .app-header__badge--preorder {
     background: var(--accent) !important;
 }
+
 /* ─── ГАЛЕРЕЯ В КАРТОЧКЕ ─────────────── */
 .product-card__image-wrap {
     position: relative;
     aspect-ratio: 1 / 1;
-    /* НЕ режем фото — показываем целиком, остаток заливаем тёплым */
     background: #f4f1ea;
     overflow: hidden;
     touch-action: pan-y;
-    cursor: zoom-in;
+    cursor: pointer;
 }
-.product-card__gallery {
-    position: absolute; inset: 0;
-}
+.product-card__gallery { position: absolute; inset: 0; }
+
 .product-card__photo {
     position: absolute; inset: 0;
     width: 100%; height: 100%;
-    /* contain — фото видно целиком, не обрезается */
-    object-fit: contain;
-    padding: 6px;
+    /* Заполняет квадрат полностью, без полей */
+    object-fit: cover;
     user-select: none;
     -webkit-user-drag: none;
     opacity: 0;
@@ -1614,22 +1612,31 @@ a.contacts-item__value:hover { color: var(--primary); }
 }
 .product-card__photo.active { opacity: 1; }
 
+/* Заглушка для товаров без фото */
+.product-card__placeholder {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 3rem;
+    color: var(--primary-light, #8ba38c);
+    opacity: .5;
+}
+
 .product-card__dots {
     position: absolute;
     bottom: 8px; left: 0; right: 0;
     display: flex; justify-content: center;
     gap: 5px; z-index: 2;
-    pointer-events: auto;
 }
 .product-card__dot {
     width: 7px; height: 7px;
     border-radius: 50%;
-    background: rgba(74,103,65,.35);
+    background: rgba(255,255,255,.55);
+    box-shadow: 0 0 4px rgba(0,0,0,.35);
     cursor: pointer;
     transition: all .2s;
 }
 .product-card__dot.active {
-    background: var(--primary, #4a6741);
+    background: #fff;
     width: 20px;
     border-radius: 4px;
 }
@@ -1644,12 +1651,11 @@ a.contacts-item__value:hover { color: var(--primary); }
     color: var(--primary-dark, #35492f);
     cursor: pointer;
     display: flex; align-items: center; justify-content: center;
-    /* ВСЕГДА видно — на тач-устройствах hover не работает */
     opacity: 1;
-    transition: transform .15s, background .15s;
     z-index: 3;
     box-shadow: 0 2px 8px rgba(0,0,0,.12);
     font-size: .85rem;
+    transition: transform .15s, background .15s;
 }
 .product-card__zoom:hover {
     background: var(--primary, #4a6741);
@@ -1657,16 +1663,7 @@ a.contacts-item__value:hover { color: var(--primary); }
     transform: scale(1.08);
 }
 
-/* Плюс: где нет фото — заглушка по центру */
-.product-card__placeholder {
-    position: absolute; inset: 0;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 3rem;
-    color: var(--primary-light, #8ba38c);
-    opacity: .55;
-}
-
-/* ─── Улучшенная карточка товара ─────── */
+/* ─── КАРТОЧКА ─────── */
 .product-card {
     background: #fff;
     border-radius: 16px;
@@ -1674,15 +1671,16 @@ a.contacts-item__value:hover { color: var(--primary); }
     border: 1px solid var(--border-soft, #efe7d5);
     box-shadow: 0 2px 10px rgba(74, 103, 65, .05);
     transition: transform .2s, box-shadow .2s;
+    display: flex; flex-direction: column;
 }
 .product-card:hover {
     transform: translateY(-3px);
     box-shadow: 0 10px 24px rgba(74, 103, 65, .1);
 }
-
 .product-card__body {
     padding: 14px 14px 12px;
     display: flex; flex-direction: column; gap: 10px;
+    flex: 1;
 }
 .product-card__name {
     font-family: 'Montserrat', system-ui, sans-serif;
@@ -1697,7 +1695,6 @@ a.contacts-item__value:hover { color: var(--primary); }
     overflow: hidden;
 }
 
-/* Характеристики — ровной сеткой */
 .product-card__specs {
     display: flex; flex-direction: column;
     gap: 4px;
@@ -1713,14 +1710,9 @@ a.contacts-item__value:hover { color: var(--primary); }
     gap: 8px;
 }
 .spec-label { color: #8a857a; }
-.spec-value {
-    color: #222;
-    font-weight: 500;
-    text-align: right;
-}
+.spec-value { color: #222; font-weight: 500; text-align: right; }
 .spec-value--stock { color: #2e7d32; font-weight: 700; }
 
-/* Цена — заметная, но не вырвиглаз */
 .product-card__price-block { margin-top: 2px; }
 .product-card__price {
     font-family: 'Montserrat', sans-serif;
@@ -1736,7 +1728,6 @@ a.contacts-item__value:hover { color: var(--primary); }
     margin-left: 2px;
 }
 
-/* ─── НОРМАЛЬНЫЙ счётчик +/- ─── */
 .product-card__form { margin-top: auto; }
 .qty-cart-group {
     display: flex;
@@ -1761,16 +1752,11 @@ a.contacts-item__value:hover { color: var(--primary); }
     font-size: 1.1rem;
     font-weight: 700;
     cursor: pointer;
-    transition: background .15s;
     line-height: 1;
+    transition: background .15s;
 }
-.qty-control button:hover {
-    background: var(--primary-pale, #d8e2d0);
-}
-.qty-control button:active {
-    background: var(--primary, #4a6741);
-    color: #fff;
-}
+.qty-control button:hover { background: var(--primary-pale, #d8e2d0); }
+.qty-control button:active { background: var(--primary, #4a6741); color: #fff; }
 .qty-control input {
     flex: 1;
     min-width: 0;
@@ -1787,7 +1773,6 @@ a.contacts-item__value:hover { color: var(--primary); }
     -webkit-appearance: none; margin: 0;
 }
 
-/* Кнопка корзины */
 .btn-cart-icon {
     flex-shrink: 0;
     width: 44px;
@@ -1804,7 +1789,6 @@ a.contacts-item__value:hover { color: var(--primary); }
 .btn-cart-icon:hover { background: var(--primary-dark, #35492f); }
 .btn-cart-icon:active { transform: scale(.96); }
 
-/* Заглушка, если нельзя заказать */
 .btn-cart--disabled {
     width: 100%;
     height: 40px;
