@@ -16,7 +16,7 @@ from .database import Base, engine, get_db
 from .deps import get_current_user
 from .migrations import auto_migrate, ensure_notifications_table
 from .scheduler import start_scheduler, stop_scheduler
-from .security import (CsrfError, init_rate_limiter, close_rate_limiter)
+from .security import CsrfError, init_rate_limiter, close_rate_limiter
 from .templating import render
 from .routers import admin, cart, catalog, profile, integration_1c
 from .middleware import SecurityHeadersMiddleware
@@ -28,6 +28,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ── Инициализация БД при старте модуля ──
 try:
     Base.metadata.create_all(bind=engine)
     auto_migrate()
@@ -61,6 +62,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ═══════════════════════════════════════════════════════════
+# MIDDLEWARE
+# ═══════════════════════════════════════════════════════════
+# ВАЖНО: порядок важен!
+# Starlette оборачивает middleware в обратном порядке: тот, что добавлен
+# последним, выполняется первым. Нам нужно, чтобы заголовки безопасности
+# добавлялись к финальному ответу, поэтому SecurityHeaders ставим ПОСЛЕ
+# Session (то есть выполняется он раньше Session на входе и позже на выходе).
+# На практике разница минимальна, но так правильнее.
+
+# 1. SessionMiddleware — сессии (нужна для CSRF-токена, пользователя, корзины)
 app.add_middleware(
     SessionMiddleware,
     secret_key=config.SECRET_KEY,
@@ -69,6 +81,12 @@ app.add_middleware(
     https_only=(config.ENV == "prod"),
 )
 
+# 2. SecurityHeadersMiddleware — заголовки безопасности
+app.add_middleware(SecurityHeadersMiddleware)
+
+# ═══════════════════════════════════════════════════════════
+# СТАТИКА
+# ═══════════════════════════════════════════════════════════
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 (STATIC_DIR / "uploads").mkdir(parents=True, exist_ok=True)
@@ -93,17 +111,23 @@ def _check_vendor() -> None:
 
 _check_vendor()
 
+# ═══════════════════════════════════════════════════════════
+# РОУТЕРЫ
+# ═══════════════════════════════════════════════════════════
 app.include_router(auth_router)
 app.include_router(catalog.router)
 app.include_router(cart.router)
 app.include_router(admin.router)
 app.include_router(profile.router)
 app.include_router(integration_1c.router)
-# app.add_middleware(SecurityHeadersMiddleware)
 
+# Создание админа, если его нет
 ensure_default_admin()
 
 
+# ═══════════════════════════════════════════════════════════
+# ОБРАБОТЧИКИ ОШИБОК
+# ═══════════════════════════════════════════════════════════
 @app.exception_handler(CsrfError)
 async def csrf_error_handler(request: Request, exc: CsrfError):
     request.session["flash"] = f"⚠️ {exc.message}"
@@ -113,12 +137,14 @@ async def csrf_error_handler(request: Request, exc: CsrfError):
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
+    # Редиректы (301/302/303/307/308) — просто возвращаем RedirectResponse
     if exc.status_code in (301, 302, 303, 307, 308):
         return RedirectResponse(
             url=exc.headers.get("Location", "/login"),
             status_code=exc.status_code,
         )
 
+    # HTML-страницы ошибок для браузера
     if request.headers.get("accept", "").startswith("text/html"):
         titles = {
             403: "Доступ запрещён",
@@ -140,9 +166,13 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         finally:
             db.close()
 
+    # JSON для API
     return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
 
 
+# ═══════════════════════════════════════════════════════════
+# ОБЩИЕ МАРШРУТЫ
+# ═══════════════════════════════════════════════════════════
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request, db: Session = Depends(get_db)):
     if get_current_user(request, db):
