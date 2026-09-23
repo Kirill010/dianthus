@@ -63,6 +63,14 @@
                 <i class="fas fa-shopping-bag"></i>
                 {% if cart_count %}<span class="app-header__badge">{{ cart_count }}</span>{% endif %}
             </a>
+            {% if preorder_count %}
+            <a href="/cart" class="app-header__icon" title="Предзаказы">
+                <i class="fas fa-truck-fast"></i>
+                <span class="app-header__badge app-header__badge--preorder">
+                    {{ preorder_count }}
+                </span>
+            </a>
+            {% endif %}
             <a href="/profile" class="app-header__icon" title="Профиль">
                 <i class="fas fa-user"></i>
             </a>

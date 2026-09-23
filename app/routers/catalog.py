@@ -1,4 +1,4 @@
-# Каталог: категории + уровни наличия.
+# Каталог: категории + уровни наличия + предзаказы.
 from typing import Optional
 from urllib.parse import urlencode
 
@@ -10,9 +10,10 @@ from sqlalchemy.orm import Session
 from ..config import config
 from ..database import get_db
 from ..deps import get_current_user
-from ..models import (PRODUCT_CATEGORIES, QUANTITY_BIG_MIN, QUANTITY_LEVELS,
-                      QUANTITY_MEDIUM_MIN, QUANTITY_SMALL_MIN, Product,
-                      Supply, SupplyItem)
+from ..models import (
+    PRODUCT_CATEGORIES, QUANTITY_BIG_MIN, QUANTITY_LEVELS,
+    QUANTITY_MEDIUM_MIN, QUANTITY_SMALL_MIN, Product, Supply, SupplyItem,
+)
 from ..templating import render
 
 router = APIRouter()
@@ -30,9 +31,24 @@ def _stems_expr():
 
 
 def _base_query(db: Session):
-    return (db.query(SupplyItem)
-            .join(Product, SupplyItem.product_id == Product.id)
-            .filter(SupplyItem.is_active.is_(True)))
+    return (
+        db.query(SupplyItem)
+        .join(Product, SupplyItem.product_id == Product.id)
+        .filter(SupplyItem.is_active.is_(True))
+    )
+
+
+def _preorder_query(db: Session):
+    # Товары из машин, которые ещё не разгружены.
+    return (
+        db.query(SupplyItem)
+        .join(Product, SupplyItem.product_id == Product.id)
+        .join(Supply, SupplyItem.supply_id == Supply.id)
+        .filter(
+            SupplyItem.is_active.is_(False),
+            Supply.status.in_(["Ожидается", "В пути"]),
+        )
+    )
 
 
 def _apply_quantity_filter(query, level: str):
@@ -40,11 +56,9 @@ def _apply_quantity_filter(query, level: str):
     if level == "big":
         return query.filter(stems >= QUANTITY_BIG_MIN)
     if level == "medium":
-        return query.filter(stems >= QUANTITY_MEDIUM_MIN,
-                            stems < QUANTITY_BIG_MIN)
+        return query.filter(stems >= QUANTITY_MEDIUM_MIN, stems < QUANTITY_BIG_MIN)
     if level == "small":
-        return query.filter(stems >= QUANTITY_SMALL_MIN,
-                            stems < QUANTITY_MEDIUM_MIN)
+        return query.filter(stems >= QUANTITY_SMALL_MIN, stems < QUANTITY_MEDIUM_MIN)
     if level == "out":
         return query.filter(stems < QUANTITY_SMALL_MIN)
     return query.filter(stems >= QUANTITY_SMALL_MIN)
@@ -84,8 +98,7 @@ def _apply_sort(query, sort: str):
 
 
 def _page_range(current: int, total: int, window: int = 2) -> list[int]:
-    return list(range(max(1, current - window),
-                      min(total, current + window) + 1))
+    return list(range(max(1, current - window), min(total, current + window) + 1))
 
 
 def _make_page_url(request: Request):
@@ -98,18 +111,22 @@ def _make_page_url(request: Request):
 
 def _count_by_level(db: Session, category: str) -> dict[str, int]:
     stems = _stems_expr()
-    base = (db.query(SupplyItem)
-            .join(Product, SupplyItem.product_id == Product.id)
-            .filter(SupplyItem.is_active.is_(True)))
+    base = (
+        db.query(SupplyItem)
+        .join(Product, SupplyItem.product_id == Product.id)
+        .filter(SupplyItem.is_active.is_(True))
+    )
     if category:
         base = base.filter(Product.category == category)
     return {
         "available": base.filter(stems >= QUANTITY_SMALL_MIN).count(),
         "big": base.filter(stems >= QUANTITY_BIG_MIN).count(),
-        "medium": base.filter(stems >= QUANTITY_MEDIUM_MIN,
-                              stems < QUANTITY_BIG_MIN).count(),
-        "small": base.filter(stems >= QUANTITY_SMALL_MIN,
-                             stems < QUANTITY_MEDIUM_MIN).count(),
+        "medium": base.filter(
+            stems >= QUANTITY_MEDIUM_MIN, stems < QUANTITY_BIG_MIN
+        ).count(),
+        "small": base.filter(
+            stems >= QUANTITY_SMALL_MIN, stems < QUANTITY_MEDIUM_MIN
+        ).count(),
         "out": base.filter(stems < QUANTITY_SMALL_MIN).count(),
     }
 
@@ -169,8 +186,9 @@ async def catalog(
 
     query = _base_query(db)
     query = _apply_quantity_filter(query, level)
-    query = _apply_filters(query, q, country, category, min_price, max_price,
-                           min_length, max_length)
+    query = _apply_filters(
+        query, q, country, category, min_price, max_price, min_length, max_length
+    )
     query = _apply_sort(query, sort)
 
     page_size = config.PAGE_SIZE
@@ -179,6 +197,16 @@ async def catalog(
     page = min(page, total_pages)
 
     items = query.offset((page - 1) * page_size).limit(page_size).all()
+
+    # Предзаказы: только на первой странице и без фильтров
+    preorder_items = []
+    if page == 1 and not q and not category and level == "available":
+        preorder_items = (
+            _preorder_query(db)
+            .order_by(Supply.arrival_date.asc(), Product.name.asc())
+            .limit(12)
+            .all()
+        )
 
     countries = sorted({
         c[0] for c in db.query(Product.country).distinct().all() if c[0]
@@ -204,34 +232,36 @@ async def catalog(
     current_filters = {
         "q": q, "country": country, "category": category, "level": level,
         "min_price": min_price, "max_price": max_price,
-        "min_length": min_length, "max_length": max_length,
-        "sort": sort,
+        "min_length": min_length, "max_length": max_length, "sort": sort,
     }
 
-    return render(request, "catalog.html", db,
-                  user=user,
-                  items=items,
-                  countries=countries,
-                  active_categories=active_categories,
-                  all_categories=PRODUCT_CATEGORIES,
-                  quantity_levels=QUANTITY_LEVELS,
-                  level_counts=level_counts,
-                  sort_options=SORT_OPTIONS,
-                  current_filters=current_filters,
-                  page=page, total_pages=total_pages, total_items=total,
-                  page_range=_page_range(page, total_pages),
-                  page_url=_make_page_url(request),
-                  has_filters=any([q, country, category, min_price,
-                                   max_price, min_length, max_length,
-                                   level != "available"]),
-                  active_supplies=active_supplies,
-                  category_url=lambda c: _category_url(current_filters, c),
-                  level_url=lambda l: _level_url(current_filters, l))
+    return render(
+        request, "catalog.html", db,
+        user=user,
+        items=items,
+        preorder_items=preorder_items,
+        countries=countries,
+        active_categories=active_categories,
+        all_categories=PRODUCT_CATEGORIES,
+        quantity_levels=QUANTITY_LEVELS,
+        level_counts=level_counts,
+        sort_options=SORT_OPTIONS,
+        current_filters=current_filters,
+        page=page, total_pages=total_pages, total_items=total,
+        page_range=_page_range(page, total_pages),
+        page_url=_make_page_url(request),
+        has_filters=any([
+            q, country, category, min_price, max_price,
+            min_length, max_length, level != "available",
+        ]),
+        active_supplies=active_supplies,
+        category_url=lambda c: _category_url(current_filters, c),
+        level_url=lambda l: _level_url(current_filters, l),
+    )
 
 
 @router.get("/api/search-suggest")
 async def search_suggest(q: str = "", db: Session = Depends(get_db)):
-    # Подсказки для поиска. Публичный (без авторизации).
     q = (q or "").strip()
     if len(q) < 2:
         return JSONResponse({"items": []})
@@ -239,33 +269,37 @@ async def search_suggest(q: str = "", db: Session = Depends(get_db)):
     rows = (
         db.query(Product.id, Product.name, SupplyItem.id.label("si"))
         .join(SupplyItem, SupplyItem.product_id == Product.id)
-        .filter(SupplyItem.is_active.is_(True),
-                Product.name.ilike(f"%{q}%"))
-        .limit(8).all()
+        .filter(
+            SupplyItem.is_active.is_(True),
+            Product.name.ilike(f"%{q}%"),
+        )
+        .limit(8)
+        .all()
     )
     return JSONResponse({
-        "items": [
-            {"name": r.name, "url": f"/product/{r.si}"}
-            for r in rows
-        ]
+        "items": [{"name": r.name, "url": f"/product/{r.si}"} for r in rows]
     })
 
 
 @router.get("/product/{item_id}", response_class=HTMLResponse)
-async def product_detail(item_id: int, request: Request,
-                         db: Session = Depends(get_db)):
+async def product_detail(
+    item_id: int, request: Request, db: Session = Depends(get_db)
+):
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
-    item = (db.query(SupplyItem)
-            .join(Product, SupplyItem.product_id == Product.id)
-            .filter(SupplyItem.id == item_id,
-                    SupplyItem.is_active.is_(True))
-            .first())
+    item = (
+        db.query(SupplyItem)
+        .join(Product, SupplyItem.product_id == Product.id)
+        .filter(SupplyItem.id == item_id, SupplyItem.is_active.is_(True))
+        .first()
+    )
     if not item:
         raise HTTPException(status_code=404, detail="Товар не найден")
 
-    return render(request, "product_detail.html", db,
-                  user=user, item=item, product=item.product,
-                  quantity_levels=QUANTITY_LEVELS)
+    return render(
+        request, "product_detail.html", db,
+        user=user, item=item, product=item.product,
+        quantity_levels=QUANTITY_LEVELS,
+    )

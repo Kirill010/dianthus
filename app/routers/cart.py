@@ -2,8 +2,7 @@
 import logging
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import (HTMLResponse, RedirectResponse,
-                                Response)
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 
 from ..config import config
@@ -12,14 +11,13 @@ from ..deps import get_current_user
 from ..models import Order, OrderItem, SupplyItem
 from ..security import check_csrf
 from ..services.notifier import notify_admin_new_order
+from ..services.preorder_service import add_to_preorder, preorder_count
 from ..templating import render
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 MAX_COMMENT_LENGTH = 1000
 
-
-# УТИЛИТЫ
 
 def _cart_subtotal(cart: list[dict]) -> float:
     total = 0.0
@@ -41,7 +39,7 @@ def _clean_cart(cart: list[dict]) -> list[dict]:
     return [c for c in cart if c.get("quantity", 0) > 0]
 
 
-# ДОБАВЛЕНИЕ
+# ДОБАВЛЕНИЕ В ОБЫЧНУЮ КОРЗИНУ
 
 @router.post("/add_to_cart")
 async def add_to_cart(
@@ -55,9 +53,14 @@ async def add_to_cart(
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
-    item = (db.query(SupplyItem)
-            .filter(SupplyItem.id == supply_item_id,
-                    SupplyItem.is_active.is_(True)).first())
+    item = (
+        db.query(SupplyItem)
+        .filter(
+            SupplyItem.id == supply_item_id,
+            SupplyItem.is_active.is_(True),
+        )
+        .first()
+    )
     if not item:
         raise HTTPException(status_code=404, detail="Товар не найден")
 
@@ -69,8 +72,9 @@ async def add_to_cart(
 
     if item.stock <= 0:
         request.session["flash"] = f"«{product.name}» закончился"
-        return RedirectResponse(url=f"/product/{supply_item_id}",
-                                status_code=303)
+        return RedirectResponse(
+            url=f"/product/{supply_item_id}", status_code=303
+        )
 
     if quantity_stems <= 0:
         quantity_stems = min_stems
@@ -116,7 +120,55 @@ async def add_to_cart(
     return RedirectResponse(url="/catalog", status_code=303)
 
 
-# ПРОСМОТР
+# ДОБАВЛЕНИЕ В ПРЕДЗАКАЗ
+
+@router.post("/add_to_preorder")
+async def add_to_preorder_route(
+    request: Request,
+    supply_item_id: int = Form(...),
+    quantity_stems: int = Form(0),
+    db: Session = Depends(get_db),
+    _csrf: None = Depends(check_csrf),
+):
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    item = (
+        db.query(SupplyItem)
+        .filter(
+            SupplyItem.id == supply_item_id,
+            SupplyItem.is_active.is_(False),
+        )
+        .first()
+    )
+    if not item:
+        request.session["flash"] = "Товар недоступен для предзаказа"
+        return RedirectResponse(url="/catalog", status_code=303)
+
+    product = item.product
+    pack = max(1, product.package_size or 1)
+    min_packs = max(1, product.min_quantity or 1)
+    min_stems = pack * min_packs
+
+    if quantity_stems <= 0:
+        quantity_stems = min_stems
+    if quantity_stems < min_stems:
+        quantity_stems = min_stems
+    quantity_stems = (quantity_stems // pack) * pack
+    packs = quantity_stems // pack
+
+    if add_to_preorder(request, item, packs):
+        arrival = item.supply.arrival_date if item.supply else None
+        arrival_txt = arrival.strftime("%d.%m.%Y") if arrival else "—"
+        request.session["flash"] = (
+            f"🌸 «{product.name}» в предзаказе: {packs} упак. "
+            f"Прибытие: {arrival_txt}"
+        )
+    return RedirectResponse(url="/catalog", status_code=303)
+
+
+# ПРОСМОТР КОРЗИНЫ
 
 @router.get("/cart", response_class=HTMLResponse)
 async def cart_page(request: Request, db: Session = Depends(get_db)):
@@ -125,63 +177,90 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
         return RedirectResponse(url="/login", status_code=303)
 
     cart = request.session.get("cart", [])
-    if not cart:
-        return render(request, "cart.html", db, user=user, cart=[],
-                      subtotal=0, discount_amount=0, total=0,
-                      discount_percent=0)
+    preorder = request.session.get("preorder_cart", [])
 
-    ids = [c["supply_item_id"] for c in cart]
-    alive = {
-        i.id: i for i in
-        db.query(SupplyItem)
-        .filter(SupplyItem.id.in_(ids),
-                SupplyItem.is_active.is_(True))
-        .all()
-    }
-
-    clean_cart = []
-    removed_names = []
-    for c in cart:
-        item = alive.get(c["supply_item_id"])
-        if item is None:
-            removed_names.append(c["name"])
-            continue
-        c["price"] = item.price
-        c["package_size"] = max(1, item.product.package_size or 1)
-        c["quantity"] = min(c["quantity"], item.stock)
-        if c["quantity"] <= 0:
-            removed_names.append(c["name"])
-            continue
-        clean_cart.append(c)
-
-    if removed_names:
-        request.session["cart"] = clean_cart
-        request.session["flash"] = (
-            "Из корзины убраны недоступные товары: "
-            + ", ".join(removed_names)
+    if not cart and not preorder:
+        return render(
+            request, "cart.html", db, user=user,
+            cart=[], preorder=[], subtotal=0, discount_amount=0,
+            total=0, discount_percent=0,
         )
-        return RedirectResponse(url="/cart", status_code=303)
 
-    subtotal = _cart_subtotal(clean_cart)
+    if cart:
+        ids = [c["supply_item_id"] for c in cart]
+        alive = {
+            i.id: i
+            for i in db.query(SupplyItem)
+            .filter(
+                SupplyItem.id.in_(ids),
+                SupplyItem.is_active.is_(True),
+            )
+            .all()
+        }
+
+        clean_cart = []
+        removed_names = []
+        for c in cart:
+            item = alive.get(c["supply_item_id"])
+            if item is None:
+                removed_names.append(c["name"])
+                continue
+            c["price"] = item.price
+            c["package_size"] = max(1, item.product.package_size or 1)
+            c["quantity"] = min(c["quantity"], item.stock)
+            if c["quantity"] <= 0:
+                removed_names.append(c["name"])
+                continue
+            clean_cart.append(c)
+
+        if removed_names:
+            request.session["cart"] = clean_cart
+            request.session["flash"] = (
+                "Из корзины убраны недоступные товары: "
+                + ", ".join(removed_names)
+            )
+            return RedirectResponse(url="/cart", status_code=303)
+        cart = clean_cart
+
+    subtotal = _cart_subtotal(cart)
     discount_percent = user.discount_percent or 0
     discount_amount, total = _apply_discount(subtotal, discount_percent)
 
-    return render(request, "cart.html", db,
-                  user=user, cart=clean_cart,
-                  subtotal=subtotal,
-                  discount_percent=discount_percent,
-                  discount_amount=discount_amount,
-                  total=total)
+    return render(
+        request, "cart.html", db,
+        user=user,
+        cart=cart,
+        preorder=preorder,
+        subtotal=subtotal,
+        discount_percent=discount_percent,
+        discount_amount=discount_amount,
+        total=total,
+    )
 
 
 @router.post("/remove_from_cart")
-async def remove_from_cart(request: Request,
-                           item_index: int = Form(...),
-                           _csrf: None = Depends(check_csrf)):
+async def remove_from_cart(
+    request: Request,
+    item_index: int = Form(...),
+    _csrf: None = Depends(check_csrf),
+):
     cart = request.session.get("cart", [])
     if 0 <= item_index < len(cart):
         cart.pop(item_index)
     request.session["cart"] = cart
+    return RedirectResponse(url="/cart", status_code=303)
+
+
+@router.post("/remove_from_preorder")
+async def remove_from_preorder(
+    request: Request,
+    item_index: int = Form(...),
+    _csrf: None = Depends(check_csrf),
+):
+    preorder = request.session.get("preorder_cart", [])
+    if 0 <= item_index < len(preorder):
+        preorder.pop(item_index)
+    request.session["preorder_cart"] = preorder
     return RedirectResponse(url="/cart", status_code=303)
 
 
@@ -207,18 +286,23 @@ async def checkout_page(request: Request, db: Session = Depends(get_db)):
     discount_percent = user.discount_percent or 0
     discount_amount, total = _apply_discount(subtotal, discount_percent)
 
-    return render(request, "checkout.html", db,
-                  user=user, cart=cart,
-                  subtotal=subtotal,
-                  discount_percent=discount_percent,
-                  discount_amount=discount_amount,
-                  total=total)
+    return render(
+        request, "checkout.html", db,
+        user=user, cart=cart,
+        subtotal=subtotal,
+        discount_percent=discount_percent,
+        discount_amount=discount_amount,
+        total=total,
+    )
 
 
 @router.post("/place_order")
-async def place_order(request: Request, comment: str = Form(""),
-                      db: Session = Depends(get_db),
-                      _csrf: None = Depends(check_csrf)):
+async def place_order(
+    request: Request,
+    comment: str = Form(""),
+    db: Session = Depends(get_db),
+    _csrf: None = Depends(check_csrf),
+):
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
@@ -234,9 +318,10 @@ async def place_order(request: Request, comment: str = Form(""),
         return RedirectResponse(url="/checkout", status_code=303)
 
     ids = [c["supply_item_id"] for c in cart]
-    query = (db.query(SupplyItem)
-             .filter(SupplyItem.id.in_(ids),
-                     SupplyItem.is_active.is_(True)))
+    query = db.query(SupplyItem).filter(
+        SupplyItem.id.in_(ids),
+        SupplyItem.is_active.is_(True),
+    )
     if db.get_bind().dialect.name == "postgresql":
         query = query.with_for_update()
     items_map = {i.id: i for i in query.all()}
@@ -258,11 +343,9 @@ async def place_order(request: Request, comment: str = Form(""),
     discount_percent = user.discount_percent or 0
     _, total = _apply_discount(subtotal, discount_percent)
 
-    # 1. Сначала списываем со склада (атомарно под блокировкой)
     for c in cart:
         items_map[c["supply_item_id"]].stock -= c["quantity"]
 
-    # 2. Потом создаём заказ
     order = Order(
         user_id=user.id,
         subtotal=subtotal,
@@ -289,7 +372,6 @@ async def place_order(request: Request, comment: str = Form(""),
     db.commit()
     db.refresh(order)
 
-    # Уведомление админу на email
     try:
         notify_admin_new_order(order, user)
     except Exception as e:
@@ -300,19 +382,19 @@ async def place_order(request: Request, comment: str = Form(""),
     return RedirectResponse(url="/orders", status_code=303)
 
 
-# ИСТОРИЯ
-
 @router.get("/orders", response_class=HTMLResponse)
 async def order_history(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
-    orders = (db.query(Order).filter(Order.user_id == user.id)
-              .order_by(Order.created_at.desc()).all())
+    orders = (
+        db.query(Order)
+        .filter(Order.user_id == user.id)
+        .order_by(Order.created_at.desc())
+        .all()
+    )
     return render(request, "orders.html", db, user=user, orders=orders)
 
-
-# ПОВТОРИТЬ ЗАКАЗ
 
 @router.post("/orders/{order_id}/repeat")
 async def repeat_order(
@@ -321,14 +403,15 @@ async def repeat_order(
     db: Session = Depends(get_db),
     _csrf: None = Depends(check_csrf),
 ):
-    # Добавляет позиции старого заказа в корзину.
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
-    order = (db.query(Order)
-             .filter(Order.id == order_id, Order.user_id == user.id)
-             .first())
+    order = (
+        db.query(Order)
+        .filter(Order.id == order_id, Order.user_id == user.id)
+        .first()
+    )
     if not order:
         request.session["flash"] = "Заказ не найден"
         return RedirectResponse(url="/orders", status_code=303)
@@ -342,18 +425,21 @@ async def repeat_order(
             skipped.append(item.product_name)
             continue
 
-        si = (db.query(SupplyItem)
-              .filter(SupplyItem.product_id == item.product_id,
-                      SupplyItem.is_active.is_(True),
-                      SupplyItem.stock > 0)
-              .first())
+        si = (
+            db.query(SupplyItem)
+            .filter(
+                SupplyItem.product_id == item.product_id,
+                SupplyItem.is_active.is_(True),
+                SupplyItem.stock > 0,
+            )
+            .first()
+        )
         if not si:
             skipped.append(item.product_name)
             continue
 
         pack = max(1, si.product.package_size or 1)
         min_packs = max(1, si.product.min_quantity or 1)
-
         want_packs = item.quantity or min_packs
         want_packs = max(min_packs, min(want_packs, si.stock))
 
@@ -382,7 +468,6 @@ async def repeat_order(
         added += 1
 
     request.session["cart"] = cart
-
     msg = f"Добавлено в корзину из заказа №{order.id}: {added} поз."
     if skipped:
         msg += f" Недоступно: {len(skipped)}"
@@ -393,22 +478,21 @@ async def repeat_order(
     return RedirectResponse(url="/catalog", status_code=303)
 
 
-# PDF-СЧЁТ
-
 @router.get("/orders/{order_id}/invoice")
 async def download_invoice(
     order_id: int,
     request: Request,
     db: Session = Depends(get_db),
 ):
-    # Скачать счёт в PDF.
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
-    order = (db.query(Order)
-             .filter(Order.id == order_id, Order.user_id == user.id)
-             .first())
+    order = (
+        db.query(Order)
+        .filter(Order.id == order_id, Order.user_id == user.id)
+        .first()
+    )
     if not order:
         raise HTTPException(404, "Заказ не найден")
 
@@ -421,7 +505,7 @@ async def download_invoice(
         }
         pdf_bytes = generate_invoice_pdf(order, user, shop_info)
     except ImportError:
-        request.session["flash"] = "PDF-генерация недоступна (нет weasyprint)"
+        request.session["flash"] = "PDF-генерация недоступна"
         return RedirectResponse(url="/orders", status_code=303)
     except Exception as e:
         logger.exception("Ошибка генерации PDF: %s", e)
@@ -432,8 +516,6 @@ async def download_invoice(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": (
-                f"inline; filename=invoice_{order.id}.pdf"
-            )
+            "Content-Disposition": f"inline; filename=invoice_{order.id}.pdf"
         },
     )

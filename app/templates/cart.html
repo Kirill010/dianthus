@@ -1,14 +1,19 @@
 {% extends "base.html" %}
 {% block content %}
 <h1 class="catalog-title mb-4">Корзина</h1>
+
+{# ── СЕКЦИЯ 1: ГОТОВО К ЗАКАЗУ ── #}
 {% if cart %}
+<h5 class="mb-3"><i class="fas fa-box me-2"></i>Готово к заказу</h5>
 <div class="cart-items">
     {% for item in cart %}
     {% set pack = item.package_size or 1 %}
     {% set stems = item.quantity * pack %}
     {% set line_total = item.price * pack * item.quantity %}
     <div class="cart-item">
-        <div class="cart-item__image">{% if item.image_url %}<img src="{{ item.image_url }}" alt="">{% endif %}</div>
+        <div class="cart-item__image">
+            {% if item.image_url %}<img src="{{ item.image_url }}" alt="">{% endif %}
+        </div>
         <div class="cart-item__body">
             <div class="cart-item__name">{{ item.name }}</div>
             <div class="cart-item__price">
@@ -20,11 +25,14 @@
         <form action="/remove_from_cart" method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="item_index" value="{{ loop.index0 }}">
-            <button type="submit" class="cart-item__remove"><i class="fas fa-times"></i></button>
+            <button type="submit" class="cart-item__remove">
+                <i class="fas fa-times"></i>
+            </button>
         </form>
     </div>
     {% endfor %}
 </div>
+
 <div class="cart-summary">
     <div class="cart-summary__row">
         <span>Позиций:</span><span>{{ cart|length }}</span>
@@ -42,6 +50,7 @@
         <span>Итого:</span><strong>{{ "%.2f"|format(total) }} ₽</strong>
     </div>
 </div>
+
 <div class="cart-actions">
     <a href="/catalog" class="btn btn-outline-primary">Продолжить</a>
     <a href="/checkout" class="btn btn-primary btn-lg">Оформить</a>
@@ -50,11 +59,54 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <button type="submit" class="btn btn-link text-danger">Очистить корзину</button>
 </form>
-{% else %}
+{% endif %}
+
+{# ── СЕКЦИЯ 2: ПРЕДЗАКАЗ ── #}
+{% if preorder %}
+<h5 class="mt-4 mb-3">
+    <i class="fas fa-truck-fast me-2"></i>Предзаказ — ждёт машину
+</h5>
+<div class="cart-items">
+    {% for p in preorder %}
+    <div class="cart-item cart-item--preorder">
+        <div class="cart-item__image">
+            {% if p.image_url %}<img src="{{ p.image_url }}" alt="">{% endif %}
+        </div>
+        <div class="cart-item__body">
+            <div class="cart-item__name">{{ p.name }}</div>
+            <div class="cart-item__price">
+                {{ "%.2f"|format(p.price) }} ₽/шт × {{ p.package_size }} шт × {{ p.quantity }} упак.
+                <span class="cart-item__stems">= {{ p.quantity * p.package_size }} шт</span>
+            </div>
+            <div class="cart-item__price" style="color:#c97b4a;">
+                <i class="fas fa-clock me-1"></i>
+                Прибытие: <strong>{{ p.arrival_date or "—" }}</strong>
+            </div>
+        </div>
+        <form action="/remove_from_preorder" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="item_index" value="{{ loop.index0 }}">
+            <button type="submit" class="cart-item__remove">
+                <i class="fas fa-times"></i>
+            </button>
+        </form>
+    </div>
+    {% endfor %}
+</div>
+<div class="alert alert-info small mb-0">
+    <i class="fas fa-info-circle me-1"></i>
+    Эти товары перейдут в основную корзину автоматически,
+    когда машина прибудет.
+</div>
+{% endif %}
+
+{# ── ЕСЛИ ВСЁ ПУСТО ── #}
+{% if not cart and not preorder %}
 <div class="empty-state">
     <i class="fas fa-shopping-cart"></i>
     <h4>Корзина пуста</h4>
     <a href="/catalog" class="btn btn-primary mt-2">В каталог</a>
 </div>
 {% endif %}
+
 {% endblock %}

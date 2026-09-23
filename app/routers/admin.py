@@ -1012,37 +1012,28 @@ async def supply_item_delete(item_id: int, request: Request,
 # РАЗГРУЗКА ПОСТАВКИ
 
 @router.post("/supplies/{supply_id}/unload")
-async def supply_unload(supply_id: int, request: Request,
-                        db: Session = Depends(get_db),
-                        _a=Depends(require_admin),
-                        _csrf: None = Depends(check_csrf)):
+async def supply_unload(
+    supply_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    _a=Depends(require_admin),
+    _csrf: None = Depends(check_csrf),
+):
     supply = db.query(Supply).filter(Supply.id == supply_id).first()
     if not supply:
         raise HTTPException(404, "Поставка не найдена")
     if not supply.items:
         request.session["flash"] = "В поставке нет товаров"
         return RedirectResponse(
-            url=f"/admin/supplies/{supply_id}/edit", status_code=303)
+            url=f"/admin/supplies/{supply_id}/edit", status_code=303
+        )
 
-    product_ids = [i.product_id for i in supply.items]
-    others = (db.query(SupplyItem)
-              .filter(SupplyItem.product_id.in_(product_ids),
-                      SupplyItem.supply_id != supply_id,
-                      SupplyItem.is_active.is_(True)).all())
-    for o in others:
-        o.is_active = False
-        o.stock = 0
-
-    for item in supply.items:
-        item.is_active = True
-
-    supply.status = "Разгружен"
+    from ..scheduler import do_unload
+    count = do_unload(db, supply)
     db.commit()
-    logger.info("Разгружена поставка №%d (%d товаров)",
-                supply_id, len(supply.items))
+    logger.info("Разгружена поставка №%d (%d товаров)", supply_id, count)
     request.session["flash"] = (
-        f"Поставка №{supply_id} разгружена. "
-        f"{len(supply.items)} товаров в каталоге."
+        f"Поставка №{supply_id} разгружена. {count} товаров в каталоге."
     )
     return RedirectResponse(url="/admin", status_code=303)
 

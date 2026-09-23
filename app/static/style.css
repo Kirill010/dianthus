@@ -1458,3 +1458,133 @@ a.contacts-item__value:hover { color: var(--primary); }
 }
 .suggest-item:last-child { border-bottom: none; }
 .suggest-item:hover { background: var(--primary-mist); color: var(--primary-dark); }
+
+/* ─── ПРЕДЗАКАЗЫ ─────────────────────────── */
+
+.preorder-section {
+    background: linear-gradient(135deg, #fff9ee 0%, #fff 100%);
+    border: 2px dashed var(--accent-light);
+    border-radius: 18px;
+    padding: 16px 18px;
+    margin-bottom: 20px;
+}
+
+.preorder-section__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--accent-pale);
+}
+
+.preorder-section__head h5 {
+    color: var(--accent);
+    font-family: 'Playfair Display', Georgia, serif;
+}
+
+.preorder-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+
+.preorder-card {
+    background: #fff;
+    border: 1px solid var(--border-soft);
+    border-radius: 14px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: transform .2s, box-shadow .2s;
+}
+
+.preorder-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+.preorder-card__image {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    background: linear-gradient(135deg, var(--bg-warm), var(--accent-pale));
+    overflow: hidden;
+}
+
+.preorder-card__image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.preorder-card__badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: var(--accent);
+    color: #fff;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .8rem;
+    box-shadow: 0 2px 8px rgba(201, 123, 74, .4);
+}
+
+.preorder-card__body {
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex-grow: 1;
+}
+
+.preorder-card__name {
+    font-weight: 600;
+    font-size: .88rem;
+    color: var(--primary-dark);
+    text-decoration: none;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.preorder-card__name:hover { color: var(--accent); }
+
+.preorder-card__date {
+    font-size: .75rem;
+    color: var(--accent);
+    background: var(--accent-pale);
+    padding: 4px 8px;
+    border-radius: 6px;
+    text-align: center;
+}
+
+.preorder-card__price {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--primary-dark);
+    font-family: 'Playfair Display', Georgia, serif;
+    margin-top: auto;
+}
+
+.preorder-card__price small {
+    font-size: .65em;
+    color: var(--text-soft);
+    font-weight: 400;
+}
+
+/* Предзаказ в корзине */
+.cart-item--preorder {
+    border-left: 3px solid var(--accent);
+    background: linear-gradient(90deg, var(--accent-pale) 0%, var(--bg-card) 30%);
+}
+
+/* Бейдж предзаказов в шапке */
+.app-header__badge--preorder {
+    background: var(--accent) !important;
+}

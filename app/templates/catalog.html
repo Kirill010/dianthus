@@ -7,6 +7,80 @@
     <span class="catalog-count">{{ total_items }}</span>
 </div>
 
+{# ── БЛОК ПРЕДЗАКАЗОВ ── #}
+{% if preorder_items %}
+<div class="preorder-section">
+    <div class="preorder-section__head">
+        <h5 class="mb-0">
+            <i class="fas fa-truck-fast me-2"></i>
+            Товар в пути — можно оформить предзаказ
+        </h5>
+        <span class="badge bg-warning text-dark">
+            {{ preorder_items|length }} поз.
+        </span>
+    </div>
+    <div class="preorder-grid">
+        {% for item in preorder_items %}
+        {% set pack = item.product.package_size or 1 %}
+        {% set min_packs = item.product.min_quantity or 1 %}
+        {% set min_stems = pack * min_packs %}
+        <div class="preorder-card">
+            <div class="preorder-card__image">
+                {% if item.product.image_url %}
+                    <img src="{{ item.product.image_url }}" alt="">
+                {% else %}
+                    <div class="product-card__placeholder">
+                        <i class="fas fa-seedling"></i>
+                    </div>
+                {% endif %}
+                <span class="preorder-card__badge">
+                    <i class="fas fa-truck"></i>
+                </span>
+            </div>
+            <div class="preorder-card__body">
+                <a href="/product/{{ item.id }}" class="preorder-card__name">
+                    {{ item.product.name }}
+                </a>
+                <div class="preorder-card__date">
+                    <i class="fas fa-calendar-alt me-1"></i>
+                    Прибытие:
+                    <strong>
+                        {% if item.supply.arrival_date %}
+                            {{ item.supply.arrival_date.strftime('%d.%m.%Y') }}
+                        {% else %}—{% endif %}
+                    </strong>
+                </div>
+                <div class="preorder-card__price">
+                    {{ "%.2f"|format(item.price) }} ₽<small>/шт</small>
+                </div>
+                <form action="/add_to_preorder" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="supply_item_id" value="{{ item.id }}">
+                    <div class="qty-cart-group">
+                        <div class="qty-control">
+                            <button type="button"
+                                    onclick="this.nextElementSibling.stepDown()">−</button>
+                            <input type="number" name="quantity_stems"
+                                   value="{{ min_stems }}"
+                                   min="{{ min_stems }}"
+                                   step="{{ pack }}" required>
+                            <button type="button"
+                                    onclick="this.previousElementSibling.stepUp()">+</button>
+                        </div>
+                        <button type="submit" class="btn-cart-icon"
+                                title="Предзаказ">
+                            <i class="fas fa-clock"></i>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{# ── /БЛОК ПРЕДЗАКАЗОВ ── #}
+
 <!-- Горизонтальный скролл категорий -->
 <div class="category-scroll">
     <a href="{{ category_url('') }}" class="category-btn {% if not current_filters.category %}active{% endif %}">Все</a>

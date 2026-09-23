@@ -1,5 +1,6 @@
 # Сборка приложения и общие маршруты.
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request, HTTPException
@@ -14,6 +15,7 @@ from .config import config
 from .database import Base, engine, get_db
 from .deps import get_current_user
 from .migrations import auto_migrate, ensure_notifications_table
+from .scheduler import start_scheduler, stop_scheduler
 from .security import CsrfError
 from .templating import render
 from .routers import admin, cart, catalog, profile, integration_1c
@@ -28,14 +30,30 @@ try:
     Base.metadata.create_all(bind=engine)
     auto_migrate()
     ensure_notifications_table()
-    db_name = (config.DATABASE_URL.split("@")[-1]
-               if "@" in config.DATABASE_URL else config.DATABASE_URL)
+    db_name = (
+        config.DATABASE_URL.split("@")[-1]
+        if "@" in config.DATABASE_URL
+        else config.DATABASE_URL
+    )
     logger.info("✅ Схема БД готова (%s)", db_name)
 except Exception as e:
     logger.error("❌ Не удалось подключиться к БД: %s", e)
     raise
 
-app = FastAPI(title="Диантус — оптовый магазин цветов")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Запускаем планировщик при старте.
+    start_scheduler()
+    yield
+    # Останавливаем при выключении.
+    stop_scheduler()
+
+
+app = FastAPI(
+    title="Диантус — оптовый магазин цветов",
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     SessionMiddleware,
@@ -53,13 +71,18 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 def _check_vendor() -> None:
     vendor = STATIC_DIR / "vendor"
-    needed = ["bootstrap.min.css", "bootstrap.bundle.min.js",
-              "fontawesome/css/all.min.css"]
+    needed = [
+        "bootstrap.min.css",
+        "bootstrap.bundle.min.js",
+        "fontawesome/css/all.min.css",
+    ]
     missing = [n for n in needed if not (vendor / n).exists()]
     if missing:
         logger.warning(
             "⚠️  Не найдены vendor-файлы: %s. Запустите: "
-            "python download_vendor.py", ", ".join(missing))
+            "python download_vendor.py",
+            ", ".join(missing),
+        )
 
 
 _check_vendor()
@@ -69,17 +92,13 @@ app.include_router(catalog.router)
 app.include_router(cart.router)
 app.include_router(admin.router)
 app.include_router(profile.router)
-
 app.include_router(integration_1c.router)
 
 ensure_default_admin()
 
 
-# Обработчики исключений
-
 @app.exception_handler(CsrfError)
 async def csrf_error_handler(request: Request, exc: CsrfError):
-    # Красивый редирект при проблеме с CSRF.
     request.session["flash"] = f"⚠️ {exc.message}"
     referer = request.headers.get("referer") or "/login"
     return RedirectResponse(url=referer, status_code=303)
@@ -87,7 +106,6 @@ async def csrf_error_handler(request: Request, exc: CsrfError):
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    # Красивые страницы для 404, 403, 429 вместо JSON.
     if exc.status_code in (301, 302, 303, 307, 308):
         return RedirectResponse(
             url=exc.headers.get("Location", "/login"),
@@ -105,7 +123,9 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         db = next(get_db())
         try:
             return render(
-                request, "error.html", db,
+                request,
+                "error.html",
+                db,
                 code=exc.status_code,
                 title=title,
                 message=exc.detail or "",
@@ -113,12 +133,8 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         finally:
             db.close()
 
-    return JSONResponse(
-        {"detail": exc.detail}, status_code=exc.status_code
-    )
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
 
-
-# Маршруты
 
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request, db: Session = Depends(get_db)):
@@ -133,7 +149,9 @@ async def login_page(request: Request, db: Session = Depends(get_db)):
     if user:
         return RedirectResponse(url="/catalog", status_code=303)
     return render(
-        request, "login.html", db,
+        request,
+        "login.html",
+        db,
         user=None,
         register_errors=request.session.pop("register_errors", None),
         register_data=request.session.pop("register_data", {}),
