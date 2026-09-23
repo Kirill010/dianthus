@@ -280,9 +280,23 @@ async def user_reject(user_id: int, request: Request,
     if user.is_admin:
         request.session["flash"] = "❌ Сначала снимите права администратора"
         return RedirectResponse(url="/admin", status_code=303)
-    db.query(Order).filter(Order.user_id == user.id).update(
-        {Order.user_id: None}, synchronize_session=False
-    )
+
+    # 1. Отвязываем позиции заказов (чтобы удалить товары можно было позже)
+    order_ids = [
+        row[0] for row in
+        db.query(Order.id).filter(Order.user_id == user.id).all()
+    ]
+    if order_ids:
+        db.query(OrderItem).filter(
+            OrderItem.order_id.in_(order_ids)
+        ).update({
+            OrderItem.product_id: None,
+            OrderItem.supply_item_id: None,
+        }, synchronize_session=False)
+        db.query(Order).filter(Order.id.in_(order_ids)).update(
+            {Order.user_id: None}, synchronize_session=False
+        )
+
     name = user.full_name
     db.delete(user)
     db.commit()

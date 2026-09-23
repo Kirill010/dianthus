@@ -202,10 +202,15 @@ async def registration_pending(request: Request, db: Session = Depends(get_db)):
         return RedirectResponse(url="/catalog", status_code=303)
     return render(request, "registration_pending.html", db)
 
+from sqlalchemy import text
 
 @app.get("/health")
-async def health():
-    return {"status": "ok", "env": config.ENV}
-
+async def health(db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+        return {"status": "ok", "env": config.ENV, "db": "ok"}
+    except Exception as e:
+        logger.error("Health DB failed: %s", e)
+        raise HTTPException(503, "DB unavailable")
 
 logger.info("🌸 Диантус готов (%s)", config.ENV)

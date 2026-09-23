@@ -1,35 +1,15 @@
 """
-Приём данных из 1С.
-
-Формат запроса (POST /api/1c/products/sync):
-{
-  "products": [
-    {
-      "id": "1",
-      "sku": "тест1",
-      "name": "товар",
-      "price_per_stem": 100,
-      "stock_packs": 5,
-      "country": "Эквадор",
-      "length_cm": 60,
-      "package_size": 25,
-      "min_quantity": 1,
-      "category": "Роза Эквадор",
-      "description": "тест",
-      "photo": ["https://cdn/1.jpg", "https://cdn/2.jpg"]
-    }
-  ]
-}
-
-Авторизация: HTTP Basic Auth (INTEGRATION_USER / INTEGRATION_PASSWORD).
+Приём данных из 1С. Basic Auth.
+POST /api/1c/products/sync
 """
 import logging
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ..config import config
@@ -61,8 +41,10 @@ def _verify_basic(
         creds.password or "", config.INTEGRATION_PASSWORD
     )
     if not (user_ok and pass_ok):
-        logger.warning("1С: неверные учётные данные, IP=%s",
-                       request.client.host if request.client else "?")
+        logger.warning(
+            "1С: неверные учётные данные, IP=%s",
+            request.client.host if request.client else "?",
+        )
         raise HTTPException(
             status_code=401,
             detail="Неверный логин или пароль",
@@ -71,14 +53,12 @@ def _verify_basic(
     return True
 
 
+_BAD_SCHEMES = ("javascript:", "data:", "vbscript:", "file:")
+
+
 def _normalize_photos(raw) -> list:
-    """
-    Приводит photo к списку ВАЛИДНЫХ URL-ов.
-    ID (числа), пустые строки, мусор — отбрасываются.
-    """
     if raw is None:
         return []
-
     if isinstance(raw, str):
         parts = [p.strip() for p in raw.split(",")]
     elif isinstance(raw, list):
@@ -88,12 +68,18 @@ def _normalize_photos(raw) -> list:
 
     result = []
     for s in parts:
-        if s and s.startswith(("http://", "https://", "/static/")):
+        if not s:
+            continue
+        low = s.lower()
+        if any(low.startswith(bad) for bad in _BAD_SCHEMES):
+            continue
+        if s.startswith(("http://", "https://", "/static/")):
             result.append(s)
     return result[:20]
 
 
 def _ensure_1c_supply(db: Session) -> Supply:
+    """Одна открытая служебная поставка для 1С."""
     supply = (
         db.query(Supply)
         .filter(
@@ -106,7 +92,7 @@ def _ensure_1c_supply(db: Session) -> Supply:
         supply = Supply(
             country="1С",
             status="Ожидается",
-            arrival_date=datetime.utcnow(),
+            arrival_date=datetime.now(timezone.utc).replace(tzinfo=None),
             notes="Авто-синхронизация из 1С",
         )
         db.add(supply)
@@ -118,12 +104,16 @@ def _ensure_1c_supply(db: Session) -> Supply:
 @router.post("/products/sync")
 async def sync_products(
     payload: dict,
+    request: Request,
     db: Session = Depends(get_db),
     _auth: bool = Depends(_verify_basic),
 ):
     products_data = payload.get("products", [])
     if not isinstance(products_data, list):
         raise HTTPException(400, "Поле 'products' должно быть массивом")
+
+    client_ip = request.client.host if request.client else "?"
+
     if not products_data:
         return JSONResponse({
             "status": "ok", "processed": 0, "created": 0,
@@ -132,10 +122,29 @@ async def sync_products(
 
     supply = _ensure_1c_supply(db)
 
+    # ── Batch-load существующих товаров ──
+    skus = []
+    names = []
+    for it in products_data:
+        s = str(it.get("sku", "")).strip()
+        n = str(it.get("name", "")).strip()
+        if s: skus.append(s)
+        if n: names.append(n)
+
+    existing_by_sku: dict[str, Product] = {}
+    existing_by_name: dict[str, Product] = {}
+    if skus or names:
+        conds = []
+        if skus: conds.append(Product.sku.in_(skus))
+        if names: conds.append(Product.name.in_(names))
+        for p in db.query(Product).filter(or_(*conds)).all():
+            if p.sku: existing_by_sku[p.sku] = p
+            existing_by_name[p.name] = p
+
     processed = 0
     created = 0
     updated = 0
-    errors: list = []
+    errors: list[str] = []
 
     for idx, item in enumerate(products_data, start=1):
         try:
@@ -146,10 +155,10 @@ async def sync_products(
                 continue
 
             product = None
-            if sku:
-                product = db.query(Product).filter(Product.sku == sku).first()
-            if not product:
-                product = db.query(Product).filter(Product.name == name).first()
+            if sku and sku in existing_by_sku:
+                product = existing_by_sku[sku]
+            elif name in existing_by_name:
+                product = existing_by_name[name]
 
             photos = _normalize_photos(item.get("photo"))
             main_image = photos[0] if photos else ""
@@ -169,6 +178,8 @@ async def sync_products(
                 )
                 db.add(product)
                 db.flush()
+                if sku: existing_by_sku[sku] = product
+                existing_by_name[name] = product
                 created += 1
             else:
                 product.sku = sku or product.sku
@@ -187,7 +198,7 @@ async def sync_products(
                     product.category = str(
                         item.get("category") or product.category
                     )
-                if photos and not product.photos:
+                if photos:
                     product.photos = photos
                     product.image_url = main_image
                 updated += 1
@@ -206,17 +217,19 @@ async def sync_products(
             if si:
                 si.price = price
                 si.stock = stock
+                si.is_active = stock > 0   # ← авто-скрытие
             else:
                 db.add(SupplyItem(
                     supply_id=supply.id,
                     product_id=product.id,
                     price=price,
                     stock=stock,
+                    is_active=stock > 0,
                 ))
             processed += 1
 
         except Exception as e:
-            logger.exception("1С: ошибка обработки #%d", idx)
+            logger.exception("1С: ошибка #%d", idx)
             errors.append(f"#{idx} ({item.get('name', '?')}): {e}")
 
     try:
@@ -227,8 +240,8 @@ async def sync_products(
         raise HTTPException(500, f"Ошибка БД: {e}")
 
     logger.info(
-        "1С: processed=%d, created=%d, updated=%d, errors=%d",
-        processed, created, updated, len(errors),
+        "1С sync: ip=%s, processed=%d, created=%d, updated=%d, errors=%d",
+        client_ip, processed, created, updated, len(errors),
     )
 
     return JSONResponse({

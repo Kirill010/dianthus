@@ -49,7 +49,8 @@ async def register(
     db: Session = Depends(get_db),
     _csrf: None = Depends(check_csrf),
 ):
-    check_rate_limit(request, "register", max_hits=5, window=300)
+    await check_rate_limit(request, "register", max_hits=5, window=300)
+
     email = email.strip().lower()
     company_name = company_name.strip()
     full_name = full_name.strip()
@@ -106,9 +107,9 @@ async def register(
     try:
         notify_admin_new_client(user)
     except Exception as e:
-        logger.warning("Не удалось уведомить админа о новой заявке: %s", e)
+        logger.warning("Не удалось уведомить админа: %s", e)
 
-    logger.info("Заявка на регистрацию: %s (%s)", email, company_name)
+    logger.info("Заявка: %s (%s)", email, company_name)
     return RedirectResponse(url="/registration_pending", status_code=303)
 
 
@@ -120,9 +121,9 @@ async def login(
     db: Session = Depends(get_db),
     _csrf: None = Depends(check_csrf),
 ):
-    check_rate_limit(request, "login", max_hits=10, window=60)
-    email = email.strip().lower()
+    await check_rate_limit(request, "login", max_hits=10, window=60)
 
+    email = email.strip().lower()
     if not email or not password:
         request.session["login_error"] = "Заполните email и пароль"
         return RedirectResponse(url="/login", status_code=303)
@@ -139,7 +140,7 @@ async def login(
         )
         return RedirectResponse(url="/login", status_code=303)
 
-    reset_rate_limit(request, "login")
+    await reset_rate_limit(request, "login")
     request.session["user_id"] = user.id
     request.session["flash"] = f"Добро пожаловать, {user.company_name}!"
     logger.info("Вход: %s", email)

@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Диантус · Оптовый магазин цветов</title>
+    {% if csrf_token %}<meta name="csrf-token" content="{{ csrf_token }}">{% endif %}
     <meta name="description" content="Диантус — оптовые поставки цветов из Эквадора, Колумбии, Голландии. Розы, гвоздики, хризантемы, тюльпаны упаковками. Только для юрлиц и ИП.">
     <meta name="keywords" content="оптовые цветы, розы оптом, гвоздики оптом, цветы из Эквадора, dianthus, опт цветов Москва">
     <meta name="robots" content="index, follow">
@@ -121,6 +122,34 @@
 <script src="/static/vendor/bootstrap.bundle.min.js"></script>
 
 <script>
+/* ─── CSRF для multipart-форм ─── */
+(function() {
+    const token = document.querySelector('meta[name="csrf-token"]')?.content
+                || document.querySelector('input[name="csrf_token"]')?.value
+                || '';
+    if (!token) return;
+    // Проставляем всем multipart-формам заголовок через fetch-перехват
+    const origFetch = window.fetch;
+    window.fetch = function(input, init) {
+        init = init || {};
+        const headers = new Headers(init.headers || {});
+        if (!headers.has('X-CSRF-Token')) {
+            headers.set('X-CSRF-Token', token);
+        }
+        init.headers = headers;
+        return origFetch.call(this, input, init);
+    };
+    // Для обычных <form enctype="multipart/form-data"> —
+    // добавляем скрытое поле, если его нет
+    document.querySelectorAll('form[enctype="multipart/form-data"]').forEach(f => {
+        if (!f.querySelector('input[name="csrf_token"]')) {
+            const i = document.createElement('input');
+            i.type = 'hidden'; i.name = 'csrf_token'; i.value = token;
+            f.appendChild(i);
+        }
+    });
+})();
+
 /* ─── Service Worker ─── */
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
@@ -130,11 +159,10 @@ if ('serviceWorker' in navigator) {
     });
 }
 
-/* ─── Галерея + лайтбокс (делегирование событий) ─── */
+/* ─── Галерея + лайтбокс ─── */
 (function() {
     'use strict';
 
-    // 1. Создаём лайтбокс один раз
     const lb = document.createElement('div');
     lb.className = 'lightbox';
     lb.innerHTML = `
@@ -163,7 +191,6 @@ if ('serviceWorker' in navigator) {
         imgEl.src = lbPhotos[lbIndex];
         counter.textContent = (lbIndex + 1) + ' / ' + lbPhotos.length;
     }
-
     function lbOpen(photos, startIdx) {
         if (!photos || !photos.length) return;
         lbPhotos = photos.slice();
@@ -171,7 +198,6 @@ if ('serviceWorker' in navigator) {
         lb.classList.add('open');
         document.body.style.overflow = 'hidden';
     }
-
     function lbClose() {
         lb.classList.remove('open');
         document.body.style.overflow = '';
@@ -201,27 +227,25 @@ if ('serviceWorker' in navigator) {
         if (Math.abs(dx) > 50) lbShow(lbIndex + (dx < 0 ? 1 : -1));
     });
 
-    // 2. Состояние каждой галереи
-    const galleryState = new WeakMap();
-
-    // 3. Делегирование клика на уровне документа
+    // Делегирование клика
     document.addEventListener('click', function(e) {
+        // 1) Кнопка «лупа» — ОТКРЫВАЕТ лайтбокс
         const zoomBtn = e.target.closest('.product-card__zoom');
-            if (zoomBtn) {
-                e.preventDefault();
+        if (zoomBtn) {
+            e.preventDefault();
+            e.stopPropagation();
+            try {
                 const photos = JSON.parse(zoomBtn.dataset.photos || '[]');
-                if (photos.length) {
-                    // Здесь должен быть ваш код открытия лайтбокса
-                    // Например, вызов функции openLightbox(photos, 0)
-                    // Если у вас уже есть лайтбокс, просто вызовите его функцию
-                    console.log('Открыть лайтбокс с фото:', photos);
-                }
-            }
+                if (photos.length) lbOpen(photos, 0);
+            } catch (err) { /* ignore */ }
+            return;
+        }
 
-        const wrap = e.target.closest('.product-card__image-wrap');
+        // 2) Клик по галерее
+        const wrap = e.target.closest('.product-card__image-wrap, .product-detail__image');
         if (!wrap) return;
 
-        const photos = wrap.querySelectorAll('.product-card__photo');
+        const photos = wrap.querySelectorAll('.product-card__photo, .product-gallery__photo');
         if (!photos.length) return;
 
         const urls = Array.from(photos)
@@ -229,20 +253,24 @@ if ('serviceWorker' in navigator) {
             .filter(Boolean);
         if (!urls.length) return;
 
-        // а) клик по точке-индикатору
+        // Точка-индикатор
         const dot = e.target.closest('.product-card__dot');
         if (dot) {
+            e.preventDefault();
             const idx = parseInt(dot.dataset.index || '0', 10) || 0;
             photos.forEach((p, n) => p.classList.toggle('active', n === idx));
             wrap.querySelectorAll('.product-card__dot').forEach((d, n) =>
                 d.classList.toggle('active', n === idx));
-            galleryState.set(wrap, idx);
             return;
         }
 
-        // б) клик по кнопке-лупе или по фото → лайтбокс
+        // Ссылка — не перехватываем
+        if (e.target.closest('a')) return;
+
         const currentIdx = (() => {
-            const active = wrap.querySelector('.product-card__photo.active');
+            const active = wrap.querySelector(
+                '.product-card__photo.active, .product-gallery__photo.active'
+            );
             if (!active) return 0;
             const i = Array.from(photos).indexOf(active);
             return i >= 0 ? i : 0;
@@ -251,16 +279,16 @@ if ('serviceWorker' in navigator) {
         lbOpen(urls, currentIdx);
     });
 
-    // 4. Свайп по карточке
+    // Свайп по галерее
     document.addEventListener('touchstart', function(e) {
-        const wrap = e.target.closest('.product-card__image-wrap');
+        const wrap = e.target.closest('.product-card__image-wrap, .product-detail__image');
         if (!wrap) return;
         wrap._touchX = e.touches[0].clientX;
         wrap._touchMoved = false;
     }, {passive: true});
 
     document.addEventListener('touchmove', function(e) {
-        const wrap = e.target.closest('.product-card__image-wrap');
+        const wrap = e.target.closest('.product-card__image-wrap, .product-detail__image');
         if (!wrap || wrap._touchX == null) return;
         if (Math.abs(e.touches[0].clientX - wrap._touchX) > 10) {
             wrap._touchMoved = true;
@@ -268,13 +296,13 @@ if ('serviceWorker' in navigator) {
     }, {passive: true});
 
     document.addEventListener('touchend', function(e) {
-        const wrap = e.target.closest('.product-card__image-wrap');
+        const wrap = e.target.closest('.product-card__image-wrap, .product-detail__image');
         if (!wrap || wrap._touchX == null) return;
         const dx = e.changedTouches[0].clientX - wrap._touchX;
         wrap._touchX = null;
         if (!wrap._touchMoved) return;
 
-        const photos = wrap.querySelectorAll('.product-card__photo');
+        const photos = wrap.querySelectorAll('.product-card__photo, .product-gallery__photo');
         const dots   = wrap.querySelectorAll('.product-card__dot');
         if (photos.length < 2) return;
 

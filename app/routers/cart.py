@@ -3,7 +3,7 @@ import logging
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from ..config import config
 from ..database import get_db
@@ -321,9 +321,13 @@ async def place_order(
         return RedirectResponse(url="/checkout", status_code=303)
 
     ids = [c["supply_item_id"] for c in cart]
-    query = db.query(SupplyItem).filter(
-        SupplyItem.id.in_(ids),
-        SupplyItem.is_active.is_(True),
+    query = (
+        db.query(SupplyItem)
+        .options(joinedload(SupplyItem.product))
+        .filter(
+            SupplyItem.id.in_(ids),
+            SupplyItem.is_active.is_(True),
+        )
     )
     if db.get_bind().dialect.name == "postgresql":
         query = query.with_for_update()
@@ -431,8 +435,10 @@ async def repeat_order(
             skipped.append(item.product_name)
             continue
 
+        # внутри цикла:
         si = (
             db.query(SupplyItem)
+            .options(joinedload(SupplyItem.product))
             .filter(
                 SupplyItem.product_id == item.product_id,
                 SupplyItem.is_active.is_(True),

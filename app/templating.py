@@ -1,5 +1,7 @@
 # Общий рендер шаблонов.
+import logging
 import os
+import tempfile
 from pathlib import Path
 
 from fastapi import Request
@@ -14,20 +16,46 @@ from .security import ensure_csrf_token
 from .services.preorder_service import preorder_count_db
 from . import models
 
+logger = logging.getLogger(__name__)
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
-# ВАЖНО: /tmp не годится, т.к. в systemd стоит PrivateTmp=true
-JINJA_CACHE_DIR = os.getenv("JINJA_CACHE_DIR", "/var/cache/dianthus/jinja")
-os.makedirs(JINJA_CACHE_DIR, exist_ok=True)
+
+def _pick_cache_dir() -> str:
+    """Выбирает первый рабочий каталог для кэша Jinja."""
+    candidates = [
+        os.getenv("JINJA_CACHE_DIR", "").strip(),
+        "/var/cache/dianthus/jinja",
+        str(Path(tempfile.gettempdir()) / "dianthus_jinja"),
+        str(TEMPLATES_DIR / ".cache"),
+    ]
+    for d in candidates:
+        if not d:
+            continue
+        try:
+            os.makedirs(d, exist_ok=True)
+            probe = Path(d) / ".wtest"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink()
+            return d
+        except Exception as e:
+            logger.debug("Кэш Jinja: %s недоступен (%s)", d, e)
+            continue
+    logger.warning("Не нашёл ни одного каталога для кэша Jinja")
+    return str(TEMPLATES_DIR / ".cache")
+
+
+JINJA_CACHE_DIR = _pick_cache_dir()
+logger.info("Jinja bytecode cache: %s", JINJA_CACHE_DIR)
 
 templates.env.bytecode_cache = FileSystemBytecodeCache(
     directory=JINJA_CACHE_DIR,
     pattern="__jinja2_%s.cache",
 )
 templates.env.cache_size = -1
-templates.env.auto_reload = False
+# В проде — False; но проверим, что шаблоны читаются
+templates.env.auto_reload = (config.ENV != "prod")
 
 
 def render(request: Request, template: str, db: Session, **context):
@@ -37,7 +65,7 @@ def render(request: Request, template: str, db: Session, **context):
 
     flash = request.session.pop("flash", None)
     cart = request.session.get("cart", [])
-    cart_count = sum(item["quantity"] for item in cart)
+    cart_count = sum(item.get("quantity", 0) for item in cart)
     preorder_total = preorder_count_db(db, user.id) if user else 0
     csrf_token = ensure_csrf_token(request)
 

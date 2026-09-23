@@ -1,19 +1,7 @@
 """
 Модуль безопасности Диантуса.
-
-Содержит:
-1. CSRF-защиту (check_csrf, ensure_csrf_token, CsrfError)
-2. Rate limiting (check_rate_limit, reset_rate_limit)
-3. Опциональный Redis-бэкенд для rate limiting
-
-ВАЖНО про rate limiting и воркеры:
-- Если запущен 1 воркер Uvicorn — in-memory счётчики работают корректно.
-- Если воркеров > 1 — нужен Redis, иначе каждый воркер
-  считает попытки отдельно.
-- Наш код сам определяет, что использовать: если Redis
-  инициализирован — используем его; если нет — in-memory.
+CSRF + rate limiting (Redis или in-memory).
 """
-
 import logging
 import os
 import secrets
@@ -25,40 +13,24 @@ from fastapi import HTTPException, Request
 
 logger = logging.getLogger(__name__)
 
-# Ключ в сессии, где лежит CSRF-токен
 _CSRF_SESSION_KEY = "csrf_token"
-
-# In-memory счётчики (fallback, если Redis не подключён)
 _rate_buckets: dict[str, list[float]] = defaultdict(list)
 
-# Глобальное подключение к Redis (None = не инициализирован)
 _redis_client = None
 _redis_enabled = False
 
 
 # ═══════════════════════════════════════════════════════════
-# CSRF-ЗАЩИТА
+# CSRF
 # ═══════════════════════════════════════════════════════════
 
 class CsrfError(Exception):
-    """
-    Исключение CSRF-ошибки.
-    Ловится в main.py через @app.exception_handler(CsrfError).
-    """
-
     def __init__(self, message: str = "Ошибка CSRF-токена"):
         self.message = message
         super().__init__(message)
 
 
 def ensure_csrf_token(request: Request) -> str:
-    """
-    Возвращает CSRF-токен из сессии.
-    Если токена нет — генерирует и сохраняет.
-
-    Вызывается в templating.py при каждом рендере.
-    Токен уходит в HTML-формы как скрытое поле csrf_token.
-    """
     token = request.session.get(_CSRF_SESSION_KEY)
     if not token:
         token = secrets.token_urlsafe(32)
@@ -68,26 +40,33 @@ def ensure_csrf_token(request: Request) -> str:
 
 async def check_csrf(request: Request) -> None:
     """
-    Проверяет CSRF-токен из формы против токена из сессии.
+    Проверяет CSRF-токен.
 
-    Использование в роутерах:
-        @router.post("/login")
-        async def login(..., _csrf: None = Depends(check_csrf)):
-            ...
-
-    Если токен отсутствует или не совпадает — бросает CsrfError,
-    которую перехватывает main.py и показывает flash-сообщение.
+    Для multipart/form-data — берём только из заголовка X-CSRF-Token,
+    потому что request.form() съедает тело и File() потом пуст.
     """
     session_token = request.session.get(_CSRF_SESSION_KEY)
     if not session_token:
         raise CsrfError("Сессия не содержит CSRF-токен")
 
-    try:
-        form = await request.form()
-    except Exception:
-        raise CsrfError("Не удалось прочитать форму")
+    ctype = (request.headers.get("content-type") or "").lower()
+    is_multipart = "multipart/form-data" in ctype
 
-    client_token = form.get("csrf_token", "")
+    client_token = ""
+    if is_multipart:
+        client_token = request.headers.get("x-csrf-token", "")
+        if not client_token:
+            # Фолбэк: иногда шлют просто в form, но у нас File() отвалится.
+            raise CsrfError(
+                "Для загрузки файлов нужен заголовок X-CSRF-Token"
+            )
+    else:
+        try:
+            form = await request.form()
+        except Exception:
+            raise CsrfError("Не удалось прочитать форму")
+        client_token = form.get("csrf_token", "")
+
     if not client_token:
         raise CsrfError("Отсутствует CSRF-токен")
 
@@ -101,43 +80,71 @@ async def check_csrf(request: Request) -> None:
 
 def _client_ip(request: Request) -> str:
     """
-    Возвращает IP клиента.
-    Учитывает заголовок X-Forwarded-For (если стоит Nginx/reverse-proxy).
+    IP клиента за Nginx.
+    Берём ПЕРВЫЙ адрес из X-Forwarded-For (наш Nginx добавляет реальный IP
+    в конец цепочки, но мы доверяем только своему прокси).
     """
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        # Берём первый IP в цепочке
-        return forwarded.split(",")[0].strip()
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        parts = [p.strip() for p in fwd.split(",") if p.strip()]
+        if parts:
+            # Первый — самый ранний; для одиночного прокси это клиент.
+            return parts[0][:45]
     if request.client:
         return request.client.host
     return "unknown"
 
 
-def check_rate_limit(
+async def _redis_incr(bucket: str, window: int) -> Optional[int]:
+    """Инкрементит счётчик в Redis. None если недоступен."""
+    if not _redis_enabled or _redis_client is None:
+        return None
+    try:
+        key = f"rl:{bucket}"
+        pipe = _redis_client.pipeline()
+        pipe.incr(key)
+        pipe.expire(key, window)
+        res = await pipe.execute()
+        return int(res[0])
+    except Exception as e:
+        logger.warning("Redis rate limit failed: %s", e)
+        return None
+
+
+async def _redis_reset(bucket: str) -> None:
+    if not _redis_enabled or _redis_client is None:
+        return
+    try:
+        await _redis_client.delete(f"rl:{bucket}")
+    except Exception:
+        pass
+
+
+async def check_rate_limit(
     request: Request,
     key: str,
     max_hits: int = 10,
     window: int = 60,
 ) -> None:
     """
-    Проверяет лимит на действие `key` для текущего IP.
-
-    Аргументы:
-        key: имя действия ("login", "register", ...)
-        max_hits: сколько попыток разрешено
-        window: за сколько секунд (в секундах)
-
-    Если превышено — бросает HTTPException(429).
-
-    Работает в памяти процесса (для 1 воркера — корректно).
-    Для нескольких воркеров нужен Redis — см. init_rate_limiter().
+    Асинхронная версия — использует Redis, если подключён.
     """
     ip = _client_ip(request)
-    bucket_key = f"{key}:{ip}"
-    now = time.time()
+    bucket = f"{key}:{ip}"
 
-    # Чистим старые записи
-    hits = _rate_buckets[bucket_key]
+    if _redis_enabled:
+        count = await _redis_incr(bucket, window)
+        if count is not None and count > max_hits:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Слишком много запросов. Повторите через {window} сек.",
+                headers={"Retry-After": str(window)},
+            )
+        return
+
+    # In-memory fallback
+    now = time.time()
+    hits = _rate_buckets[bucket]
     hits[:] = [t for t in hits if now - t < window]
 
     if len(hits) >= max_hits:
@@ -147,41 +154,28 @@ def check_rate_limit(
             detail=f"Слишком много запросов. Повторите через {retry_after} сек.",
             headers={"Retry-After": str(retry_after)},
         )
-
     hits.append(now)
 
 
-def reset_rate_limit(request: Request, key: str) -> None:
-    """
-    Сбрасывает счётчик для IP (например, после успешного входа).
-    """
+async def reset_rate_limit(request: Request, key: str) -> None:
     ip = _client_ip(request)
-    _rate_buckets.pop(f"{key}:{ip}", None)
+    bucket = f"{key}:{ip}"
+    _rate_buckets.pop(bucket, None)
+    await _redis_reset(bucket)
 
 
 # ═══════════════════════════════════════════════════════════
-# REDIS (ОПЦИОНАЛЬНО)
+# REDIS
 # ═══════════════════════════════════════════════════════════
 
 async def init_rate_limiter(redis_url: Optional[str] = None) -> None:
-    """
-    Пытается подключиться к Redis.
-
-    Если Redis доступен — rate limiting будет использовать его
-    (актуально при нескольких воркерах Uvicorn).
-
-    Если Redis недоступен — просто логируем предупреждение
-    и продолжаем с in-memory счётчиками.
-
-    Вызывается из lifespan в main.py.
-    """
     global _redis_client, _redis_enabled
 
     if not redis_url:
         redis_url = os.getenv("REDIS_URL", "").strip()
 
     if not redis_url:
-        logger.info("ℹ️ REDIS_URL не задан — rate limiting в памяти")
+        logger.info("REDIS_URL не задан — rate limiting в памяти (1 воркер)")
         return
 
     try:
@@ -192,25 +186,15 @@ async def init_rate_limiter(redis_url: Optional[str] = None) -> None:
         )
         await _redis_client.ping()
         _redis_enabled = True
-        logger.info("🚦 Rate limiter: Redis подключён (%s)", redis_url)
-
+        logger.info("🚦 Rate limiter: Redis подключён")
     except Exception as e:
-        logger.warning(
-            "⚠️ Redis недоступен (%s). Rate limiting работает в памяти. "
-            "Если воркеров несколько — это небезопасно.",
-            e,
-        )
+        logger.warning("⚠️ Redis недоступен (%s). In-memory режим", e)
         _redis_client = None
         _redis_enabled = False
 
 
 async def close_rate_limiter() -> None:
-    """
-    Закрывает подключение к Redis при остановке приложения.
-    Вызывается из lifespan.
-    """
     global _redis_client, _redis_enabled
-
     if _redis_client is not None:
         try:
             await _redis_client.close()
@@ -218,4 +202,3 @@ async def close_rate_limiter() -> None:
             pass
         _redis_client = None
         _redis_enabled = False
-        logger.info("🚦 Redis-соединение закрыто")

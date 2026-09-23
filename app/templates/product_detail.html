@@ -11,8 +11,35 @@
 
 <div class="product-detail">
     <div class="product-detail__image">
-        {% if product.image_url %}<img src="{{ product.image_url }}" alt="{{ product.name }}">
-        {% else %}<div class="product-card__placeholder"><i class="fas fa-seedling"></i></div>{% endif %}
+        {% set photos = product.all_photos %}
+        {% if photos %}
+            <div class="product-gallery" id="pdGallery" style="position:absolute;inset:0;">
+                {% for url in photos %}
+                    <img src="{{ url }}" alt="{{ product.name }}"
+                        class="product-gallery__photo {% if loop.first %}active{% endif %}"
+                        data-index="{{ loop.index0 }}"
+                        style="position:absolute;inset:0;width:100%;height:100%;
+                                object-fit:cover;opacity:0;transition:opacity .2s;">
+                {% endfor %}
+            </div>
+            {% if photos|length > 1 %}
+                <div class="product-card__dots">
+                    {% for url in photos %}
+                        <span class="product-card__dot {% if loop.first %}active{% endif %}"
+                            data-index="{{ loop.index0 }}"></span>
+                    {% endfor %}
+                </div>
+            {% endif %}
+            <button type="button" class="product-card__zoom"
+                    data-photos='{{ photos | tojson }}'
+                    aria-label="Увеличить">
+                <i class="fas fa-expand"></i>
+            </button>
+        {% else %}
+            <div class="product-card__placeholder">
+                <i class="fas fa-seedling"></i>
+            </div>
+        {% endif %}
     </div>
 
     <h1 class="product-detail__name">{{ product.name }}</h1>

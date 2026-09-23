@@ -114,6 +114,19 @@ def _backfill_product_photos() -> None:
         logger.warning("Backfill products.photos: %s", e)
 
 
+def _backfill_order_totals() -> None:
+    """Заполняет total_price для старых заказов, где он 0/null."""
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "UPDATE orders SET total_price = subtotal "
+                "WHERE (total_price IS NULL OR total_price = 0) "
+                "AND subtotal > 0"
+            ))
+    except Exception as e:
+        logger.warning("Backfill orders.total_price: %s", e)
+
+
 def auto_migrate() -> None:
     try:
         insp = inspect(engine)
@@ -159,6 +172,7 @@ def auto_migrate() -> None:
     _backfill_order_subtotals()
     _backfill_order_item_pack_sizes()
     _backfill_product_photos()
+    _backfill_order_totals()
 
     if added:
         logger.info("✅ Авто-миграция: +%d изменений", added)
