@@ -109,3 +109,11 @@ def add_to_preorder(request, item: SupplyItem, quantity_packs: int) -> bool:
 
     request.session["preorder_cart"] = preorder
     return True
+
+def preorder_count(request) -> int:
+    """
+    Возвращает общее количество упаковок в предзаказе.
+    Используется для бейджа в шапке сайта.
+    """
+    preorder = request.session.get("preorder_cart", [])
+    return sum(p.get("quantity", 0) for p in preorder)

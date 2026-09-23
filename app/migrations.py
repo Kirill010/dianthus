@@ -79,11 +79,14 @@ def _backfill_order_item_pack_sizes() -> None:
     # Заполняет package_size в order_items для старых заказов.
     try:
         with engine.begin() as conn:
+            # Работает и в SQLite, и в PostgreSQL
             conn.execute(text("""
-                UPDATE order_items oi
-                SET package_size = COALESCE(p.package_size, 1)
-                FROM products p
-                WHERE oi.product_id = p.id AND oi.package_size = 1
+                UPDATE order_items
+                SET package_size = COALESCE(
+                    (SELECT p.package_size FROM products p WHERE p.id = order_items.product_id),
+                    1
+                )
+                WHERE package_size = 1
             """))
     except Exception as e:
         logger.warning("Backfill order_items.package_size: %s", e)

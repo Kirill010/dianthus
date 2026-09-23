@@ -120,7 +120,7 @@
                     <th class="supply-items-table__num">#</th>
                     <th>Товар</th>
                     <th>Упак.</th>
-                    <th>Цена/шт · Кол-во (шт)</th> <!-- Изменили заголовок -->
+                    <th>Цена/шт · Кол-во (шт)</th>
                     <th>Остаток</th>
                     <th>Активно</th>
                     <th></th>
@@ -143,20 +143,20 @@
                         <form action="/admin/supply_items/{{ item.id }}/update" method="post"
                             class="d-flex gap-1 align-items-center" style="max-width:280px;">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                            
+
                             <!-- Цена за штуку -->
                             <input type="number" step="0.01" name="price"
                                 class="form-control form-control-sm"
                                 value="{{ item.price }}" required
                                 title="Цена за ШТУКУ" style="width:80px;">
-                            
+
                             <!-- Количество в штуках -->
                             <input type="number" name="quantity_stems"
                                 class="form-control form-control-sm"
                                 value="{{ total_stems }}" required
                                 title="Количество ШТУК" style="width:90px;">
                             <small class="text-muted">шт</small>
-                            
+
                             <button type="submit" class="btn btn-sm btn-primary">
                                 <i class="fas fa-check"></i>
                             </button>
@@ -169,6 +169,17 @@
                             <small class="text-muted">{{ total_stems }} шт</small>
                         {% else %}
                             <span class="badge bg-danger">0</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if item.is_active %}
+                            <span class="badge bg-success">
+                                <i class="fas fa-check me-1"></i>Да
+                            </span>
+                        {% else %}
+                            <span class="badge bg-secondary">
+                                <i class="fas fa-minus me-1"></i>Нет
+                            </span>
                         {% endif %}
                     </td>
                     <td>

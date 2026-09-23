@@ -11,7 +11,7 @@ from ..deps import get_current_user
 from ..models import Order, OrderItem, SupplyItem
 from ..security import check_csrf
 from ..services.notifier import notify_admin_new_order
-from ..services.preorder_service import add_to_preorder, preorder_count
+from ..services.preorder_service import add_to_preorder
 from ..templating import render
 
 logger = logging.getLogger(__name__)

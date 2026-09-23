@@ -13,6 +13,7 @@ from .validators import (validate_company_name, validate_email,
                          validate_full_name, validate_password,
                          validate_phone, validate_inn, validate_city)
 from . import models
+from .services.notifier import notify_admin_new_client
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -101,6 +102,11 @@ async def register(
         db.rollback()
         request.session["register_errors"] = ["Этот email уже зарегистрирован"]
         return RedirectResponse(url="/login", status_code=303)
+
+    try:
+        notify_admin_new_client(user)
+    except Exception as e:
+        logger.warning("Не удалось уведомить админа о новой заявке: %s", e)
 
     logger.info("Заявка на регистрацию: %s (%s)", email, company_name)
     return RedirectResponse(url="/registration_pending", status_code=303)
