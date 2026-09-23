@@ -187,7 +187,7 @@ async def sync_products(
                     product.category = str(
                         item.get("category") or product.category
                     )
-                if photos:
+                if photos and not product.photos:
                     product.photos = photos
                     product.image_url = main_image
                 updated += 1

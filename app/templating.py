@@ -1,8 +1,10 @@
 # Общий рендер шаблонов.
+import os
 from pathlib import Path
 
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
+from jinja2 import FileSystemBytecodeCache
 from sqlalchemy import nulls_last
 from sqlalchemy.orm import Session
 
@@ -12,13 +14,11 @@ from .security import ensure_csrf_token
 from .services.preorder_service import preorder_count, sync_preorders
 from . import models
 
-import os
-from jinja2 import FileSystemBytecodeCache
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
-# Кэш шаблонов — в /var/cache (а не /tmp, т.к. PrivateTmp=true в systemd)
+# ВАЖНО: /tmp не годится, т.к. в systemd стоит PrivateTmp=true
 JINJA_CACHE_DIR = os.getenv("JINJA_CACHE_DIR", "/var/cache/dianthus/jinja")
 os.makedirs(JINJA_CACHE_DIR, exist_ok=True)
 

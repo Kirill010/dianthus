@@ -201,11 +201,10 @@ if ('serviceWorker' in navigator) {
         if (Math.abs(dx) > 50) lbShow(lbIndex + (dx < 0 ? 1 : -1));
     });
 
-    // 2. Состояние каждой галереи: id → текущий индекс
+    // 2. Состояние каждой галереи
     const galleryState = new WeakMap();
 
-    // 3. Делегирование клика на уровне документа — работает даже если
-    //    карточки подгрузились позже (AJAX, пагинация, что угодно).
+    // 3. Делегирование клика на уровне документа
     document.addEventListener('click', function(e) {
         const wrap = e.target.closest('.product-card__image-wrap');
         if (!wrap) return;
@@ -218,7 +217,7 @@ if ('serviceWorker' in navigator) {
             .filter(Boolean);
         if (!urls.length) return;
 
-        // а) клик по точке-индикатору → переключить слайд
+        // а) клик по точке-индикатору
         const dot = e.target.closest('.product-card__dot');
         if (dot) {
             const idx = parseInt(dot.dataset.index || '0', 10) || 0;
@@ -229,7 +228,7 @@ if ('serviceWorker' in navigator) {
             return;
         }
 
-        // б) клик по кнопке-лупе или по самому фото → открыть лайтбокс
+        // б) клик по кнопке-лупе или по фото → лайтбокс
         const currentIdx = (() => {
             const active = wrap.querySelector('.product-card__photo.active');
             if (!active) return 0;
@@ -240,7 +239,7 @@ if ('serviceWorker' in navigator) {
         lbOpen(urls, currentIdx);
     });
 
-    // 4. Свайп по карточке — переключение слайдов
+    // 4. Свайп по карточке
     document.addEventListener('touchstart', function(e) {
         const wrap = e.target.closest('.product-card__image-wrap');
         if (!wrap) return;
@@ -273,118 +272,6 @@ if ('serviceWorker' in navigator) {
 
         photos.forEach((p, n) => p.classList.toggle('active', n === idx));
         dots.forEach((d, n) => d.classList.toggle('active', n === idx));
-    });
-})();
-</script>
-
-<script>
-/* ─── Галерея в карточках + лайтбокс ─── */
-(function() {
-    document.querySelectorAll('.product-card__image-wrap').forEach(wrap => {
-        const photos = wrap.querySelectorAll('.product-card__photo');
-        if (photos.length < 2) return;
-        const dots = wrap.querySelectorAll('.product-card__dot');
-        let index = 0, startX = 0, moved = false;
-
-        function show(i) {
-            index = (i + photos.length) % photos.length;
-            photos.forEach((p, n) => p.classList.toggle('active', n === index));
-            dots.forEach((d, n) => d.classList.toggle('active', n === index));
-        }
-        wrap.addEventListener('touchstart', e => {
-            startX = e.touches[0].clientX; moved = false;
-        }, {passive: true});
-        wrap.addEventListener('touchmove', e => {
-            if (Math.abs(e.touches[0].clientX - startX) > 10) moved = true;
-        }, {passive: true});
-        wrap.addEventListener('touchend', e => {
-            if (!moved) return;
-            const dx = e.changedTouches[0].clientX - startX;
-            if (Math.abs(dx) > 40) show(index + (dx < 0 ? 1 : -1));
-        });
-        wrap.addEventListener('click', e => {
-            // клик по точке-индикатору → переход на слайд
-            const dot = e.target.closest('.product-card__dot');
-            if (dot) {
-                show(parseInt(dot.dataset.index) || 0);
-                return;
-            }
-            // клик по картинке или лупе → открыть лайтбокс
-            const allPhotos = Array.from(
-                wrap.querySelectorAll('.product-card__photo')
-            ).map(p => p.src).filter(Boolean);
-            if (allPhotos.length) {
-                const startIdx = Array.from(
-                    wrap.querySelectorAll('.product-card__photo')
-                ).findIndex(p => p.classList.contains('active'));
-                lbOpen(allPhotos, startIdx >= 0 ? startIdx : 0);
-            }
-        });
-    });
-
-    const lb = document.createElement('div');
-    lb.className = 'lightbox';
-    lb.innerHTML = `
-        <button class="lightbox__close" aria-label="Закрыть">
-            <i class="fas fa-times"></i>
-        </button>
-        <button class="lightbox__nav lightbox__nav--prev">
-            <i class="fas fa-chevron-left"></i>
-        </button>
-        <img class="lightbox__img" alt="">
-        <button class="lightbox__nav lightbox__nav--next">
-            <i class="fas fa-chevron-right"></i>
-        </button>
-        <div class="lightbox__counter"></div>
-    `;
-    document.body.appendChild(lb);
-
-    const imgEl = lb.querySelector('.lightbox__img');
-    const counter = lb.querySelector('.lightbox__counter');
-    let lbPhotos = [], lbIndex = 0;
-
-    function lbShow(i) {
-        lbIndex = (i + lbPhotos.length) % lbPhotos.length;
-        imgEl.src = lbPhotos[lbIndex];
-        counter.textContent = `${lbIndex + 1} / ${lbPhotos.length}`;
-    }
-    function lbOpen(photos, startIdx = 0) {
-        if (!photos || !photos.length) return;
-        lbPhotos = photos;
-        lbShow(startIdx);
-        lb.classList.add('open');
-        document.body.style.overflow = 'hidden';
-    }
-    function lbClose() {
-        lb.classList.remove('open');
-        document.body.style.overflow = '';
-    }
-    document.querySelectorAll('.product-card__zoom').forEach(btn => {
-        btn.addEventListener('click', e => {
-            e.stopPropagation();
-            try {
-                const photos = JSON.parse(btn.dataset.photos || '[]');
-                lbOpen(photos, 0);
-            } catch(err) {}
-        });
-    });
-    lb.querySelector('.lightbox__close').onclick = lbClose;
-    lb.querySelector('.lightbox__nav--prev').onclick = () => lbShow(lbIndex - 1);
-    lb.querySelector('.lightbox__nav--next').onclick = () => lbShow(lbIndex + 1);
-    lb.addEventListener('click', e => { if (e.target === lb) lbClose(); });
-    document.addEventListener('keydown', e => {
-        if (!lb.classList.contains('open')) return;
-        if (e.key === 'Escape') lbClose();
-        if (e.key === 'ArrowLeft') lbShow(lbIndex - 1);
-        if (e.key === 'ArrowRight') lbShow(lbIndex + 1);
-    });
-    let lbStartX = 0;
-    lb.addEventListener('touchstart', e => {
-        lbStartX = e.touches[0].clientX;
-    }, {passive: true});
-    lb.addEventListener('touchend', e => {
-        const dx = e.changedTouches[0].clientX - lbStartX;
-        if (Math.abs(dx) > 50) lbShow(lbIndex + (dx < 0 ? 1 : -1));
     });
 })();
 </script>

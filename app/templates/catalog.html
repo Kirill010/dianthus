@@ -150,17 +150,17 @@
                 <div class="product-card__gallery">
                     {% for url in photos %}
                         <img src="{{ url }}"
-                             alt="{{ item.product.name }}"
-                             class="product-card__photo {% if loop.first %}active{% endif %}"
-                             loading="lazy"
-                             data-index="{{ loop.index0 }}">
+                            alt="{{ item.product.name }}"
+                            class="product-card__photo {% if loop.first %}active{% endif %}"
+                            loading="lazy"
+                            data-index="{{ loop.index0 }}">
                     {% endfor %}
                 </div>
                 {% if photos|length > 1 %}
                     <div class="product-card__dots">
                         {% for url in photos %}
                             <span class="product-card__dot {% if loop.first %}active{% endif %}"
-                                  data-index="{{ loop.index0 }}"></span>
+                                data-index="{{ loop.index0 }}"></span>
                         {% endfor %}
                     </div>
                 {% endif %}
@@ -182,7 +182,10 @@
         </div>
 
         <div class="product-card__body">
-            <div class="product-card__name">{{ item.product.name }}</div>
+            {# ── Ссылка на страницу товара ── #}
+            <a href="/product/{{ item.id }}" class="product-card__name">
+                {{ item.product.name }}
+            </a>
 
             <div class="product-card__specs">
                 {% if item.product.length_cm %}
@@ -198,7 +201,7 @@
                 <div class="spec-row">
                     <span class="spec-label">Доступно:</span>
                     <span class="spec-value spec-value--stock"
-                          style="color:#2e7d32;font-weight:700;">
+                        style="color:#2e7d32;font-weight:700;">
                         {{ stems }}шт
                     </span>
                 </div>
@@ -220,10 +223,10 @@
                         <button type="button"
                             onclick="this.nextElementSibling.stepDown()">−</button>
                         <input type="number" name="quantity_stems"
-                               value="{{ min_stems }}"
-                               min="{{ min_stems }}"
-                               max="{{ max_stems_valid }}"
-                               step="{{ pack }}" required>
+                            value="{{ min_stems }}"
+                            min="{{ min_stems }}"
+                            max="{{ max_stems_valid }}"
+                            step="{{ pack }}" required>
                         <button type="button"
                             onclick="this.previousElementSibling.stepUp()">+</button>
                     </div>
@@ -241,6 +244,14 @@
                     <i class="fas fa-ban"></i> Нет в наличии
                 </button>
             {% endif %}
+
+            {# ── Кнопка «Подробнее» ── #}
+            <a href="/product/{{ item.id }}"
+            class="btn-cart--disabled"
+            style="display:flex;align-items:center;justify-content:center;
+                    gap:6px;text-decoration:none;margin-top:6px;">
+                <i class="fas fa-info-circle"></i> Подробнее
+            </a>
         </div>
     </div>
     {% endfor %}
