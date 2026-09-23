@@ -1,4 +1,4 @@
-# Каталог: категории + уровни наличия + предзаказы.
+# Каталог: только для авторизованных. Гостей редиректит на /login.
 from typing import Optional
 from urllib.parse import urlencode
 
@@ -39,7 +39,6 @@ def _base_query(db: Session):
 
 
 def _preorder_query(db: Session):
-    # Товары из машин, которые ещё не разгружены.
     return (
         db.query(SupplyItem)
         .join(Product, SupplyItem.product_id == Product.id)
@@ -56,9 +55,11 @@ def _apply_quantity_filter(query, level: str):
     if level == "big":
         return query.filter(stems >= QUANTITY_BIG_MIN)
     if level == "medium":
-        return query.filter(stems >= QUANTITY_MEDIUM_MIN, stems < QUANTITY_BIG_MIN)
+        return query.filter(stems >= QUANTITY_MEDIUM_MIN,
+                            stems < QUANTITY_BIG_MIN)
     if level == "small":
-        return query.filter(stems >= QUANTITY_SMALL_MIN, stems < QUANTITY_MEDIUM_MIN)
+        return query.filter(stems >= QUANTITY_SMALL_MIN,
+                            stems < QUANTITY_MEDIUM_MIN)
     if level == "out":
         return query.filter(stems < QUANTITY_SMALL_MIN)
     return query.filter(stems >= QUANTITY_SMALL_MIN)
@@ -97,10 +98,6 @@ def _apply_sort(query, sort: str):
     return query.order_by(SupplyItem.created_at.desc(), SupplyItem.id.desc())
 
 
-def _page_range(current: int, total: int, window: int = 2) -> list[int]:
-    return list(range(max(1, current - window), min(total, current + window) + 1))
-
-
 def _make_page_url(request: Request):
     def page_url(page: int) -> str:
         params = {k: v for k, v in request.query_params.items() if v}
@@ -109,7 +106,7 @@ def _make_page_url(request: Request):
     return page_url
 
 
-def _count_by_level(db: Session, category: str) -> dict[str, int]:
+def _count_by_level(db: Session, category: str) -> dict:
     stems = _stems_expr()
     base = (
         db.query(SupplyItem)
@@ -187,7 +184,8 @@ async def catalog(
     query = _base_query(db)
     query = _apply_quantity_filter(query, level)
     query = _apply_filters(
-        query, q, country, category, min_price, max_price, min_length, max_length
+        query, q, country, category, min_price, max_price,
+        min_length, max_length,
     )
     query = _apply_sort(query, sort)
 
@@ -198,7 +196,6 @@ async def catalog(
 
     items = query.offset((page - 1) * page_size).limit(page_size).all()
 
-    # Предзаказы: только на первой странице и без фильтров
     preorder_items = []
     if page == 1 and not q and not category and level == "available":
         preorder_items = (
@@ -248,7 +245,6 @@ async def catalog(
         sort_options=SORT_OPTIONS,
         current_filters=current_filters,
         page=page, total_pages=total_pages, total_items=total,
-        page_range=_page_range(page, total_pages),
         page_url=_make_page_url(request),
         has_filters=any([
             q, country, category, min_price, max_price,
@@ -261,7 +257,15 @@ async def catalog(
 
 
 @router.get("/api/search-suggest")
-async def search_suggest(q: str = "", db: Session = Depends(get_db)):
+async def search_suggest(
+    q: str = "",
+    request: Request = None,
+    db: Session = Depends(get_db),
+):
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"items": []})
+
     q = (q or "").strip()
     if len(q) < 2:
         return JSONResponse({"items": []})
@@ -277,7 +281,7 @@ async def search_suggest(q: str = "", db: Session = Depends(get_db)):
         .all()
     )
     return JSONResponse({
-        "items": [{"name": r.name, "url": f"/product/{r.si}"} for r in rows]
+        "items": [{"name": r.name, "url": f"/catalog"} for r in rows]
     })
 
 

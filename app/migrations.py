@@ -17,6 +17,7 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
         "package_size": "INTEGER DEFAULT 1",
         "min_quantity": "INTEGER DEFAULT 1",
         "image_url":    "VARCHAR(500) DEFAULT ''",
+        "photos":       "TEXT DEFAULT '[]'",
         "category":     "VARCHAR(100) DEFAULT 'Прочее'",
         "sku":          "VARCHAR(100) DEFAULT ''",
     },
@@ -27,7 +28,7 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
         "city":             "VARCHAR(100) DEFAULT ''",
         "is_admin":         "BOOLEAN DEFAULT FALSE",
         "is_approved":      "BOOLEAN DEFAULT FALSE",
-        "discount_percent": "FLOAT DEFAULT 0",       
+        "discount_percent": "FLOAT DEFAULT 0",
     },
     "supplies": {
         "status": "VARCHAR(30) DEFAULT 'Ожидается'",
@@ -39,16 +40,19 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
     "orders": {
         "status":           "VARCHAR(30) DEFAULT 'Новый'",
         "comment":          "TEXT DEFAULT ''",
-        "subtotal":         "FLOAT DEFAULT 0",       
-        "discount_percent": "FLOAT DEFAULT 0",       
+        "subtotal":         "FLOAT DEFAULT 0",
+        "discount_percent": "FLOAT DEFAULT 0",
     },
     "order_items": {
-        "package_size": "INTEGER DEFAULT 1",         
+        "package_size": "INTEGER DEFAULT 1",
     },
 }
 
 EXPECTED_INDEXES: dict[str, list[tuple[str, str]]] = {
-    "products": [("ix_products_category", "category")],
+    "products": [
+        ("ix_products_category", "category"),
+        ("ix_products_sku", "sku"),
+    ],
 }
 
 
@@ -64,7 +68,6 @@ def ensure_notifications_table() -> None:
 
 
 def _backfill_order_subtotals() -> None:
-    # Заполняет subtotal для старых заказов (subtotal = total_price).
     try:
         with engine.begin() as conn:
             conn.execute(text(
@@ -76,20 +79,33 @@ def _backfill_order_subtotals() -> None:
 
 
 def _backfill_order_item_pack_sizes() -> None:
-    # Заполняет package_size в order_items для старых заказов.
     try:
         with engine.begin() as conn:
-            # Работает и в SQLite, и в PostgreSQL
             conn.execute(text("""
                 UPDATE order_items
                 SET package_size = COALESCE(
-                    (SELECT p.package_size FROM products p WHERE p.id = order_items.product_id),
+                    (SELECT p.package_size FROM products p
+                     WHERE p.id = order_items.product_id),
                     1
                 )
                 WHERE package_size = 1
             """))
     except Exception as e:
         logger.warning("Backfill order_items.package_size: %s", e)
+
+
+def _backfill_product_photos() -> None:
+    """Переносит image_url в photos для старых товаров."""
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("""
+                UPDATE products
+                SET photos = '["' || image_url || '"]'
+                WHERE (photos IS NULL OR photos = '[]' OR photos = '')
+                  AND image_url IS NOT NULL AND image_url != ''
+            """))
+    except Exception as e:
+        logger.warning("Backfill products.photos: %s", e)
 
 
 def auto_migrate() -> None:
@@ -136,6 +152,7 @@ def auto_migrate() -> None:
 
     _backfill_order_subtotals()
     _backfill_order_item_pack_sizes()
+    _backfill_product_photos()
 
     if added:
         logger.info("✅ Авто-миграция: +%d изменений", added)

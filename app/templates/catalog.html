@@ -1,13 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
 
-<!-- Заголовок и поиск (компактно для мобильных) -->
 <div class="catalog-top-bar">
     <h1 class="catalog-title">Каталог</h1>
     <span class="catalog-count">{{ total_items }}</span>
 </div>
 
-{# ── БЛОК ПРЕДЗАКАЗОВ ── #}
+{# ── ПРЕДЗАКАЗЫ ── #}
 {% if preorder_items %}
 <div class="preorder-section">
     <div class="preorder-section__head">
@@ -38,9 +37,7 @@
                 </span>
             </div>
             <div class="preorder-card__body">
-                <a href="/product/{{ item.id }}" class="preorder-card__name">
-                    {{ item.product.name }}
-                </a>
+                <div class="preorder-card__name">{{ item.product.name }}</div>
                 <div class="preorder-card__date">
                     <i class="fas fa-calendar-alt me-1"></i>
                     Прибытие:
@@ -59,13 +56,13 @@
                     <div class="qty-cart-group">
                         <div class="qty-control">
                             <button type="button"
-                                    onclick="this.nextElementSibling.stepDown()">−</button>
+                                onclick="this.nextElementSibling.stepDown()">−</button>
                             <input type="number" name="quantity_stems"
                                    value="{{ min_stems }}"
                                    min="{{ min_stems }}"
                                    step="{{ pack }}" required>
                             <button type="button"
-                                    onclick="this.previousElementSibling.stepUp()">+</button>
+                                onclick="this.previousElementSibling.stepUp()">+</button>
                         </div>
                         <button type="submit" class="btn-cart-icon"
                                 title="Предзаказ">
@@ -79,27 +76,36 @@
     </div>
 </div>
 {% endif %}
-{# ── /БЛОК ПРЕДЗАКАЗОВ ── #}
 
-<!-- Горизонтальный скролл категорий -->
+<!-- Категории -->
 <div class="category-scroll">
-    <a href="{{ category_url('') }}" class="category-btn {% if not current_filters.category %}active{% endif %}">Все</a>
+    <a href="{{ category_url('') }}"
+       class="category-btn {% if not current_filters.category %}active{% endif %}">
+        Все
+    </a>
     {% for cat in active_categories %}
-        <a href="{{ category_url(cat) }}" class="category-btn {% if current_filters.category == cat %}active{% endif %}">{{ cat }}</a>
+        <a href="{{ category_url(cat) }}"
+           class="category-btn {% if current_filters.category == cat %}active{% endif %}">
+            {{ cat }}
+        </a>
     {% endfor %}
     {% for cat in all_categories %}
         {% if cat not in active_categories %}
-            <a href="{{ category_url(cat) }}" class="category-btn {% if current_filters.category == cat %}active{% endif %}">{{ cat }}</a>
+            <a href="{{ category_url(cat) }}"
+               class="category-btn {% if current_filters.category == cat %}active{% endif %}">
+                {{ cat }}
+            </a>
         {% endif %}
     {% endfor %}
 </div>
 
-<!-- Фильтры по наличию -->
+<!-- Наличие -->
 <div class="level-tabs">
     {% for key, label in quantity_levels %}
         {% set cnt = level_counts.get(key, 0) %}
         {% if key == 'available' or cnt > 0 %}
-            <a href="{{ level_url(key) }}" class="level-tab level-tab--{{ key }} {% if current_filters.level == key %}active{% endif %}">
+            <a href="{{ level_url(key) }}"
+               class="level-tab level-tab--{{ key }} {% if current_filters.level == key %}active{% endif %}">
                 <span class="level-tab__dot"></span>
                 <span class="level-tab__label">{{ label }}</span>
                 <span class="level-tab__count">{{ cnt }}</span>
@@ -108,9 +114,11 @@
     {% endfor %}
 </div>
 
-<!-- Поиск с автоподсказками -->
+<!-- Поиск -->
 <form class="catalog-search" method="get" action="/catalog">
-    {% if current_filters.category %}<input type="hidden" name="category" value="{{ current_filters.category }}">{% endif %}
+    {% if current_filters.category %}
+        <input type="hidden" name="category" value="{{ current_filters.category }}">
+    {% endif %}
     {% if current_filters.level and current_filters.level != 'available' %}
         <input type="hidden" name="level" value="{{ current_filters.level }}">
     {% endif %}
@@ -120,7 +128,9 @@
                placeholder="Поиск товара..." value="{{ current_filters.q }}">
         <div id="suggestBox" class="suggest-box" style="display:none"></div>
     </div>
-    {% if has_filters %}<a href="/catalog" class="btn-clear"><i class="fas fa-times"></i></a>{% endif %}
+    {% if has_filters %}
+        <a href="/catalog" class="btn-clear"><i class="fas fa-times"></i></a>
+    {% endif %}
 </form>
 
 {% if items %}
@@ -132,22 +142,47 @@
     {% set min_stems = pack * min_packs %}
     {% set is_out = stems < 1 %}
     {% set max_stems_valid = (stems // pack) * pack %}
+    {% set photos = item.product.all_photos %}
 
     <div class="product-card {% if is_out %}product-card--out{% endif %}">
-        <!-- Картинка -->
         <div class="product-card__image-wrap">
-            <a href="/product/{{ item.id }}" class="product-card__image">
-                {% if item.product.image_url %}
-                    <img src="{{ item.product.image_url }}" alt="{{ item.product.name }}" loading="lazy">
-                {% else %}
-                    <div class="product-card__placeholder"><i class="fas fa-seedling"></i></div>
+            {% if photos %}
+                <div class="product-card__gallery">
+                    {% for url in photos %}
+                        <img src="{{ url }}"
+                             alt="{{ item.product.name }}"
+                             class="product-card__photo {% if loop.first %}active{% endif %}"
+                             loading="lazy"
+                             data-index="{{ loop.index0 }}">
+                    {% endfor %}
+                </div>
+                {% if photos|length > 1 %}
+                    <div class="product-card__dots">
+                        {% for url in photos %}
+                            <span class="product-card__dot {% if loop.first %}active{% endif %}"
+                                  data-index="{{ loop.index0 }}"></span>
+                        {% endfor %}
+                    </div>
                 {% endif %}
-            </a>
-            {% if is_out %}<span class="product-card__badge product-card__badge--out">Нет</span>{% endif %}
+                <button type="button" class="product-card__zoom"
+                        data-photos='{{ photos | tojson }}'
+                        aria-label="Увеличить">
+                    <i class="fas fa-expand"></i>
+                </button>
+            {% else %}
+                <div class="product-card__placeholder">
+                    <i class="fas fa-seedling"></i>
+                </div>
+            {% endif %}
+            {% if is_out %}
+                <span class="product-card__badge product-card__badge--out">
+                    Нет
+                </span>
+            {% endif %}
         </div>
 
         <div class="product-card__body">
-            <a href="/product/{{ item.id }}" class="product-card__name">{{ item.product.name }}</a>
+            <div class="product-card__name">{{ item.product.name }}</div>
 
             <div class="product-card__specs">
                 {% if item.product.length_cm %}
@@ -162,36 +197,35 @@
                 </div>
                 <div class="spec-row">
                     <span class="spec-label">Доступно:</span>
-                    <span class="spec-value spec-value--stock" style="color: #2e7d32; font-weight: 700;">
+                    <span class="spec-value spec-value--stock"
+                          style="color:#2e7d32;font-weight:700;">
                         {{ stems }}шт
                     </span>
                 </div>
             </div>
 
-            <!-- Цена только за штуку -->
             <div class="product-card__price-block">
                 <div class="product-card__price">
-                    {{ "%.2f"|format(item.price) }} ₽<span style="font-size: 0.7em; font-weight: normal; color: #777;">/шт</span>
+                    {{ "%.2f"|format(item.price) }} ₽<span
+                        style="font-size:.7em;font-weight:normal;color:#777;">/шт</span>
                 </div>
             </div>
 
-            {% set can_order = (not is_out) and (stems >= min_stems) %}
-            {% if can_order %}
+            {% if not is_out and stems >= min_stems %}
             <form action="/add_to_cart" method="post" class="product-card__form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="supply_item_id" value="{{ item.id }}">
-
                 <div class="qty-cart-group">
                     <div class="qty-control">
-                        <button type="button" onclick="this.nextElementSibling.stepDown()">−</button>
-                        <input type="number" id="qty-{{ item.id }}"
-                               name="quantity_stems"
+                        <button type="button"
+                            onclick="this.nextElementSibling.stepDown()">−</button>
+                        <input type="number" name="quantity_stems"
                                value="{{ min_stems }}"
                                min="{{ min_stems }}"
                                max="{{ max_stems_valid }}"
-                               step="{{ pack }}"
-                               required>
-                        <button type="button" onclick="this.previousElementSibling.stepUp()">+</button>
+                               step="{{ pack }}" required>
+                        <button type="button"
+                            onclick="this.previousElementSibling.stepUp()">+</button>
                     </div>
                     <button type="submit" class="btn-cart-icon">
                         <i class="fas fa-shopping-cart"></i>
@@ -199,11 +233,13 @@
                 </div>
             </form>
             {% elif not is_out %}
-            <button class="btn-cart--disabled" disabled title="Минимум к заказу {{ min_stems }} шт, а на складе только {{ stems }} шт">
-                <i class="fas fa-info-circle"></i> Минимум {{ min_stems }} шт
-            </button>
+                <button class="btn-cart--disabled" disabled>
+                    <i class="fas fa-info-circle"></i> Минимум {{ min_stems }} шт
+                </button>
             {% else %}
-            <button class="btn-cart--disabled" disabled><i class="fas fa-ban"></i> Нет в наличии</button>
+                <button class="btn-cart--disabled" disabled>
+                    <i class="fas fa-ban"></i> Нет в наличии
+                </button>
             {% endif %}
         </div>
     </div>
@@ -212,9 +248,17 @@
 
 {% if total_pages > 1 %}
 <nav class="pagination-nav">
-    {% if page > 1 %}<a href="{{ page_url(page - 1) }}" class="page-btn"><i class="fas fa-chevron-left"></i></a>{% endif %}
+    {% if page > 1 %}
+        <a href="{{ page_url(page - 1) }}" class="page-btn">
+            <i class="fas fa-chevron-left"></i>
+        </a>
+    {% endif %}
     <span class="page-info">{{ page }} / {{ total_pages }}</span>
-    {% if page < total_pages %}<a href="{{ page_url(page + 1) }}" class="page-btn"><i class="fas fa-chevron-right"></i></a>{% endif %}
+    {% if page < total_pages %}
+        <a href="{{ page_url(page + 1) }}" class="page-btn">
+            <i class="fas fa-chevron-right"></i>
+        </a>
+    {% endif %}
 </nav>
 {% endif %}
 
@@ -222,7 +266,9 @@
 <div class="empty-state">
     <i class="fas fa-search"></i>
     <h4>Ничего не найдено</h4>
-    {% if has_filters %}<a href="/catalog" class="btn btn-primary mt-2">Сбросить</a>{% endif %}
+    {% if has_filters %}
+        <a href="/catalog" class="btn btn-primary mt-2">Сбросить</a>
+    {% endif %}
 </div>
 {% endif %}
 
@@ -232,7 +278,6 @@
     const box = document.getElementById('suggestBox');
     if (!input || !box) return;
     let t = null;
-
     input.addEventListener('input', () => {
         clearTimeout(t);
         const q = input.value.trim();
@@ -249,7 +294,6 @@
             } catch(e) { box.style.display = 'none'; }
         }, 200);
     });
-
     document.addEventListener('click', e => {
         if (!box.contains(e.target) && e.target !== input) box.style.display = 'none';
     });

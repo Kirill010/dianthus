@@ -39,9 +39,11 @@ class Config:
     SHOP_MAX_LINK: str = _str_env("SHOP_MAX_LINK", "")
     SHOP_MAP_URL: str = _str_env("SHOP_MAP_URL", "")
 
-    INTEGRATION_SECRET: str = _str_env("INTEGRATION_SECRET", "")
+    # 1С интеграция
+    INTEGRATION_USER: str = _str_env("INTEGRATION_USER", "1c_dianthus")
+    INTEGRATION_PASSWORD: str = _str_env("INTEGRATION_PASSWORD", "")
 
-    # ── Email-уведомления (SMTP) ──
+    # Email-уведомления (SMTP)
     SMTP_HOST: str = _str_env("SMTP_HOST", "")
     SMTP_PORT: int = _int_env("SMTP_PORT", 465)
     SMTP_USER: str = _str_env("SMTP_USER", "")
@@ -63,3 +65,7 @@ if config.ENV == "prod":
         )
     if len(config.SECRET_KEY) < 32:
         raise RuntimeError("❌ SECRET_KEY слишком короткий.")
+    if not config.INTEGRATION_PASSWORD:
+        logger.warning(
+            "⚠️ INTEGRATION_PASSWORD не задан — 1С-интеграция вернёт 503"
+        )

@@ -17,21 +17,11 @@ from jinja2 import FileSystemBytecodeCache
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
-# ── Кэш байт-кода на диске ──
-# ВАЖНО: атрибут называется bytecode_cache, НЕ cache!
-# env.cache — это кэш шаблонов в памяти (обычный dict), туда нельзя
-# подсовывать FileSystemBytecodeCache — будет AttributeError.
 templates.env.bytecode_cache = FileSystemBytecodeCache(
     directory="/tmp/dianthus_jinja_cache",
     pattern="__jinja2_%s.cache",
 )
-
-# ── Кэш шаблонов в памяти ──
-# cache_size=-1 — бесконечный LRU (не вытеснять шаблоны).
-# Значение -1 включает встроенный dict-кэш Jinja2 (его и ждёт env.cache).
 templates.env.cache_size = -1
-
-# ── Отключаем проверку изменений на диске ──
 templates.env.auto_reload = False
 
 
@@ -40,12 +30,11 @@ def render(request: Request, template: str, db: Session, **context):
     if user is None:
         user = get_current_user(request, db)
 
-    # Синхронизация предзаказов (перенос пришедших в корзину)
     if user:
         try:
             sync_preorders(request, db)
         except Exception:
-            pass  # не ломаем рендер из-за предзаказов
+            pass
 
     flash = request.session.pop("flash", None)
     cart = request.session.get("cart", [])

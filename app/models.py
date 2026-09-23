@@ -2,7 +2,7 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey,
-                        Integer, String, Text)
+                        Integer, JSON, String, Text)
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -47,7 +47,6 @@ class User(Base):
     city = Column(String(100), default="")
     is_admin = Column(Boolean, default=False, nullable=False)
     is_approved = Column(Boolean, default=False, nullable=False)
-    # Персональная скидка клиента в процентах (0..100)
     discount_percent = Column(Float, default=0, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
     orders = relationship("Order", back_populates="user",
@@ -65,14 +64,24 @@ class Product(Base):
     country = Column(String(100), default="", index=True)
     length_cm = Column(Integer, default=0)
     unit = Column(String(30), default="упаковка")
-    # Сколько штук (стеблей) в одной упаковке
     package_size = Column(Integer, default=1)
-    min_quantity = Column(Integer, default=1)   # минимум упаковок к заказу
-    image_url = Column(String(500), default="")
+    min_quantity = Column(Integer, default=1)
+    image_url = Column(String(500), default="")     # главное фото
+    photos = Column(JSON, default=list)             # массив URL-ов
     category = Column(String(100), default="Прочее", index=True)
     created_at = Column(DateTime, default=_utcnow)
     supply_items = relationship("SupplyItem", back_populates="product",
                                 cascade="all, delete-orphan")
+
+    @property
+    def all_photos(self) -> list:
+        """Все фото товара: photos + image_url, если photos пусто."""
+        result = []
+        if self.photos and isinstance(self.photos, list):
+            result = [str(p) for p in self.photos if p]
+        if not result and self.image_url:
+            result = [self.image_url]
+        return result
 
 
 class Supply(Base):
@@ -97,16 +106,12 @@ class Supply(Base):
 
 
 class SupplyItem(Base):
-    # Позиция поставки.
-
-    # price  — цена ЗА ШТУКУ (как в накладной поставщика).
-    # stock  — количество УПАКОВОК (целое число).
     __tablename__ = "supply_items"
     id = Column(Integer, primary_key=True, index=True)
     supply_id = Column(Integer, ForeignKey("supplies.id"), nullable=False)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
-    price = Column(Float, nullable=False, default=0)  # за ШТУКУ
-    stock = Column(Integer, default=0)                # УПАКОВОК
+    price = Column(Float, nullable=False, default=0)
+    stock = Column(Integer, default=0)
     is_active = Column(Boolean, default=False, nullable=False, index=True)
     created_at = Column(DateTime, default=_utcnow)
     supply = relationship("Supply", back_populates="items")
@@ -120,12 +125,10 @@ class SupplyItem(Base):
 
     @property
     def total_stems(self) -> int:
-        # Всего стеблей = упаковок × штук в упаковке.
         return self.stock * self.pack_size
 
     @property
     def price_per_pack(self) -> float:
-        # Цена за упаковку = цена за штуку × штук в упаковке.
         return self.price * self.pack_size
 
     @property
@@ -137,9 +140,9 @@ class Order(Base):
     __tablename__ = "orders"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    subtotal = Column(Float, default=0, nullable=False)          # без скидки
-    discount_percent = Column(Float, default=0, nullable=False)  # снимок скидки
-    total_price = Column(Float, default=0)                       # со скидкой
+    subtotal = Column(Float, default=0, nullable=False)
+    discount_percent = Column(Float, default=0, nullable=False)
+    total_price = Column(Float, default=0)
     status = Column(String(30), default="Новый")
     comment = Column(Text, default="")
     created_at = Column(DateTime, default=_utcnow)
@@ -161,9 +164,9 @@ class OrderItem(Base):
                             nullable=True)
     product_name = Column(String(200), nullable=False)
     unit = Column(String(30), default="")
-    price = Column(Float, nullable=False)          # за ШТУКУ
-    package_size = Column(Integer, default=1)      # снимок размера упаковки
-    quantity = Column(Integer, default=1)          # УПАКОВОК
+    price = Column(Float, nullable=False)
+    package_size = Column(Integer, default=1)
+    quantity = Column(Integer, default=1)
     order = relationship("Order", back_populates="items")
 
     @property
@@ -172,7 +175,6 @@ class OrderItem(Base):
 
     @property
     def subtotal(self) -> float:
-        """Сумма позиции: цена/шт × шт-в-упак × упак."""
         return self.price * (self.package_size or 1) * self.quantity
 
 
@@ -184,6 +186,5 @@ class Notification(Base):
     text = Column(Text, nullable=False)
     is_read = Column(Boolean, default=False, nullable=False, index=True)
     created_at = Column(DateTime, default=_utcnow)
-
     user = relationship("User", back_populates="notifications")
     order = relationship("Order")
