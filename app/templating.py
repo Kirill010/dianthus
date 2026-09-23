@@ -12,13 +12,18 @@ from .security import ensure_csrf_token
 from .services.preorder_service import preorder_count, sync_preorders
 from . import models
 
+import os
 from jinja2 import FileSystemBytecodeCache
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
+# Кэш шаблонов — в /var/cache (а не /tmp, т.к. PrivateTmp=true в systemd)
+JINJA_CACHE_DIR = os.getenv("JINJA_CACHE_DIR", "/var/cache/dianthus/jinja")
+os.makedirs(JINJA_CACHE_DIR, exist_ok=True)
+
 templates.env.bytecode_cache = FileSystemBytecodeCache(
-    directory="/tmp/dianthus_jinja_cache",
+    directory=JINJA_CACHE_DIR,
     pattern="__jinja2_%s.cache",
 )
 templates.env.cache_size = -1
