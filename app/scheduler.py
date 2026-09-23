@@ -81,41 +81,60 @@ def _release_scheduler_lock() -> None:
 def do_unload(db: Session, supply) -> int:
     """
     Разгружает поставку:
-    1. Снимает с полок ВСЕ активные позиции (старые партии уходят)
-    2. Активирует позиции этой поставки, у которых есть остаток
-    3. Ставит статус «Разгружен»
-
-    Аргументы:
-        db — сессия SQLAlchemy
-        supply — объект Supply
-
-    Возвращает: количество активированных позиций.
-
-    ВАЖНО: db.commit() делает вызывающий код, не эта функция.
+    1. Снимает с полок ВСЕ активные позиции
+    2. Вычитает предзаказы из остатков НОВОЙ поставки
+    3. Активирует позиции этой поставки с остатком > 0
+    4. Ставит статус «Разгружен»
     """
-    from .models import SupplyItem
+    from .models import SupplyItem, Preorder
+    from sqlalchemy import func
 
     # 1. Снимаем с полок всё, что было активно
     db.query(SupplyItem).filter(
         SupplyItem.is_active.is_(True)
     ).update({SupplyItem.is_active: False}, synchronize_session=False)
 
-    # 2. Активируем позиции этой поставки с остатком > 0
+    # 2. Вычитаем предзаказы из остатков НОВОЙ поставки
+    for item in supply.items:
+        if item.stock <= 0:
+            continue
+
+        # Сколько всего НЕВЫПОЛНЕННЫХ предзаказов на этот ТОВАР
+        preordered = (
+            db.query(func.coalesce(func.sum(Preorder.quantity), 0))
+            .filter(
+                Preorder.product_id == item.product_id,
+                Preorder.is_fulfilled.is_(False),
+            )
+            .scalar()
+        )
+
+        if preordered > 0:
+            item.stock = max(0, item.stock - preordered)
+            # Помечаем как выполненные, чтобы не вычитать повторно
+            db.query(Preorder).filter(
+                Preorder.product_id == item.product_id,
+                Preorder.is_fulfilled.is_(False),
+            ).update({Preorder.is_fulfilled: True},
+                     synchronize_session=False)
+            logger.info(
+                "📦 Товар '%s' (ID %d): зарезервировано %d упак. "
+                "под предзаказы. Остаток: %d упак.",
+                item.product.name, item.id, preordered, item.stock,
+            )
+
+    # 3. Активируем позиции этой поставки с остатком > 0
     activated = 0
     for item in supply.items:
         if item.stock > 0:
             item.is_active = True
             activated += 1
 
-    # 3. Статус
+    # 4. Статус
     supply.status = "Разгружен"
-
-    logger.info(
-        "📦 Разгружена поставка №%d: активировано %d позиций",
-        supply.id, activated,
-    )
+    logger.info("📦 Разгружена поставка №%d: активировано %d позиций",
+                supply.id, activated)
     return activated
-
 
 # ═══════════════════════════════════════════════════════════
 # ФОНОВЫЕ ЗАДАЧИ

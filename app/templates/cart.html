@@ -87,7 +87,7 @@
         </div>
         <form action="/remove_from_preorder" method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <input type="hidden" name="item_index" value="{{ loop.index0 }}">
+            <input type="hidden" name="preorder_id" value="{{ p.id }}">
             <button type="submit" class="cart-item__remove">
                 <i class="fas fa-times"></i>
             </button>

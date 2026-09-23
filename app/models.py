@@ -205,8 +205,17 @@ class Notification(Base):
 
 class Preorder(Base):
     __tablename__ = "preorders"
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    supply_item_id = Column(Integer, ForeignKey("supply_items.id"), nullable=False)
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    # Привязка к ТОВАРУ, а не к конкретной поставке — 
+    # чтобы находить предзаказ при разгрузке новой машины
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    # Ссылка на конкретную позицию поставки (может быть NULL, если позиция удалена)
+    supply_item_id = Column(Integer, ForeignKey("supply_items.id"), nullable=True)
     quantity = Column(Integer, nullable=False)  # в упаковках
+    # Флаг "выполнен" — чтобы не вычитать дважды при повторной разгрузке
+    is_fulfilled = Column(Boolean, default=False, nullable=False, index=True)
     created_at = Column(DateTime, default=_utcnow)
+    user = relationship("User")
+    product = relationship("Product")
+    supply_item = relationship("SupplyItem")

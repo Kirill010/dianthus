@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from .config import config
 from .deps import get_current_user
 from .security import ensure_csrf_token
-from .services.preorder_service import preorder_count, sync_preorders
+from .services.preorder_service import preorder_count_db
 from . import models
 
 
@@ -35,16 +35,10 @@ def render(request: Request, template: str, db: Session, **context):
     if user is None:
         user = get_current_user(request, db)
 
-    if user:
-        try:
-            sync_preorders(request, db)
-        except Exception:
-            pass
-
     flash = request.session.pop("flash", None)
     cart = request.session.get("cart", [])
     cart_count = sum(item["quantity"] for item in cart)
-    preorder_total = preorder_count(request)
+    preorder_total = preorder_count_db(db, user.id) if user else 0
     csrf_token = ensure_csrf_token(request)
 
     active_supply = None

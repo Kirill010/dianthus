@@ -11,7 +11,9 @@ from ..deps import get_current_user
 from ..models import Order, OrderItem, SupplyItem
 from ..security import check_csrf
 from ..services.notifier import notify_admin_new_order
-from ..services.preorder_service import add_to_preorder
+from ..services.preorder_service import (
+    add_preorder_to_db, get_user_preorders, remove_preorder_db,
+)
 from ..templating import render
 
 logger = logging.getLogger(__name__)
@@ -158,7 +160,7 @@ async def add_to_preorder_route(
     quantity_stems = (quantity_stems // pack) * pack
     packs = quantity_stems // pack
 
-    if add_to_preorder(request, item, packs):
+    if add_preorder_to_db(db, user.id, item.id, packs):
         arrival = item.supply.arrival_date if item.supply else None
         arrival_txt = arrival.strftime("%d.%m.%Y") if arrival else "—"
         request.session["flash"] = (
@@ -166,7 +168,6 @@ async def add_to_preorder_route(
             f"Прибытие: {arrival_txt}"
         )
     return RedirectResponse(url="/catalog", status_code=303)
-
 
 # ПРОСМОТР КОРЗИНЫ
 
@@ -177,7 +178,7 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
         return RedirectResponse(url="/login", status_code=303)
 
     cart = request.session.get("cart", [])
-    preorder = request.session.get("preorder_cart", [])
+    preorder = get_user_preorders(db, user.id)
 
     if not cart and not preorder:
         return render(
@@ -254,13 +255,15 @@ async def remove_from_cart(
 @router.post("/remove_from_preorder")
 async def remove_from_preorder(
     request: Request,
-    item_index: int = Form(...),
+    preorder_id: int = Form(...),
+    db: Session = Depends(get_db),
     _csrf: None = Depends(check_csrf),
 ):
-    preorder = request.session.get("preorder_cart", [])
-    if 0 <= item_index < len(preorder):
-        preorder.pop(item_index)
-    request.session["preorder_cart"] = preorder
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+    if remove_preorder_db(db, user.id, preorder_id):
+        request.session["flash"] = "Предзаказ удалён"
     return RedirectResponse(url="/cart", status_code=303)
 
 
@@ -375,7 +378,10 @@ async def place_order(
     try:
         notify_admin_new_order(order, user)
     except Exception as e:
-        logger.warning("Не удалось уведомить админа: %s", e)
+        logger.error(
+            "Не удалось уведомить админа о заказе №%d: %s",
+            order.id, e, exc_info=True,
+        )
 
     request.session["cart"] = []
     request.session["flash"] = f"Заказ №{order.id} оформлен!"

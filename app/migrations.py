@@ -46,6 +46,12 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
     "order_items": {
         "package_size": "INTEGER DEFAULT 1",
     },
+    "preorders": {
+        "product_id":   "INTEGER",
+        "supply_item_id": "INTEGER",
+        "is_fulfilled": "BOOLEAN DEFAULT FALSE",
+        "quantity":     "INTEGER DEFAULT 0",
+    },
 }
 
 EXPECTED_INDEXES: dict[str, list[tuple[str, str]]] = {
