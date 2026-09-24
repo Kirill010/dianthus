@@ -37,7 +37,7 @@
             {% set stems = item.stock * pack %}
             {% set is_out = stems < 1 %}
 
-            {# ВАЖНО: используем all_photos, а не product.photos #}
+            {# Используем all_photos — только валидные URL #}
             {% set photos = product.all_photos %}
             {% set main_photo = photos[0] if photos else '' %}
 
@@ -59,13 +59,7 @@
                                         {% endfor %}
                                     </div>
                                 {% endif %}
-                                <button type="button"
-                                        class="product-card__zoom"
-                                        data-photos='{{ photos | tojson }}'
-                                        aria-label="Увеличить"
-                                        onclick="event.preventDefault(); event.stopPropagation();">
-                                    <i class="fas fa-expand"></i>
-                                </button>
+                                {# Кнопку лупы убрали — она не нужна #}
                             {% else %}
                                 <div class="product-card__placeholder">
                                     <i class="fas fa-seedling"></i>

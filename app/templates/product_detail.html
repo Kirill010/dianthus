@@ -11,7 +11,7 @@
 {% set is_out = stems < 1 %}
 {% set max_stems_valid = (stems // pack) * pack %}
 
-{# ВАЖНО: используем all_photos, а не product.photos #}
+{# Используем all_photos — только валидные URL #}
 {% set photos = product.all_photos %}
 
 <div class="product-detail">
@@ -27,7 +27,7 @@
                          data-index="{{ loop.index0 }}"
                          style="position:absolute; inset:0; width:100%; height:100%;
                                 object-fit:contain; opacity:0;
-                                transition:opacity .2s; cursor:zoom-in;">
+                                transition:opacity .2s;">
                 {% endfor %}
             </div>
             {% if photos|length > 1 %}
@@ -41,13 +41,7 @@
                     {% endfor %}
                 </div>
             {% endif %}
-            <button type="button"
-                    class="product-card__zoom"
-                    data-photos='{{ photos | tojson }}'
-                    aria-label="Увеличить"
-                    style="position: absolute; top: 10px; right: 10px; z-index: 10;">
-                <i class="fas fa-expand"></i>
-            </button>
+            {# Кнопку лупы убрали #}
         {% else %}
             <div class="product-card__placeholder"
                  style="padding-top:100%; display:flex; align-items:center;

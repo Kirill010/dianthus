@@ -88,15 +88,12 @@ class Product(Base):
     def all_photos(self) -> list:
         """
         Возвращает только ВАЛИДНЫЕ URL-ы фото.
-        Отбрасывает:
-          - числа (ID из 1С),
-          - пустые строки,
-          - javascript:/data:/vbscript: схемы,
-          - всё, что не начинается с http://, https://, /static/
+        Отбрасывает числа (ID из 1С), пустые строки,
+        javascript:/data:/vbscript: схемы и всё, что не
+        начинается с http://, https://, /static/.
         """
         result = []
 
-        # 1. Пробуем распарсить self.photos (список или JSON-строка)
         raw = self.photos
         if isinstance(raw, str):
             try:
@@ -110,7 +107,6 @@ class Product(Base):
                 if _is_valid_photo_url(s):
                     result.append(s)
 
-        # 2. Если ничего не нашли — пробуем image_url
         if not result:
             main = (self.image_url or "").strip()
             if _is_valid_photo_url(main):
