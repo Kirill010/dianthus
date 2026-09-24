@@ -42,30 +42,30 @@ async def check_csrf(request: Request) -> None:
     """
     Проверяет CSRF-токен.
 
-    Для multipart/form-data — берём только из заголовка X-CSRF-Token,
-    потому что request.form() съедает тело и File() потом пуст.
+    Ищем токен в порядке:
+      1. Заголовок X-CSRF-Token (для fetch/AJAX-запросов);
+      2. Поле form `csrf_token` (для обычных HTML-форм, включая multipart).
+
+    Starlette кэширует form() при первом вызове, поэтому дальше
+    FastAPI увидит тот же FormData и параметры File()/Form() в роутере
+    получат свои значения.
     """
     session_token = request.session.get(_CSRF_SESSION_KEY)
     if not session_token:
         raise CsrfError("Сессия не содержит CSRF-токен")
 
-    ctype = (request.headers.get("content-type") or "").lower()
-    is_multipart = "multipart/form-data" in ctype
+    # 1. Заголовок (для fetch)
+    client_token = request.headers.get("x-csrf-token", "") or ""
 
-    client_token = ""
-    if is_multipart:
-        client_token = request.headers.get("x-csrf-token", "")
-        if not client_token:
-            # Фолбэк: иногда шлют просто в form, но у нас File() отвалится.
-            raise CsrfError(
-                "Для загрузки файлов нужен заголовок X-CSRF-Token"
-            )
-    else:
+    # 2. Тело формы (для <form> с enctype=multipart/form-data)
+    if not client_token:
         try:
             form = await request.form()
-        except Exception:
-            raise CsrfError("Не удалось прочитать форму")
-        client_token = form.get("csrf_token", "")
+            value = form.get("csrf_token")
+            if value is not None:
+                client_token = str(value)
+        except Exception as e:
+            logger.debug("check_csrf: не удалось прочитать form(): %s", e)
 
     if not client_token:
         raise CsrfError("Отсутствует CSRF-токен")
@@ -79,16 +79,10 @@ async def check_csrf(request: Request) -> None:
 # ═══════════════════════════════════════════════════════════
 
 def _client_ip(request: Request) -> str:
-    """
-    IP клиента за Nginx.
-    Берём ПЕРВЫЙ адрес из X-Forwarded-For (наш Nginx добавляет реальный IP
-    в конец цепочки, но мы доверяем только своему прокси).
-    """
     fwd = request.headers.get("x-forwarded-for")
     if fwd:
         parts = [p.strip() for p in fwd.split(",") if p.strip()]
         if parts:
-            # Первый — самый ранний; для одиночного прокси это клиент.
             return parts[0][:45]
     if request.client:
         return request.client.host
@@ -96,7 +90,6 @@ def _client_ip(request: Request) -> str:
 
 
 async def _redis_incr(bucket: str, window: int) -> Optional[int]:
-    """Инкрементит счётчик в Redis. None если недоступен."""
     if not _redis_enabled or _redis_client is None:
         return None
     try:
@@ -126,9 +119,6 @@ async def check_rate_limit(
     max_hits: int = 10,
     window: int = 60,
 ) -> None:
-    """
-    Асинхронная версия — использует Redis, если подключён.
-    """
     ip = _client_ip(request)
     bucket = f"{key}:{ip}"
 
@@ -142,7 +132,6 @@ async def check_rate_limit(
             )
         return
 
-    # In-memory fallback
     now = time.time()
     hits = _rate_buckets[bucket]
     hits[:] = [t for t in hits if now - t < window]

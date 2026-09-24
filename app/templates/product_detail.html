@@ -8,18 +8,20 @@
 {% set min_stems = pack * min_packs %}
 {% set is_out = stems < 1 %}
 {% set max_stems_valid = (stems // pack) * pack %}
+{% set photos = product.all_photos %}
 
 <div class="product-detail">
     <div class="product-detail__image">
-        {% set photos = product.all_photos %}
         {% if photos %}
-            <div class="product-gallery" id="pdGallery" style="position:absolute;inset:0;">
+            <div class="product-gallery" id="pdGallery"
+                 style="position:absolute;inset:0;">
                 {% for url in photos %}
                     <img src="{{ url }}" alt="{{ product.name }}"
                         class="product-gallery__photo {% if loop.first %}active{% endif %}"
                         data-index="{{ loop.index0 }}"
                         style="position:absolute;inset:0;width:100%;height:100%;
-                                object-fit:cover;opacity:0;transition:opacity .2s;">
+                                object-fit:cover;opacity:0;transition:opacity .2s;
+                                cursor:zoom-in;">
                 {% endfor %}
             </div>
             {% if photos|length > 1 %}
@@ -41,6 +43,15 @@
             </div>
         {% endif %}
     </div>
+
+    {% if photos|length > 1 %}
+    <div class="product-thumbs">
+        {% for url in photos %}
+            <img src="{{ url }}" alt="" class="product-thumb {% if loop.first %}active{% endif %}"
+                 data-index="{{ loop.index0 }}">
+        {% endfor %}
+    </div>
+    {% endif %}
 
     <h1 class="product-detail__name">{{ product.name }}</h1>
 
@@ -84,7 +95,9 @@
         {{ "%.0f"|format(item.price * pack) }} ₽ за упаковку ({{ pack }} шт)
     </div>
 
-    {% if product.description %}<p class="product-detail__desc">{{ product.description }}</p>{% endif %}
+    {% if product.description %}
+        <p class="product-detail__desc">{{ product.description }}</p>
+    {% endif %}
 
     {% if not is_out %}
     <form action="/add_to_cart" method="post" class="product-detail__form">
@@ -116,4 +129,33 @@
     </button>
     {% endif %}
 </div>
+
+<script>
+/* Переключение фото в галерее по миниатюрам */
+(function() {
+    const gallery = document.querySelectorAll('.product-gallery__photo');
+    const dots = document.querySelectorAll('.product-card__dot');
+    const thumbs = document.querySelectorAll('.product-thumb');
+    if (!gallery.length) return;
+
+    function show(idx) {
+        gallery.forEach((img, i) => img.classList.toggle('active', i === idx));
+        dots.forEach((d, i) => d.classList.toggle('active', i === idx));
+        thumbs.forEach((t, i) => t.classList.toggle('active', i === idx));
+    }
+
+    thumbs.forEach(t => {
+        t.addEventListener('click', () => {
+            const idx = parseInt(t.dataset.index, 10) || 0;
+            show(idx);
+        });
+    });
+    dots.forEach(d => {
+        d.addEventListener('click', () => {
+            const idx = parseInt(d.dataset.index, 10) || 0;
+            show(idx);
+        });
+    });
+})();
+</script>
 {% endblock %}
