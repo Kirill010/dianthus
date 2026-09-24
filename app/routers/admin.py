@@ -26,9 +26,7 @@ from ..services.notifier import (
     notify_admin_new_order,
     notify_client_status_changed,
 )
-from ..services.upload_service import (
-    delete_upload, save_upload, save_uploads,
-)
+from ..services.upload_service import delete_upload, save_uploads
 from ..templating import render
 from ..validators import (validate_country, validate_positive_int,
                           validate_price, validate_stock)
