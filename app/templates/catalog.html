@@ -6,14 +6,35 @@
     <span class="badge bg-secondary">{{ total_items }} товаров</span>
 </div>
 
+{# ═══════ ФОРМА ПОИСКА ═══════
+   ⚠️ ИСПРАВЛЕНО: скрытые поля сохраняют активные фильтры,
+   когда пользователь отправляет поиск.
+#}
 <form class="catalog-search mb-4" method="get" action="/catalog">
+    {% if current_filters.category %}
+        <input type="hidden" name="category" value="{{ current_filters.category }}">
+    {% endif %}
+    {% if current_filters.level and current_filters.level != 'available' %}
+        <input type="hidden" name="level" value="{{ current_filters.level }}">
+    {% endif %}
+    {% if current_filters.sort and current_filters.sort != 'newest' %}
+        <input type="hidden" name="sort" value="{{ current_filters.sort }}">
+    {% endif %}
+
     <div class="input-group">
         <span class="input-group-text"><i class="fas fa-search"></i></span>
         <input type="text" id="searchInput" name="q"
                class="form-control form-control-lg"
-               placeholder="Поиск по названию или стране..."
+               placeholder="Поиск по названию или описанию..."
                value="{{ search_q or '' }}" autocomplete="off">
         <button type="submit" class="btn btn-primary">Найти</button>
+        {% if current_filters.q %}
+            <a href="/catalog{% if current_filters.category %}?category={{ current_filters.category }}{% endif %}"
+               class="btn btn-outline-secondary"
+               title="Сбросить поиск">
+                <i class="fas fa-times"></i>
+            </a>
+        {% endif %}
     </div>
     <div id="suggestBox" class="suggest-box"></div>
 </form>
@@ -21,7 +42,8 @@
 {# ─── КАТЕГОРИИ ─── #}
 {% if all_categories %}
 <div class="category-scroll mb-3">
-    <a href="/catalog" class="category-btn {% if not current_filters.category %}active{% endif %}">
+    <a href="/catalog{% if current_filters.q %}?q={{ current_filters.q }}{% endif %}"
+       class="category-btn {% if not current_filters.category %}active{% endif %}">
         Все
     </a>
     {% for cat in all_categories %}
