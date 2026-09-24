@@ -65,6 +65,9 @@ async def dashboard(request: Request, db: Session = Depends(get_db), admin=Depen
         "revenue_today": db.query(func.coalesce(func.sum(Order.total_price), 0)).filter(Order.created_at >= today, Order.status != "Отменён").scalar() or 0,
         "revenue_week": db.query(func.coalesce(func.sum(Order.total_price), 0)).filter(Order.created_at >= week_ago, Order.status != "Отменён").scalar() or 0,
         "pending_orders": db.query(Order).filter(Order.status == "Новый").count(),
+        "new_clients_week": db.query(User)
+        .filter(User.created_at >= week_ago)
+        .count(),
     }
     products = db.query(Product).order_by(Product.name).all()
     supplies = db.query(Supply).options(selectinload(Supply.items)).order_by(Supply.arrival_date.asc()).all()
