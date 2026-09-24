@@ -3,7 +3,7 @@ import logging
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from ..config import config
 from ..database import get_db
@@ -138,6 +138,7 @@ async def add_to_preorder_route(
 
     item = (
         db.query(SupplyItem)
+        .options(selectinload(SupplyItem.supply))
         .filter(
             SupplyItem.id == supply_item_id,
             SupplyItem.is_active.is_(False),

@@ -8,7 +8,7 @@ from fastapi import Request
 from fastapi.templating import Jinja2Templates
 from jinja2 import FileSystemBytecodeCache
 from sqlalchemy import nulls_last
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from .config import config
 from .deps import get_current_user
@@ -23,10 +23,7 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 def _pick_cache_dir() -> str:
-    """
-    Выбирает первый рабочий каталог для кэша Jinja.
-    Гарантирует, что директория существует и доступна для записи.
-    """
+    """Выбирает первый рабочий каталог для кэша Jinja."""
     candidates = [
         os.getenv("JINJA_CACHE_DIR", "").strip(),
         "/var/cache/dianthus/jinja",
@@ -37,9 +34,7 @@ def _pick_cache_dir() -> str:
         if not d:
             continue
         try:
-            # Создаём директорию, если её нет
             os.makedirs(d, exist_ok=True)
-            # Проверяем, что можем писать
             probe = Path(d) / ".wtest"
             probe.write_text("ok", encoding="utf-8")
             probe.unlink()
@@ -52,10 +47,8 @@ def _pick_cache_dir() -> str:
     return str(TEMPLATES_DIR / ".cache")
 
 
-# Создаём директорию для кэша
 JINJA_CACHE_DIR = _pick_cache_dir()
 
-# Пытаемся инициализировать кэш, но не падаем, если не получилось
 try:
     templates.env.bytecode_cache = FileSystemBytecodeCache(
         directory=JINJA_CACHE_DIR,
@@ -67,7 +60,6 @@ except Exception as e:
     templates.env.bytecode_cache = None
 
 templates.env.cache_size = -1
-# В проде — False; но проверим, что шаблоны читаются
 templates.env.auto_reload = (config.ENV != "prod")
 
 
@@ -87,6 +79,7 @@ def render(request: Request, template: str, db: Session, **context):
     if user:
         active_supply = (
             db.query(models.Supply)
+            .options(selectinload(models.Supply.items))
             .filter(models.Supply.status.in_(["Ожидается", "В пути"]))
             .order_by(nulls_last(models.Supply.arrival_date.asc()))
             .first()

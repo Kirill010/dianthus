@@ -5,8 +5,7 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from sqlalchemy import or_
-from sqlalchemy.orm import Session
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from ..config import config
 from ..database import get_db
@@ -34,7 +33,10 @@ def _stems_expr():
 def _base_query(db: Session):
     return (
         db.query(SupplyItem)
-        .options(joinedload(SupplyItem.product))
+        .options(
+            joinedload(SupplyItem.product),
+            selectinload(SupplyItem.supply),
+        )
         .join(Product, SupplyItem.product_id == Product.id)
         .filter(SupplyItem.is_active.is_(True))
     )
@@ -43,7 +45,10 @@ def _base_query(db: Session):
 def _preorder_query(db: Session):
     return (
         db.query(SupplyItem)
-        .options(joinedload(SupplyItem.product), joinedload(SupplyItem.supply))
+        .options(
+            joinedload(SupplyItem.product),
+            selectinload(SupplyItem.supply),
+        )
         .join(Product, SupplyItem.product_id == Product.id)
         .join(Supply, SupplyItem.supply_id == Supply.id)
         .filter(
