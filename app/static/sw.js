@@ -1,5 +1,7 @@
 // Service Worker для Диантуса — офлайн-кэш статики
-const CACHE_NAME = 'dianthus-v4'; // 🔥 УВЕЛИЧЕНА ВЕРСИЯ для сброса старого кэша у клиентов
+// ⚠️ ВЕРСИЯ УВЕЛИЧЕНА ДО v6: при установке новый SW удалит старый кэш
+// и заставит браузер скачать свежие CSS/JS.
+const CACHE_NAME = 'dianthus-v6';
 const STATIC_ASSETS = [
   '/static/style.css',
   '/static/logo-icon.png',
@@ -11,10 +13,11 @@ const STATIC_ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
+  // Форсируем установку нового SW, не дожидаясь закрытия старых вкладок
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
   );
-  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
@@ -23,9 +26,8 @@ self.addEventListener('activate', (event) => {
       Promise.all(
         keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
       )
-    )
+    ).then(() => self.clients.claim())  // берём контроль над всеми вкладками
   );
-  self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
@@ -33,15 +35,34 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   if (!url.pathname.startsWith('/static/')) return;
 
+  // СТРАТЕГИЯ: network-first для CSS/JS в разработке,
+  // cache-first для картинок. Так свежие стили подхватятся сразу.
+  const isCssOrJs = /\.(css|js)$/i.test(url.pathname);
+
+  if (isCssOrJs) {
+    // network-first — если сеть доступна, берём свежую версию
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // cache-first для картинок и шрифтов
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;
       return fetch(event.request).then((response) => {
         if (!response || response.status !== 200) return response;
         const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) =>
-          cache.put(event.request, clone)
-        );
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
         return response;
       });
     })
