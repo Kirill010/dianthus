@@ -42,22 +42,21 @@ async def check_csrf(request: Request) -> None:
     """
     Проверяет CSRF-токен.
 
-    Ищем токен в порядке:
-      1. Заголовок X-CSRF-Token (для fetch/AJAX-запросов);
-      2. Поле form `csrf_token` (для обычных HTML-форм, включая multipart).
+    Порядок поиска:
+      1. Заголовок X-CSRF-Token (для fetch/AJAX).
+      2. Поле form `csrf_token` (для HTML-форм, включая multipart/form-data).
 
-    Starlette кэширует form() при первом вызове, поэтому дальше
-    FastAPI увидит тот же FormData и параметры File()/Form() в роутере
-    получат свои значения.
+    Starlette кэширует разобранную форму — последующий вызов
+    Form()/File() в роутере получит те же значения.
     """
     session_token = request.session.get(_CSRF_SESSION_KEY)
     if not session_token:
         raise CsrfError("Сессия не содержит CSRF-токен")
 
-    # 1. Заголовок (для fetch)
+    # 1. Заголовок
     client_token = request.headers.get("x-csrf-token", "") or ""
 
-    # 2. Тело формы (для <form> с enctype=multipart/form-data)
+    # 2. Тело формы (в т.ч. multipart)
     if not client_token:
         try:
             form = await request.form()
@@ -65,14 +64,13 @@ async def check_csrf(request: Request) -> None:
             if value is not None:
                 client_token = str(value)
         except Exception as e:
-            logger.debug("check_csrf: не удалось прочитать form(): %s", e)
+            logger.debug("check_csrf: form() failed: %s", e)
 
     if not client_token:
         raise CsrfError("Отсутствует CSRF-токен")
 
     if not secrets.compare_digest(str(session_token), str(client_token)):
         raise CsrfError("Неверный CSRF-токен")
-
 
 # ═══════════════════════════════════════════════════════════
 # RATE LIMITING

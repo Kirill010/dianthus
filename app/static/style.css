@@ -1929,7 +1929,7 @@ a.contacts-item__value:hover { color: var(--primary); }
     width: 20px;
     border-radius: 4px;
 }
-/* ─── Галерея на странице товара ─── */
+/* ─── Галерея ─── */
 .product-gallery { position: absolute; inset: 0; }
 .product-gallery__photo {
     position: absolute; inset: 0;
@@ -1953,10 +1953,10 @@ a.contacts-item__value:hover { color: var(--primary); }
     cursor: pointer;
     border: 2px solid transparent;
     transition: border-color .15s, transform .15s;
-    background: var(--bg-warm);
+    background: var(--bg-warm, #ede4d3);
 }
 .product-thumb:hover { transform: scale(1.05); }
-.product-thumb.active { border-color: var(--primary); }
+.product-thumb.active { border-color: var(--primary, #4a6741); }
 
 /* ─── Лайтбокс ─── */
 .lightbox {

@@ -20,15 +20,15 @@
                         class="product-gallery__photo {% if loop.first %}active{% endif %}"
                         data-index="{{ loop.index0 }}"
                         style="position:absolute;inset:0;width:100%;height:100%;
-                                object-fit:cover;opacity:0;transition:opacity .2s;
-                                cursor:zoom-in;">
+                                object-fit:cover;opacity:0;
+                                transition:opacity .2s;cursor:zoom-in;">
                 {% endfor %}
             </div>
             {% if photos|length > 1 %}
                 <div class="product-card__dots">
                     {% for url in photos %}
                         <span class="product-card__dot {% if loop.first %}active{% endif %}"
-                            data-index="{{ loop.index0 }}"></span>
+                              data-index="{{ loop.index0 }}"></span>
                     {% endfor %}
                 </div>
             {% endif %}
@@ -47,7 +47,8 @@
     {% if photos|length > 1 %}
     <div class="product-thumbs">
         {% for url in photos %}
-            <img src="{{ url }}" alt="" class="product-thumb {% if loop.first %}active{% endif %}"
+            <img src="{{ url }}" alt=""
+                 class="product-thumb {% if loop.first %}active{% endif %}"
                  data-index="{{ loop.index0 }}">
         {% endfor %}
     </div>
@@ -84,7 +85,9 @@
     <div class="supply-hint mb-3">
         <i class="fas fa-truck-fast me-2"></i>
         В пути из <strong>{{ item.supply.country }}</strong>
-        {% if item.supply.arrival_date %} · прибытие <strong>{{ item.supply.arrival_date.strftime('%d.%m.%Y') }}</strong>{% endif %}
+        {% if item.supply.arrival_date %}
+            · прибытие <strong>{{ item.supply.arrival_date.strftime('%d.%m.%Y') }}</strong>
+        {% endif %}
     </div>
     {% endif %}
 
@@ -131,7 +134,7 @@
 </div>
 
 <script>
-/* Переключение фото в галерее по миниатюрам */
+/* Переключение фото в галерее + лайтбокс */
 (function() {
     const gallery = document.querySelectorAll('.product-gallery__photo');
     const dots = document.querySelectorAll('.product-card__dot');
@@ -144,18 +147,12 @@
         thumbs.forEach((t, i) => t.classList.toggle('active', i === idx));
     }
 
-    thumbs.forEach(t => {
-        t.addEventListener('click', () => {
-            const idx = parseInt(t.dataset.index, 10) || 0;
-            show(idx);
-        });
-    });
-    dots.forEach(d => {
-        d.addEventListener('click', () => {
-            const idx = parseInt(d.dataset.index, 10) || 0;
-            show(idx);
-        });
-    });
+    thumbs.forEach(t => t.addEventListener('click', () => {
+        show(parseInt(t.dataset.index, 10) || 0);
+    }));
+    dots.forEach(d => d.addEventListener('click', () => {
+        show(parseInt(d.dataset.index, 10) || 0);
+    }));
 })();
 </script>
 {% endblock %}
