@@ -44,19 +44,20 @@ async def check_csrf(request: Request) -> None:
 
     Порядок поиска:
       1. Заголовок X-CSRF-Token (для fetch/AJAX).
-      2. Поле form `csrf_token` (для HTML-форм, включая multipart/form-data).
+      2. Поле формы csrf_token (для обычных HTML-форм,
+         включая multipart/form-data — там заголовок недоступен).
 
-    Starlette кэширует разобранную форму — последующий вызов
-    Form()/File() в роутере получит те же значения.
+    Starlette кэширует разобранную форму, поэтому последующий
+    вызов Form()/File() в роутере получит те же значения.
     """
     session_token = request.session.get(_CSRF_SESSION_KEY)
     if not session_token:
         raise CsrfError("Сессия не содержит CSRF-токен")
 
-    # 1. Заголовок
+    # 1. Заголовок (для fetch)
     client_token = request.headers.get("x-csrf-token", "") or ""
 
-    # 2. Тело формы (в т.ч. multipart)
+    # 2. Тело формы (в т.ч. multipart/form-data)
     if not client_token:
         try:
             form = await request.form()
