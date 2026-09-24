@@ -18,102 +18,125 @@
     <div id="suggestBox" class="suggest-box"></div>
 </form>
 
+{# ─── ГОРИЗОНТАЛЬНЫЕ КАТЕГОРИИ ─── #}
+{% if all_categories %}
+<div class="category-scroll mb-3">
+    <a href="/catalog" class="category-btn {% if not current_filters.category %}active{% endif %}">
+        Все
+    </a>
+    {% for cat in all_categories %}
+        {% if cat in active_categories %}
+        <a href="{{ category_url(cat) }}"
+           class="category-btn {% if current_filters.category == cat %}active{% endif %}">
+            {{ cat }}
+        </a>
+        {% endif %}
+    {% endfor %}
+</div>
+{% endif %}
+
+{# ─── ФИЛЬТР ПО КОЛИЧЕСТВУ ─── #}
+<div class="category-scroll mb-4">
+    <a href="{{ level_url('available') }}"
+       class="category-btn {% if current_filters.level == 'available' %}active{% endif %}">
+        ✓ В наличии ({{ level_counts.available }})
+    </a>
+    <a href="{{ level_url('big') }}"
+       class="category-btn {% if current_filters.level == 'big' %}active{% endif %}">
+        🟢 Много ({{ level_counts.big }})
+    </a>
+    <a href="{{ level_url('medium') }}"
+       class="category-btn {% if current_filters.level == 'medium' %}active{% endif %}">
+        🟡 Средне ({{ level_counts.medium }})
+    </a>
+    <a href="{{ level_url('small') }}"
+       class="category-btn {% if current_filters.level == 'small' %}active{% endif %}">
+        🔴 Мало ({{ level_counts.small }})
+    </a>
+</div>
+
 {% if not items %}
     <div class="empty-state text-center py-5">
         <i class="fas fa-seedling fa-3x text-muted mb-3"></i>
         <h4>Ничего не найдено</h4>
         <p class="text-muted">В данный момент товаров в наличии нет.</p>
-        {% if search_q %}
-            <a href="/catalog" class="btn btn-outline-primary mt-2">
-                Сбросить поиск
-            </a>
+        {% if has_filters %}
+            <a href="/catalog" class="btn btn-outline-primary mt-2">Сбросить фильтры</a>
         {% endif %}
     </div>
 {% else %}
-    <div class="row g-3 g-md-4">
+    <div class="product-grid">
         {% for item in items %}
             {% set product = item.product %}
             {% set pack = product.package_size or 1 %}
             {% set stems = item.stock * pack %}
             {% set is_out = stems < 1 %}
-
-            {# Используем all_photos — только валидные URL #}
             {% set photos = product.all_photos %}
-            {% set main_photo = photos[0] if photos else '' %}
 
-            <div class="col-6 col-md-4 col-lg-3">
-                <a href="/product/{{ item.id }}"
-                   class="text-decoration-none text-dark d-block h-100">
-                    <div class="product-card h-100 {% if is_out %}product-card--out{% endif %}">
-                        <div class="product-card__image-wrap">
-                            {% if main_photo %}
-                                <img src="{{ main_photo }}"
+            <a href="/product/{{ item.id }}" class="text-decoration-none text-dark d-block h-100">
+                <div class="product-card h-100 {% if is_out %}product-card--out{% endif %}">
+                    <div class="product-card__image-wrap">
+                        {% if photos %}
+                            {# ✅ ИСПРАВЛЕНО: рендерим ВСЕ фото, активное — первое #}
+                            {% for photo in photos %}
+                                <img src="{{ photo }}"
                                      alt="{{ product.name }}"
-                                     class="product-card__photo active"
+                                     class="product-card__photo {% if loop.first %}active{% endif %}"
+                                     data-index="{{ loop.index0 }}"
                                      loading="lazy">
-                                {% if photos|length > 1 %}
-                                    <div class="product-card__dots">
-                                        {% for p in photos %}
-                                            <span class="product-card__dot {% if loop.first %}active{% endif %}"
-                                                  data-index="{{ loop.index0 }}"></span>
-                                        {% endfor %}
-                                    </div>
-                                {% endif %}
-                                {# Кнопку лупы убрали — она не нужна #}
-                            {% else %}
-                                <div class="product-card__placeholder">
-                                    <i class="fas fa-seedling"></i>
+                            {% endfor %}
+                            {% if photos|length > 1 %}
+                                <div class="product-card__dots">
+                                    {% for photo in photos %}
+                                        <span class="product-card__dot {% if loop.first %}active{% endif %}"
+                                              data-index="{{ loop.index0 }}"></span>
+                                    {% endfor %}
                                 </div>
                             {% endif %}
-                            {% if is_out %}
-                                <div class="product-card__badge product-card__badge--out">
-                                    Нет в наличии
-                                </div>
-                            {% endif %}
+                        {% else %}
+                            <div class="product-card__placeholder">
+                                <i class="fas fa-seedling"></i>
+                            </div>
+                        {% endif %}
+
+                        {% if is_out %}
+                            <div class="product-card__badge product-card__badge--out">
+                                Нет в наличии
+                            </div>
+                        {% endif %}
+                    </div>
+                    <div class="product-card__body">
+                        <h3 class="product-card__name">{{ product.name }}</h3>
+                        <div class="product-card__specs">
+                            {% if product.country %}<span>{{ product.country }}</span>{% endif %}
+                            {% if product.length_cm %}<span>{{ product.length_cm }} см</span>{% endif %}
+                            <span>{{ pack }} шт/уп</span>
                         </div>
-                        <div class="product-card__body">
-                            <h3 class="product-card__name">{{ product.name }}</h3>
-                            <div class="product-card__specs">
-                                {% if product.country %}<span>{{ product.country }}</span>{% endif %}
-                                {% if product.length_cm %}<span>{{ product.length_cm }} см</span>{% endif %}
-                                <span>{{ pack }} шт/уп</span>
-                            </div>
-                            <div class="product-card__price">
-                                {{ "%.2f"|format(item.price) }} ₽<small>/шт</small>
-                            </div>
-                            <div class="product-card__pack-price text-muted small">
-                                {{ "%.0f"|format(item.price * pack) }} ₽ за упаковку
-                            </div>
+                        <div class="product-card__price">
+                            {{ "%.2f"|format(item.price) }} ₽<small>/шт</small>
+                        </div>
+                        <div class="product-card__pack-price text-muted small">
+                            {{ "%.0f"|format(item.price * pack) }} ₽ за упаковку
                         </div>
                     </div>
-                </a>
-            </div>
+                </div>
+            </a>
         {% endfor %}
     </div>
 
     {% if total_pages > 1 %}
-    <nav class="pagination-nav mt-5 d-flex justify-content-center">
-        <ul class="pagination">
-            {% if page > 1 %}
-                <li class="page-item">
-                    <a class="page-link"
-                       href="/catalog?page={{ page - 1 }}{% if search_q %}&q={{ search_q }}{% endif %}">
-                        Назад
-                    </a>
-                </li>
-            {% endif %}
-            <li class="page-item active">
-                <span class="page-link">{{ page }} из {{ total_pages }}</span>
-            </li>
-            {% if page < total_pages %}
-                <li class="page-item">
-                    <a class="page-link"
-                       href="/catalog?page={{ page + 1 }}{% if search_q %}&q={{ search_q }}{% endif %}">
-                        Вперёд
-                    </a>
-                </li>
-            {% endif %}
-        </ul>
+    <nav class="pagination-nav mt-5 d-flex justify-content-center gap-2">
+        {% if page > 1 %}
+            <a href="{{ page_url(page - 1) }}" class="page-btn">
+                <i class="fas fa-chevron-left"></i>
+            </a>
+        {% endif %}
+        <span class="page-info">{{ page }} из {{ total_pages }}</span>
+        {% if page < total_pages %}
+            <a href="{{ page_url(page + 1) }}" class="page-btn">
+                <i class="fas fa-chevron-right"></i>
+            </a>
+        {% endif %}
     </nav>
     {% endif %}
 {% endif %}

@@ -43,7 +43,19 @@ def _is_valid_photo_url(value) -> bool:
     s = value.strip()
     if not s:
         return False
-    return s.startswith(("http://", "https://", "/static/"))
+    # Разрешаем http(s), /static/ и относительный static/uploads/
+    return s.startswith(("http://", "https://", "/static/", "static/"))
+
+
+def _normalize_url(value: str) -> str:
+    """Приводит URL к виду /static/... или http(s)://..."""
+    s = (value or "").strip()
+    if not s:
+        return ""
+    # Если это "static/uploads/x.webp" — добавим слэш
+    if s.startswith("static/"):
+        return "/" + s
+    return s
 
 
 class User(Base):
@@ -89,8 +101,7 @@ class Product(Base):
         """
         Возвращает только ВАЛИДНЫЕ URL-ы фото.
         Отбрасывает числа (ID из 1С), пустые строки,
-        javascript:/data:/vbscript: схемы и всё, что не
-        начинается с http://, https://, /static/.
+        javascript:/data: схемы.
         """
         result = []
 
@@ -103,12 +114,13 @@ class Product(Base):
 
         if isinstance(raw, list):
             for p in raw:
-                s = str(p).strip()
+                s = _normalize_url(str(p))
                 if _is_valid_photo_url(s):
                     result.append(s)
 
+        # Фолбэк на image_url
         if not result:
-            main = (self.image_url or "").strip()
+            main = _normalize_url(self.image_url or "")
             if _is_valid_photo_url(main):
                 result = [main]
 
