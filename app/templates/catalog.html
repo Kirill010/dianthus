@@ -80,7 +80,7 @@
                  data-min="{{ min_stems }}"
                  data-max="{{ stems }}">
 
-                {# ─── ФОТО + КНОПКА «+» В УГЛУ ─── #}
+                {# ─── ФОТО + КНОПКА «+» ─── #}
                 <div class="product-card-v2__image-wrap">
                     <a href="/product/{{ item.id }}" class="product-card-v2__image-link">
                         {% if photos %}
@@ -103,7 +103,7 @@
                             <input type="hidden" name="quantity_stems" value="{{ min_stems }}">
                             <button type="submit"
                                     class="product-card-v2__plus"
-                                    title="Быстро в корзину: {{ min_stems }} шт">
+                                    title="В корзину: {{ min_packs }} упак.">
                                 <i class="fas fa-plus"></i>
                             </button>
                         </form>
@@ -139,7 +139,7 @@
                         {{ "%.2f"|format(item.price) }} ₽
                     </div>
 
-                    {# ─── ФОРМА: КОЛИЧЕСТВО + В КОРЗИНУ ─── #}
+                    {# ─── ФОРМА ─── #}
                     {% if not is_out %}
                         <form action="/add_to_cart" method="post"
                               class="product-card-v2__cart-form">
@@ -228,8 +228,7 @@
     });
 })();
 
-/* ─── Кнопки «+»/«−»: шаг = размер упаковки ───
-   Работает через data-* карточки, чтобы не писать Jinja в onclick. */
+/* ─── «+»/«−»: шаг = размер упаковки ─── */
 (function() {
     document.querySelectorAll('.js-qty').forEach(btn => {
         btn.addEventListener('click', function() {
@@ -245,8 +244,6 @@
             const dir  = parseInt(this.dataset.dir, 10) || 1;
 
             let v = (parseInt(input.value, 10) || 0) + dir * step;
-
-            // Округляем до кратного шага
             v = Math.round(v / step) * step;
 
             if (v < min) v = min;

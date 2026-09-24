@@ -6,13 +6,7 @@
     <title>Диантус · Оптовый магазин цветов</title>
     {% if csrf_token %}<meta name="csrf-token" content="{{ csrf_token }}">{% endif %}
     <meta name="description" content="Диантус — оптовые поставки цветов из Эквадора, Колумбии, Голландии. Розы, гвоздики, хризантемы, тюльпаны упаковками. Только для юрлиц и ИП.">
-    <meta name="keywords" content="оптовые цветы, розы оптом, гвоздики оптом, цветы из Эквадора, dianthus, опт цветов Москва">
     <meta name="robots" content="index, follow">
-    <meta property="og:title" content="Диантус · Оптовый магазин цветов">
-    <meta property="og:description" content="Оптовые поставки цветов для юрлиц и ИП">
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="https://dianthus-opt.ru">
-    <meta property="og:image" content="https://dianthus-opt.ru/static/logo-full.png">
 
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <link href="/static/vendor/bootstrap.min.css" rel="stylesheet">
@@ -21,7 +15,6 @@
     <link rel="manifest" href="/static/manifest.json">
     <meta name="theme-color" content="#4a6741">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Диантус">
 </head>
 <body class="{% if user and not hide_bottom_nav %}has-bottom-nav{% endif %}">
@@ -53,9 +46,7 @@
             {% if user.is_admin %}
                 <a href="/admin" class="app-header__icon" title="Админка"><i class="fas fa-cog"></i></a>
             {% endif %}
-            <a href="/contacts" class="app-header__icon" title="Контакты">
-                <i class="fas fa-phone"></i>
-            </a>
+            <a href="/contacts" class="app-header__icon" title="Контакты"><i class="fas fa-phone"></i></a>
             <a href="/notifications" class="app-header__icon" title="Уведомления">
                 <i class="fas fa-bell"></i>
                 {% if unread_count %}<span class="app-header__badge">{{ unread_count }}</span>{% endif %}
@@ -67,14 +58,10 @@
             {% if preorder_count %}
             <a href="/cart" class="app-header__icon" title="Предзаказы">
                 <i class="fas fa-truck-fast"></i>
-                <span class="app-header__badge app-header__badge--preorder">
-                    {{ preorder_count }}
-                </span>
+                <span class="app-header__badge app-header__badge--preorder">{{ preorder_count }}</span>
             </a>
             {% endif %}
-            <a href="/profile" class="app-header__icon" title="Профиль">
-                <i class="fas fa-user"></i>
-            </a>
+            <a href="/profile" class="app-header__icon" title="Профиль"><i class="fas fa-user"></i></a>
         </div>
     </div>
     {% if user.company_name %}
@@ -132,9 +119,7 @@
     window.fetch = function(input, init) {
         init = init || {};
         const headers = new Headers(init.headers || {});
-        if (!headers.has('X-CSRF-Token')) {
-            headers.set('X-CSRF-Token', token);
-        }
+        if (!headers.has('X-CSRF-Token')) headers.set('X-CSRF-Token', token);
         init.headers = headers;
         return origFetch.call(this, input, init);
     };
@@ -157,34 +142,25 @@ if ('serviceWorker' in navigator) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   ГАЛЕРЕЯ: свайп по фото на карточке каталога и детальной
+   ГАЛЕРЕЯ на ДЕТАЛЬНОЙ странице товара (свайп + точки)
    ═══════════════════════════════════════════════════════════ */
 (function() {
     'use strict';
 
-    const SELECTOR = '.product-card__image-wrap, .product-detail__image';
+    const SELECTOR = '.product-detail__image';
 
-    // ─── Переключение активного фото + точек ───
     function showPhoto(wrap, idx) {
-        const photos = wrap.querySelectorAll('.product-card__photo, .product-gallery__photo');
+        const photos = wrap.querySelectorAll('.product-gallery__photo');
         if (!photos.length) return;
-        const dots = wrap.parentElement.querySelectorAll('.product-card__dot')
-                   || wrap.querySelectorAll('.product-card__dot');
-        const dotsInWrap = wrap.querySelectorAll('.product-card__dot');
-        const allDots = dotsInWrap.length ? dotsInWrap : dots;
-
+        const dots = wrap.parentElement.querySelectorAll('.product-card__dot');
         idx = (idx + photos.length) % photos.length;
         photos.forEach((p, n) => p.classList.toggle('active', n === idx));
-        allDots.forEach((d, n) => {
+        dots.forEach((d, n) => {
             d.classList.toggle('active', n === idx);
-            // Для детальной страницы точки перекрашиваются вручную (inline-style)
-            if (wrap.classList.contains('product-detail__image')) {
-                d.style.background = (n === idx) ? '#4a6741' : '#ccc';
-            }
+            d.style.background = (n === idx) ? '#4a6741' : '#ccc';
         });
     }
 
-    // ─── Клик по точке-индикатору ───
     document.addEventListener('click', function(e) {
         const dot = e.target.closest('.product-card__dot');
         if (!dot) return;
@@ -192,20 +168,17 @@ if ('serviceWorker' in navigator) {
                   || dot.parentElement.closest(SELECTOR)
                   || dot.parentElement.parentElement.querySelector(SELECTOR);
         if (!wrap) return;
-
         e.preventDefault();
         e.stopPropagation();
-        const idx = parseInt(dot.dataset.index || '0', 10) || 0;
-        showPhoto(wrap, idx);
+        showPhoto(wrap, parseInt(dot.dataset.index || '0', 10) || 0);
     });
 
-    // ─── Свайп пальцем (touch) ───
     let startX = 0, startY = 0, activeWrap = null, moved = false;
 
     document.addEventListener('touchstart', function(e) {
         const wrap = e.target.closest(SELECTOR);
         if (!wrap) return;
-        const photos = wrap.querySelectorAll('.product-card__photo, .product-gallery__photo');
+        const photos = wrap.querySelectorAll('.product-gallery__photo');
         if (photos.length < 2) return;
         startX = e.touches[0].clientX;
         startY = e.touches[0].clientY;
@@ -221,65 +194,18 @@ if ('serviceWorker' in navigator) {
     }, {passive: true});
 
     document.addEventListener('touchend', function(e) {
-        if (!activeWrap || !moved) {
-            activeWrap = null;
-            return;
-        }
+        if (!activeWrap || !moved) { activeWrap = null; return; }
         const dx = e.changedTouches[0].clientX - startX;
         const wrap = activeWrap;
         activeWrap = null;
         moved = false;
 
-        const photos = wrap.querySelectorAll('.product-card__photo, .product-gallery__photo');
+        const photos = wrap.querySelectorAll('.product-gallery__photo');
         if (photos.length < 2) return;
 
         let idx = Array.from(photos).findIndex(p => p.classList.contains('active'));
         if (idx < 0) idx = 0;
         idx += (dx < 0 ? 1 : -1);
-
-        // Глушим клик по <a>, чтобы не ушли на страницу товара
-        e.preventDefault();
-        showPhoto(wrap, idx);
-    });
-
-    // ─── Свайп мышью (для десктопа) ───
-    let mStartX = 0, mStartY = 0, mWrap = null, mMoved = false;
-
-    document.addEventListener('mousedown', function(e) {
-        const wrap = e.target.closest(SELECTOR);
-        if (!wrap) return;
-        const photos = wrap.querySelectorAll('.product-card__photo, .product-gallery__photo');
-        if (photos.length < 2) return;
-        mStartX = e.clientX;
-        mStartY = e.clientY;
-        mWrap = wrap;
-        mMoved = false;
-    });
-
-    document.addEventListener('mousemove', function(e) {
-        if (!mWrap) return;
-        const dx = Math.abs(e.clientX - mStartX);
-        const dy = Math.abs(e.clientY - mStartY);
-        if (dx > 10 && dx > dy) mMoved = true;
-    });
-
-    document.addEventListener('mouseup', function(e) {
-        if (!mWrap || !mMoved) {
-            mWrap = null;
-            return;
-        }
-        const dx = e.clientX - mStartX;
-        const wrap = mWrap;
-        mWrap = null;
-        mMoved = false;
-
-        const photos = wrap.querySelectorAll('.product-card__photo, .product-gallery__photo');
-        if (photos.length < 2) return;
-
-        let idx = Array.from(photos).findIndex(p => p.classList.contains('active'));
-        if (idx < 0) idx = 0;
-        idx += (dx < 0 ? 1 : -1);
-
         e.preventDefault();
         showPhoto(wrap, idx);
     });

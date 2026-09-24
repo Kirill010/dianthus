@@ -1510,3 +1510,37 @@ a.contacts-item__value:hover { color: var(--primary); }
         height: 280px;
     }
 }
+/* =========================================================
+   ФИНАЛЬНЫЕ УЛУЧШЕНИЯ ПОД ANNEELORA
+   ========================================================= */
+
+/* Мобильная сетка: чуть более компактные карточки */
+@media (max-width: 400px) {
+    .product-grid { gap: 8px; }
+    .product-card-v2__body { padding: 10px; }
+    .product-card-v2__name { font-size: .85rem; min-height: 2.4em; }
+    .product-card-v2__price { font-size: 1.05rem; }
+    .spec-line { font-size: .78rem; }
+}
+
+/* Плавная анимация «+» при добавлении в корзину */
+.product-card-v2__plus {
+    transform-origin: center;
+}
+
+/* Карточка при наведении на «+» — лёгкий зум всей карточки */
+.product-card-v2:hover {
+    box-shadow: 0 8px 24px rgba(74, 103, 65, .12);
+}
+
+/* Убираем подчёркивание у ссылки на название товара */
+.product-card-v2__name,
+.product-card-v2__name:hover {
+    text-decoration: none;
+}
+
+/* Иконка «+» в углу: подсветка при hover */
+.product-card-v2__plus:hover i {
+    transform: rotate(90deg);
+    transition: transform .25s ease;
+}
