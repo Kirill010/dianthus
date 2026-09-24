@@ -1,4 +1,5 @@
 # Модели БД.
+import json
 from datetime import datetime, timezone
 
 from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey,
@@ -33,6 +34,16 @@ QUANTITY_LEVELS = [
 QUANTITY_BIG_MIN = 200
 QUANTITY_MEDIUM_MIN = 50
 QUANTITY_SMALL_MIN = 1
+
+
+def _is_valid_photo_url(value) -> bool:
+    """Возвращает True, если это похоже на URL картинки."""
+    if not value or not isinstance(value, str):
+        return False
+    s = value.strip()
+    if not s:
+        return False
+    return s.startswith(("http://", "https://", "/static/"))
 
 
 class User(Base):
@@ -77,23 +88,33 @@ class Product(Base):
     def all_photos(self) -> list:
         """
         Возвращает только ВАЛИДНЫЕ URL-ы фото.
-        Отбрасывает ID (числа от 1С), пустые строки, мусор.
+        Отбрасывает:
+          - числа (ID из 1С),
+          - пустые строки,
+          - javascript:/data:/vbscript: схемы,
+          - всё, что не начинается с http://, https://, /static/
         """
         result = []
 
-        def _valid(s: str) -> bool:
-            if not s:
-                return False
-            return s.startswith(("http://", "https://", "/static/"))
+        # 1. Пробуем распарсить self.photos (список или JSON-строка)
+        raw = self.photos
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except (ValueError, TypeError):
+                raw = []
 
-        if self.photos and isinstance(self.photos, list):
-            for p in self.photos:
+        if isinstance(raw, list):
+            for p in raw:
                 s = str(p).strip()
-                if _valid(s):
+                if _is_valid_photo_url(s):
                     result.append(s)
 
-        if not result and _valid(self.image_url or ""):
-            result = [self.image_url]
+        # 2. Если ничего не нашли — пробуем image_url
+        if not result:
+            main = (self.image_url or "").strip()
+            if _is_valid_photo_url(main):
+                result = [main]
 
         return result
 
@@ -203,17 +224,14 @@ class Notification(Base):
     user = relationship("User", back_populates="notifications")
     order = relationship("Order")
 
+
 class Preorder(Base):
     __tablename__ = "preorders"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    # Привязка к ТОВАРУ, а не к конкретной поставке — 
-    # чтобы находить предзаказ при разгрузке новой машины
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
-    # Ссылка на конкретную позицию поставки (может быть NULL, если позиция удалена)
     supply_item_id = Column(Integer, ForeignKey("supply_items.id"), nullable=True)
-    quantity = Column(Integer, nullable=False)  # в упаковках
-    # Флаг "выполнен" — чтобы не вычитать дважды при повторной разгрузке
+    quantity = Column(Integer, nullable=False)
     is_fulfilled = Column(Boolean, default=False, nullable=False, index=True)
     created_at = Column(DateTime, default=_utcnow)
     user = relationship("User")
