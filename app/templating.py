@@ -23,7 +23,10 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 def _pick_cache_dir() -> str:
-    """Выбирает первый рабочий каталог для кэша Jinja."""
+    """
+    Выбирает первый рабочий каталог для кэша Jinja.
+    Гарантирует, что директория существует и доступна для записи.
+    """
     candidates = [
         os.getenv("JINJA_CACHE_DIR", "").strip(),
         "/var/cache/dianthus/jinja",
@@ -34,10 +37,13 @@ def _pick_cache_dir() -> str:
         if not d:
             continue
         try:
+            # Создаём директорию, если её нет
             os.makedirs(d, exist_ok=True)
+            # Проверяем, что можем писать
             probe = Path(d) / ".wtest"
             probe.write_text("ok", encoding="utf-8")
             probe.unlink()
+            logger.info("Кэш Jinja будет сохранён в: %s", d)
             return d
         except Exception as e:
             logger.debug("Кэш Jinja: %s недоступен (%s)", d, e)
@@ -46,13 +52,20 @@ def _pick_cache_dir() -> str:
     return str(TEMPLATES_DIR / ".cache")
 
 
+# Создаём директорию для кэша
 JINJA_CACHE_DIR = _pick_cache_dir()
-logger.info("Jinja bytecode cache: %s", JINJA_CACHE_DIR)
 
-templates.env.bytecode_cache = FileSystemBytecodeCache(
-    directory=JINJA_CACHE_DIR,
-    pattern="__jinja2_%s.cache",
-)
+# Пытаемся инициализировать кэш, но не падаем, если не получилось
+try:
+    templates.env.bytecode_cache = FileSystemBytecodeCache(
+        directory=JINJA_CACHE_DIR,
+        pattern="__jinja2_%s.cache",
+    )
+    logger.info("Jinja bytecode cache инициализирован: %s", JINJA_CACHE_DIR)
+except Exception as e:
+    logger.warning("Не удалось инициализировать bytecode cache Jinja: %s", e)
+    templates.env.bytecode_cache = None
+
 templates.env.cache_size = -1
 # В проде — False; но проверим, что шаблоны читаются
 templates.env.auto_reload = (config.ENV != "prod")
