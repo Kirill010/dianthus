@@ -1,6 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
-<a href="/catalog" class="back-link"><i class="fas fa-arrow-left"></i>Назад</a>
+
+<!-- Кнопка выхода назад в каталог -->
+<a href="/catalog" class="btn btn-outline-secondary btn-sm mb-3">
+    <i class="fas fa-arrow-left me-1"></i> Вернуться в каталог
+</a>
 
 {% set pack = product.package_size or 1 %}
 {% set stems = item.stock * pack %}
@@ -8,148 +12,146 @@
 {% set min_stems = pack * min_packs %}
 {% set is_out = stems < 1 %}
 {% set max_stems_valid = (stems // pack) * pack %}
-{% set photos = product.all_photos %}
+
+{% set photos = product.photos or [] %}
+{% if not photos and product.image_url %}
+    {% set photos = [product.image_url] %}
+{% endif %}
 
 <div class="product-detail">
     <div class="product-detail__image">
         {% if photos %}
-            <div class="product-gallery" id="pdGallery"
-                 style="position:absolute;inset:0;">
+            <div class="product-gallery" id="pdGallery" style="position:relative; width:100%; padding-top:100%; overflow:hidden; border-radius: 8px; background: #f8f9fa;">
                 {% for url in photos %}
                     <img src="{{ url }}" alt="{{ product.name }}"
                         class="product-gallery__photo {% if loop.first %}active{% endif %}"
                         data-index="{{ loop.index0 }}"
-                        style="position:absolute;inset:0;width:100%;height:100%;
-                                object-fit:cover;opacity:0;
-                                transition:opacity .2s;cursor:zoom-in;">
+                        style="position:absolute; inset:0; width:100%; height:100%; object-fit:contain; opacity:0; transition:opacity .2s; cursor:zoom-in;">
                 {% endfor %}
             </div>
+            
             {% if photos|length > 1 %}
-                <div class="product-card__dots">
+                <div class="product-card__dots mt-2 d-flex justify-content-center gap-2">
                     {% for url in photos %}
-                        <span class="product-card__dot {% if loop.first %}active{% endif %}"
-                              data-index="{{ loop.index0 }}"></span>
+                        <span class="product-card__dot {% if loop.first %}active{% endif %}" 
+                              data-index="{{ loop.index0 }}" 
+                              style="width: 10px; height: 10px; border-radius: 50%; background: #ccc; cursor: pointer; display: inline-block;"></span>
                     {% endfor %}
                 </div>
             {% endif %}
-            <button type="button" class="product-card__zoom"
-                    data-photos='{{ photos | tojson }}'
-                    aria-label="Увеличить">
+            
+            <button type="button" class="product-card__zoom" 
+                    data-photos='{{ photos | tojson }}' 
+                    aria-label="Увеличить"
+                    style="position: absolute; top: 10px; right: 10px; z-index: 10;">
                 <i class="fas fa-expand"></i>
             </button>
         {% else %}
-            <div class="product-card__placeholder">
-                <i class="fas fa-seedling"></i>
+            <div class="product-card__placeholder" style="padding-top:100%; display:flex; align-items:center; justify-content:center; background:#f8f9fa; border-radius:8px;">
+                <i class="fas fa-seedling fa-3x text-muted"></i>
             </div>
         {% endif %}
     </div>
 
-    {% if photos|length > 1 %}
-    <div class="product-thumbs">
-        {% for url in photos %}
-            <img src="{{ url }}" alt=""
-                 class="product-thumb {% if loop.first %}active{% endif %}"
-                 data-index="{{ loop.index0 }}">
-        {% endfor %}
-    </div>
-    {% endif %}
+    <div class="product-detail__info mt-4">
+        <h1 class="product-detail__name mb-3">{{ product.name }}</h1>
 
-    <h1 class="product-detail__name">{{ product.name }}</h1>
+        <div class="product-detail__specs mb-3">
+            {% if product.country %}
+            <div class="spec-row d-flex justify-content-between py-2 border-bottom">
+                <span class="spec-label text-muted">Страна:</span>
+                <span class="spec-value fw-medium">{{ product.country }}</span>
+            </div>
+            {% endif %}
+            {% if product.length_cm %}
+            <div class="spec-row d-flex justify-content-between py-2 border-bottom">
+                <span class="spec-label text-muted">Размер:</span>
+                <span class="spec-value fw-medium">{{ product.length_cm }} см</span>
+            </div>
+            {% endif %}
+            <div class="spec-row d-flex justify-content-between py-2 border-bottom">
+                <span class="spec-label text-muted">В упаковке:</span>
+                <span class="spec-value fw-medium">{{ pack }} шт</span>
+            </div>
+            <div class="spec-row d-flex justify-content-between py-2 border-bottom">
+                <span class="spec-label text-muted">Доступно:</span>
+                <span class="spec-value fw-medium {% if is_out %}text-danger{% else %}text-success{% endif %}">
+                    {{ item.stock }} упак. ({{ stems }} шт)
+                </span>
+            </div>
+        </div>
 
-    <div class="product-detail__specs">
-        {% if product.country %}
-        <div class="spec-row">
-            <span class="spec-label">Страна:</span>
-            <span class="spec-value">{{ product.country }}</span>
+        {% if item.supply and item.supply.is_active %}
+        <div class="alert alert-info d-flex align-items-center mb-3">
+            <i class="fas fa-truck-fast me-2 fa-lg"></i>
+            <div>
+                В пути из <strong>{{ item.supply.country }}</strong>
+                {% if item.supply.arrival_date %}
+                    · прибытие <strong>{{ item.supply.arrival_date.strftime('%d.%m.%Y') }}</strong>
+                {% endif %}
+            </div>
         </div>
         {% endif %}
-        {% if product.length_cm %}
-        <div class="spec-row">
-            <span class="spec-label">Размер:</span>
-            <span class="spec-value">{{ product.length_cm }}см</span>
+
+        <div class="product-detail__price display-6 fw-bold mb-1">
+            {{ "%.2f"|format(item.price) }} ₽ <small class="fs-6 text-muted fw-normal">/шт</small>
         </div>
+        <div class="text-muted mb-4 fs-5">
+            {{ "%.0f"|format(item.price * pack) }} ₽ за упаковку ({{ pack }} шт)
+        </div>
+
+        {% if product.description %}
+            <div class="mb-4">
+                <h5 class="h6 text-muted mb-2">Описание</h5>
+                <p class="product-detail__desc">{{ product.description }}</p>
+            </div>
         {% endif %}
-        <div class="spec-row">
-            <span class="spec-label">В упаковке:</span>
-            <span class="spec-value">{{ pack }} шт</span>
-        </div>
-        <div class="spec-row">
-            <span class="spec-label">Доступно:</span>
-            <span class="spec-value spec-value--stock">
-                {{ item.stock }} упак. ({{ stems }} шт)
-            </span>
-        </div>
-    </div>
 
-    {% if item.supply and item.supply.is_active %}
-    <div class="supply-hint mb-3">
-        <i class="fas fa-truck-fast me-2"></i>
-        В пути из <strong>{{ item.supply.country }}</strong>
-        {% if item.supply.arrival_date %}
-            · прибытие <strong>{{ item.supply.arrival_date.strftime('%d.%m.%Y') }}</strong>
-        {% endif %}
-    </div>
-    {% endif %}
-
-    <div class="product-detail__price">
-        {{ "%.2f"|format(item.price) }} ₽<small style="font-size:.5em;">/шт</small>
-    </div>
-    <div class="text-muted mb-2">
-        {{ "%.0f"|format(item.price * pack) }} ₽ за упаковку ({{ pack }} шт)
-    </div>
-
-    {% if product.description %}
-        <p class="product-detail__desc">{{ product.description }}</p>
-    {% endif %}
-
-    {% if not is_out %}
-    <form action="/add_to_cart" method="post" class="product-detail__form">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <input type="hidden" name="supply_item_id" value="{{ item.id }}">
-        <div class="qty-control qty-control--lg">
-            <button type="button" onclick="this.nextElementSibling.stepDown()">−</button>
-            <input type="number"
-                   name="quantity_stems"
-                   value="{{ min_stems }}"
-                   min="{{ min_stems }}"
-                   max="{{ max_stems_valid }}"
-                   step="{{ pack }}"
-                   required>
-            <button type="button" onclick="this.previousElementSibling.stepUp()">+</button>
-        </div>
-        <button type="submit" class="btn btn-primary btn-lg w-100">
-            <i class="fas fa-cart-plus me-2"></i>В корзину
+        {% if not is_out %}
+        <form action="/add_to_cart" method="post" class="product-detail__form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="supply_item_id" value="{{ item.id }}">
+            
+            <div class="mb-3">
+                <label class="form-label fw-medium">Количество (шт):</label>
+                <div class="qty-control qty-control--lg d-flex align-items-center" style="max-width: 200px;">
+                    <button type="button" class="btn btn-outline-secondary" onclick="this.nextElementSibling.stepDown()">−</button>
+                    <input type="number" name="quantity_stems" class="form-control text-center mx-2"
+                           value="{{ min_stems }}" min="{{ min_stems }}" max="{{ max_stems_valid }}" step="{{ pack }}" required>
+                    <button type="button" class="btn btn-outline-secondary" onclick="this.previousElementSibling.stepUp()">+</button>
+                </div>
+            </div>
+            
+            <button type="submit" class="btn btn-primary btn-lg w-100">
+                <i class="fas fa-cart-plus me-2"></i>В корзину
+            </button>
+        </form>
+        <p class="qty-hint text-muted small mt-2">
+            В корзину добавляется кратно упаковке: минимум <strong>{{ min_stems }} шт</strong> ({{ min_packs }} упак.)
+        </p>
+        {% else %}
+        <button class="btn btn-secondary btn-lg w-100" disabled>
+            <i class="fas fa-ban me-2"></i>Нет в наличии
         </button>
-    </form>
-    <p class="qty-hint">
-        В корзину добавляется <strong>{{ min_stems }} шт</strong>
-        ({{ min_packs }} упак. × {{ pack }} шт)
-        = <strong>{{ "%.0f"|format(item.price * min_stems) }} ₽</strong>
-    </p>
-    {% else %}
-    <button class="btn btn-secondary btn-lg w-100 mt-3" disabled>
-        <i class="fas fa-ban me-2"></i>Нет в наличии
-    </button>
-    {% endif %}
+        {% endif %}
+    </div>
 </div>
 
 <script>
-/* Переключение фото в галерее + лайтбокс */
+/* Переключение фото в галерее детальной страницы */
 (function() {
     const gallery = document.querySelectorAll('.product-gallery__photo');
     const dots = document.querySelectorAll('.product-card__dot');
-    const thumbs = document.querySelectorAll('.product-thumb');
     if (!gallery.length) return;
 
     function show(idx) {
         gallery.forEach((img, i) => img.classList.toggle('active', i === idx));
-        dots.forEach((d, i) => d.classList.toggle('active', i === idx));
-        thumbs.forEach((t, i) => t.classList.toggle('active', i === idx));
+        dots.forEach((d, i) => {
+            d.classList.toggle('active', i === idx);
+            d.style.background = (i === idx) ? '#4a6741' : '#ccc';
+        });
     }
 
-    thumbs.forEach(t => t.addEventListener('click', () => {
-        show(parseInt(t.dataset.index, 10) || 0);
-    }));
     dots.forEach(d => d.addEventListener('click', () => {
         show(parseInt(d.dataset.index, 10) || 0);
     }));

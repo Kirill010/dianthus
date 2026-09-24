@@ -1,6 +1,5 @@
 // Service Worker для Диантуса — офлайн-кэш статики
-
-const CACHE_NAME = 'dianthus-v1';
+const CACHE_NAME = 'dianthus-v4'; // 🔥 УВЕЛИЧЕНА ВЕРСИЯ для сброса старого кэша у клиентов
 const STATIC_ASSETS = [
   '/static/style.css',
   '/static/logo-icon.png',

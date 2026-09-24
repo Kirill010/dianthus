@@ -128,7 +128,6 @@
                 || document.querySelector('input[name="csrf_token"]')?.value
                 || '';
     if (!token) return;
-    // Проставляем всем multipart-формам заголовок через fetch-перехват
     const origFetch = window.fetch;
     window.fetch = function(input, init) {
         init = init || {};
@@ -139,8 +138,6 @@
         init.headers = headers;
         return origFetch.call(this, input, init);
     };
-    // Для обычных <form enctype="multipart/form-data"> —
-    // добавляем скрытое поле, если его нет
     document.querySelectorAll('form[enctype="multipart/form-data"]').forEach(f => {
         if (!f.querySelector('input[name="csrf_token"]')) {
             const i = document.createElement('input');
@@ -163,6 +160,7 @@ if ('serviceWorker' in navigator) {
 (function() {
     'use strict';
 
+    // Создаём лайтбокс
     const lb = document.createElement('div');
     lb.className = 'lightbox';
     lb.innerHTML = `
@@ -229,7 +227,7 @@ if ('serviceWorker' in navigator) {
 
     // Делегирование клика
     document.addEventListener('click', function(e) {
-        // 1) Кнопка «лупа» — ОТКРЫВАЕТ лайтбокс
+        // 1) Кнопка «лупа» — открывает лайтбокс
         const zoomBtn = e.target.closest('.product-card__zoom');
         if (zoomBtn) {
             e.preventDefault();

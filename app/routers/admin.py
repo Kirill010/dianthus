@@ -1,6 +1,7 @@
 # Админка: заказы, клиенты, справочник, поставки, разгрузка, Excel.
 import logging
 from datetime import datetime, timedelta
+from typing import List
 
 from fastapi import (APIRouter, Depends, File, Form, HTTPException,
                      Request, UploadFile)
@@ -86,7 +87,6 @@ async def dashboard(
         conditions = []
         if q.isdigit():
             conditions.append(Order.id == int(q))
-        # Поиск по данным клиента (включая гостевые заказы)
         conditions.append(User.company_name.ilike(f"%{q}%"))
         conditions.append(User.email.ilike(f"%{q}%"))
         conditions.append(User.full_name.ilike(f"%{q}%"))
@@ -177,7 +177,6 @@ async def order_detail(
     db: Session = Depends(get_db),
     admin=Depends(require_admin),
 ):
-    # Полная информация о заказе для админа.
     order = (
         db.query(Order)
         .options(selectinload(Order.user), selectinload(Order.items))
@@ -281,7 +280,7 @@ async def user_reject(user_id: int, request: Request,
         request.session["flash"] = "❌ Сначала снимите права администратора"
         return RedirectResponse(url="/admin", status_code=303)
 
-    # 1. Отвязываем позиции заказов (чтобы удалить товары можно было позже)
+    # 1. Отвязываем позиции заказов
     order_ids = [
         row[0] for row in
         db.query(Order.id).filter(Order.user_id == user.id).all()
@@ -310,7 +309,6 @@ async def user_set_discount(user_id: int, request: Request,
                             db: Session = Depends(get_db),
                             current_admin=Depends(require_admin),
                             _csrf: None = Depends(check_csrf)):
-    # Установить персональную скидку клиента (0..100 %).
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         request.session["flash"] = "Пользователь не найден"
@@ -527,8 +525,7 @@ async def product_new(
     unit: str = Form("упаковка"), package_size: int = Form(25),
     min_quantity: int = Form(1), category: str = Form("Прочее"),
     image_url: str = Form(""),
-    image_file: UploadFile | None = File(None),
-    image_files: list[UploadFile] = File(default=[]),
+    image_files: List[UploadFile] = File(None),
     db: Session = Depends(get_db),
     _a=Depends(require_admin),
     _csrf: None = Depends(check_csrf),
@@ -538,12 +535,10 @@ async def product_new(
         _err(request, errors)
         return RedirectResponse(url="/admin/products/new", status_code=303)
 
-    # Собираем фото: сначала мультизагрузка, потом одиночное, потом URL
+    # Собираем фото: сначала мультизагрузка, потом URL
     photos: list[str] = []
-    photos.extend(save_uploads(image_files))
-    single = save_upload(image_file)
-    if single:
-        photos.append(single)
+    if image_files:
+        photos.extend(save_uploads(image_files))
     if image_url.strip():
         photos.append(image_url.strip())
 
@@ -581,9 +576,8 @@ async def product_edit(
     unit: str = Form("упаковка"), package_size: int = Form(25),
     min_quantity: int = Form(1), category: str = Form("Прочее"),
     image_url: str = Form(""),
-    image_file: UploadFile | None = File(None),
-    image_files: list[UploadFile] = File(default=[]),
-    remove_photos: list[str] = Form(default=[]),
+    image_files: List[UploadFile] = File(None),
+    remove_photos: List[str] = Form(default=[]),
     db: Session = Depends(get_db),
     _a=Depends(require_admin),
     _csrf: None = Depends(check_csrf),
@@ -621,10 +615,8 @@ async def product_edit(
                     delete_upload(url)
 
     # Добавляем новые
-    current.extend(save_uploads(image_files))
-    single = save_upload(image_file)
-    if single:
-        current.append(single)
+    if image_files:
+        current.extend(save_uploads(image_files))
     if image_url.strip():
         current.append(image_url.strip())
 
@@ -908,7 +900,7 @@ async def supply_import_invoice(
         return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit",
                                 status_code=303)
 
-    msg = (f"📄 Импорт накладной: +{new_items} позиций, "
+    msg = (f" Импорт накладной: +{new_items} позиций, "
            f"~{updated_items} обновлено. "
            f"Создано товаров: {created_products}. "
            f"Штуки пересчитаны в упаковки.")

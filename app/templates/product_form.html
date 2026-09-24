@@ -1,202 +1,112 @@
 {% extends "base.html" %}
-{% set hide_bottom_nav = true %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2 class="mb-0">
-        {% if product %}<i class="fas fa-edit me-2"></i>Редактировать
-        {% else %}<i class="fas fa-plus me-2"></i>Новый товар{% endif %}
-    </h2>
-    <a href="/admin" class="btn btn-outline-secondary btn-sm">
-        <i class="fas fa-arrow-left me-1"></i>Назад
-    </a>
-</div>
-<form method="post" enctype="multipart/form-data"
-      action="{% if product %}/admin/products/{{ product.id }}/edit{% else %}/admin/products/new{% endif %}">
+<a href="/admin" class="back-link"><i class="fas fa-arrow-left"></i> Назад в админку</a>
+
+<h2 class="mb-4">{{ 'Редактирование' if product else 'Новый товар' }}</h2>
+
+<form method="post" enctype="multipart/form-data" class="needs-validation" novalidate>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <div class="card p-4">
-        <div class="row g-3">
-            <div class="col-md-8">
-                <div class="mb-3">
-                    <label class="form-label fw-bold">Название *</label>
-                    <input type="text" name="name" class="form-control"
-                           maxlength="200"
-                           value="{{ product.name if product else '' }}" required>
-                </div>
-                <div class="row g-3 mb-3">
-                    <div class="col-md-4">
-                        <label class="form-label fw-bold">Категория</label>
-                        <select name="category" class="form-select">
-                            {% for c in categories %}
-                                <option value="{{ c }}"
-                                    {% if product and product.category == c %}selected{% endif %}>
-                                    {{ c }}
-                                </option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label fw-bold">Страна</label>
-                        <input type="text" name="country" class="form-control"
-                               maxlength="100"
-                               value="{{ product.country if product else '' }}">
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label fw-bold">Длина, см</label>
-                        <input type="number" name="length_cm" class="form-control"
-                               min="0" max="500"
-                               value="{{ product.length_cm if product else 0 }}">
-                    </div>
-                </div>
-                <div class="row g-3 mb-3">
-                    <div class="col-md-4">
-                        <label class="form-label fw-bold">Единица</label>
-                        {% set u = product.unit if product else "упаковка" %}
-                        <select name="unit" class="form-select">
-                            <option value="упаковка" {% if u == "упаковка" %}selected{% endif %}>упаковка</option>
-                            <option value="коробка" {% if u == "коробка" %}selected{% endif %}>коробка</option>
-                            <option value="ветка" {% if u == "ветка" %}selected{% endif %}>ветка</option>
-                            <option value="пучок" {% if u == "пучок" %}selected{% endif %}>пучок</option>
-                            <option value="шт" {% if u == "шт" %}selected{% endif %}>шт</option>
-                        </select>
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label fw-bold">В упаковке, шт</label>
-                        <input type="number" name="package_size" id="packageSize"
-                               class="form-control" min="1" max="10000"
-                               value="{{ product.package_size if product else 25 }}"
-                               oninput="updateMinHint()" required>
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label fw-bold">Мин. заказ, упак.</label>
-                        <input type="number" name="min_quantity" id="minQty"
-                               class="form-control" min="1" max="10000"
-                               value="{{ product.min_quantity if product else 1 }}"
-                               oninput="updateMinHint()" required>
-                    </div>
-                </div>
 
-                <div class="alert alert-info py-2 px-3 small mb-3" id="minHint">
-                    <i class="fas fa-info-circle me-1"></i>
-                    <span id="minHintText">Минимум к заказу: 25 шт</span>
-                </div>
+    <div class="row g-3">
+        <div class="col-md-8">
+            <div class="mb-3">
+                <label class="form-label">Название товара *</label>
+                <input type="text" name="name" class="form-control" 
+                       value="{{ product.name if product else '' }}" required maxlength="200">
+            </div>
 
-                <div class="mb-3">
-                    <label class="form-label fw-bold">Описание</label>
-                    <textarea name="description" class="form-control"
-                              rows="3">{{ product.description if product else '' }}</textarea>
+            <div class="mb-3">
+                <label class="form-label">Описание</label>
+                <textarea name="description" class="form-control" rows="3">{{ product.description if product else '' }}</textarea>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Страна</label>
+                    <input type="text" name="country" class="form-control" 
+                           value="{{ product.country if product else '' }}" maxlength="100">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Длина (см)</label>
+                    <input type="number" name="length_cm" class="form-control" 
+                           value="{{ product.length_cm if product else 0 }}" min="0" max="500">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Категория</label>
+                    <select name="category" class="form-select">
+                        {% for cat in categories %}
+                            <option value="{{ cat }}" {% if product and product.category == cat %}selected{% endif %}>{{ cat }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
             </div>
 
-            <div class="col-md-4">
-                <label class="form-label fw-bold">Фотографии</label>
-
-                {% if product and product.all_photos %}
-                <div class="mb-2">
-                    <div class="text-muted small mb-2">
-                        Текущие ({{ product.all_photos|length }}). Отметь — что удалить:
-                    </div>
-                    <div class="photo-grid">
-                        {% for url in product.all_photos %}
-                        <label class="photo-item">
-                            <img src="{{ url }}" alt="">
-                            <input type="checkbox"
-                                   name="remove_photos"
-                                   value="{{ url }}"
-                                   class="photo-item__check">
-                            <span class="photo-item__x">
-                                <i class="fas fa-times"></i>
-                            </span>
-                        </label>
-                        {% endfor %}
-                    </div>
+            <div class="row g-3 mt-1">
+                <div class="col-md-4">
+                    <label class="form-label">Единица измерения</label>
+                    <select name="unit" class="form-select">
+                        <option value="упаковка" {% if product and product.unit == 'упаковка' %}selected{% endif %}>упаковка</option>
+                        <option value="шт" {% if product and product.unit == 'шт' %}selected{% endif %}>шт</option>
+                        <option value="коробка" {% if product and product.unit == 'коробка' %}selected{% endif %}>коробка</option>
+                    </select>
                 </div>
+                <div class="col-md-4">
+                    <label class="form-label">Штук в упаковке *</label>
+                    <input type="number" name="package_size" class="form-control" 
+                           value="{{ product.package_size if product else 25 }}" min="1" required>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Мин. заказ (упаковок) *</label>
+                    <input type="number" name="min_quantity" class="form-control" 
+                           value="{{ product.min_quantity if product else 1 }}" min="1" required>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card p-3">
+                <h5 class="card-title mb-3">Изображения</h5>
+                
+                <!-- Существующие фото -->
+                {% set current_photos = product.photos if product and product.photos else [] %}
+                {% if not current_photos and product and product.image_url %}
+                    {% set current_photos = [product.image_url] %}
                 {% endif %}
 
-                <div class="mb-3">
-                    <label class="form-label small">
-                        Добавить новые (можно несколько сразу)
-                    </label>
-                    <input type="file" name="image_files"
-                           class="form-control" accept="image/*" multiple>
-                    <div class="form-text">
-                        JPG / PNG / WebP · до 5 МБ каждое · 1000×1000 идеально
+                {% if current_photos %}
+                    <div class="mb-3">
+                        <label class="form-label small text-muted">Текущие фото (отметьте для удаления):</label>
+                        {% for url in current_photos %}
+                            <div class="d-flex align-items-center mb-2 p-2 border rounded">
+                                <input type="checkbox" name="remove_photos" value="{{ url }}" class="form-check-input me-2" id="rem_{{ loop.index }}">
+                                <label for="rem_{{ loop.index }}" class="flex-grow-1 mb-0 text-truncate" style="max-width: 150px;">{{ url }}</label>
+                                <img src="{{ url }}" class="rounded" style="width: 40px; height: 40px; object-fit: cover;">
+                            </div>
+                        {% endfor %}
                     </div>
-                </div>
+                {% endif %}
+
+                <!-- Загрузка новых фото -->
                 <div class="mb-3">
-                    <label class="form-label small">Или вставить URL</label>
-                    <input type="text" name="image_url" class="form-control"
-                           maxlength="500" placeholder="https://...">
+                    <label class="form-label small">Добавить новые фото (можно несколько сразу)</label>
+                    <input type="file" name="image_files" class="form-control" accept="image/*" multiple>
+                    <div class="form-text">JPG / PNG / WebP · до 5 МБ каждое</div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label small">Или вставить URL картинки</label>
+                    <input type="text" name="image_url" class="form-control" maxlength="500" 
+                           value="{{ product.image_url if product and not product.image_url.startswith('/static/uploads/') else '' }}" placeholder="https://...">
                 </div>
             </div>
         </div>
-        <hr>
-        <div class="d-flex justify-content-between">
-            <a href="/admin" class="btn btn-secondary">Отмена</a>
-            <button type="submit" class="btn btn-primary">
-                <i class="fas fa-save me-1"></i>Сохранить
-            </button>
-        </div>
+    </div>
+
+    <div class="mt-4 d-flex gap-2">
+        <button type="submit" class="btn btn-primary">
+            <i class="fas fa-save me-2"></i>Сохранить товар
+        </button>
+        <a href="/admin" class="btn btn-secondary">Отмена</a>
     </div>
 </form>
-
-<script>
-function updateMinHint() {
-    const pack = parseInt(document.getElementById('packageSize').value) || 1;
-    const minQty = parseInt(document.getElementById('minQty').value) || 1;
-    const total = pack * minQty;
-    const el = document.getElementById('minHintText');
-    if (el) el.textContent =
-        `Минимум к заказу: ${total} шт (${minQty} упак. × ${pack} шт)`;
-}
-document.addEventListener('DOMContentLoaded', updateMinHint);
-</script>
-
-<style>
-.photo-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    margin-bottom: 12px;
-}
-.photo-item {
-    position: relative;
-    aspect-ratio: 1;
-    border-radius: 10px;
-    overflow: hidden;
-    cursor: pointer;
-    border: 2px solid transparent;
-    transition: border-color .15s;
-}
-.photo-item img {
-    width: 100%; height: 100%; object-fit: cover; display: block;
-}
-.photo-item__check {
-    position: absolute;
-    top: 6px; left: 6px;
-    width: 20px; height: 20px;
-    z-index: 2;
-    cursor: pointer;
-    accent-color: var(--rose, #c88a92);
-}
-.photo-item__x {
-    position: absolute;
-    top: 6px; right: 6px;
-    width: 20px; height: 20px;
-    border-radius: 50%;
-    background: rgba(0,0,0,.55);
-    color: #fff;
-    display: flex; align-items: center; justify-content: center;
-    font-size: .7rem;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity .15s;
-}
-.photo-item:has(.photo-item__check:checked) {
-    border-color: var(--rose, #c88a92);
-    opacity: .5;
-}
-.photo-item:has(.photo-item__check:checked) .photo-item__x {
-    opacity: 1;
-}
-</style>
 {% endblock %}

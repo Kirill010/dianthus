@@ -133,131 +133,85 @@
     {% endif %}
 </form>
 
-{% if items %}
-<div class="product-grid">
-    {% for item in items %}
-    {% set pack = item.product.package_size or 1 %}
-    {% set stems = item.stock * pack %}
-    {% set min_packs = item.product.min_quantity or 1 %}
-    {% set min_stems = pack * min_packs %}
-    {% set is_out = stems < 1 %}
-    {% set max_stems_valid = (stems // pack) * pack %}
-    {% set photos = item.product.all_photos %}
+{% extends "base.html" %}
+{% block content %}
 
-    <div class="product-card {% if is_out %}product-card--out{% endif %}">
-        <div class="product-card__image-wrap">
-            {% if photos %}
-                <a href="/product/{{ item.id }}" class="product-card__gallery-link">
-                    <div class="product-card__gallery">
-                        {% for url in photos %}
-                            <img src="{{ url }}"
-                                alt="{{ item.product.name }}"
-                                class="product-card__photo {% if loop.first %}active{% endif %}"
-                                loading="lazy"
-                                data-index="{{ loop.index0 }}">
-                        {% endfor %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Каталог</h1>
+    <!-- Фильтры или сортировка, если есть -->
+</div>
+
+{% if not items %}
+    <div class="alert alert-info">
+        <i class="fas fa-info-circle me-2"></i>В данный момент товаров в наличии нет. 
+        Следите за обновлениями поставок!
+    </div>
+{% else %}
+    <div class="row g-3 g-md-4">
+        {% for item in items %}
+            {% set product = item.product %}
+            {% set pack = product.package_size or 1 %}
+            {% set stems = item.stock * pack %}
+            {% set is_out = stems < 1 %}
+            
+            <!-- Получаем фото: берём первое из списка photos, либо image_url -->
+            {% set photos = product.photos or [] %}
+            {% if not photos and product.image_url %}
+                {% set photos = [product.image_url] %}
+            {% endif %}
+            {% set main_photo = photos[0] if photos else '' %}
+
+            <div class="col-6 col-md-4 col-lg-3">
+                <!-- ВСЯ карточка теперь является ссылкой -->
+                <a href="/product/{{ item.id }}" class="text-decoration-none text-dark d-block h-100">
+                    <div class="product-card h-100 {% if is_out %}product-card--out{% endif %}">
+                        <div class="product-card__image-wrap">
+                            {% if main_photo %}
+                                <img src="{{ main_photo }}" alt="{{ product.name }}" class="product-card__photo active" loading="lazy">
+                                {% if photos|length > 1 %}
+                                    <div class="product-card__dots">
+                                        {% for p in photos %}
+                                            <span class="product-card__dot {% if loop.first %}active{% endif %}" data-index="{{ loop.index0 }}"></span>
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                                <button type="button" class="product-card__zoom" 
+                                        data-photos='{{ photos | tojson }}' 
+                                        aria-label="Увеличить"
+                                        onclick="event.preventDefault(); event.stopPropagation();">
+                                    <i class="fas fa-expand"></i>
+                                </button>
+                            {% else %}
+                                <div class="product-card__placeholder">
+                                    <i class="fas fa-seedling"></i>
+                                </div>
+                            {% endif %}
+                            
+                            {% if is_out %}
+                                <div class="product-card__badge product-card__badge--out">Нет в наличии</div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="product-card__body">
+                            <h3 class="product-card__name">{{ product.name }}</h3>
+                            <div class="product-card__specs">
+                                {% if product.country %}<span>{{ product.country }}</span>{% endif %}
+                                {% if product.length_cm %}<span>{{ product.length_cm }} см</span>{% endif %}
+                                <span>{{ pack }} шт/уп</span>
+                            </div>
+                            <div class="product-card__price">
+                                {{ "%.2f"|format(item.price) }} ₽<small>/шт</small>
+                            </div>
+                            <div class="product-card__pack-price text-muted small">
+                                {{ "%.0f"|format(item.price * pack) }} ₽ за упаковку
+                            </div>
+                        </div>
                     </div>
                 </a>
-                {% if photos|length > 1 %}
-                    <div class="product-card__dots">
-                        {% for url in photos %}
-                            <span class="product-card__dot {% if loop.first %}active{% endif %}"
-                                data-index="{{ loop.index0 }}"></span>
-                        {% endfor %}
-                    </div>
-                {% endif %}
-                <button type="button" class="product-card__zoom"
-                        data-photos='{{ photos | tojson }}'
-                        aria-label="Увеличить">
-                    <i class="fas fa-expand"></i>
-                </button>
-            {% else %}
-                <div class="product-card__placeholder">
-                    <i class="fas fa-seedling"></i>
-                </div>
-            {% endif %}
-            {% if is_out %}
-                <span class="product-card__badge product-card__badge--out">
-                    Нет
-                </span>
-            {% endif %}
-        </div>
-
-        <div class="product-card__body">
-            {# ── Ссылка на страницу товара ── #}
-            <a href="/product/{{ item.id }}" class="product-card__name">
-                {{ item.product.name }}
-            </a>
-
-            <div class="product-card__specs">
-                {% if item.product.length_cm %}
-                <div class="spec-row">
-                    <span class="spec-label">Размер:</span>
-                    <span class="spec-value">{{ item.product.length_cm }}см</span>
-                </div>
-                {% endif %}
-                <div class="spec-row">
-                    <span class="spec-label">Кол-во в уп:</span>
-                    <span class="spec-value">{{ pack }}шт</span>
-                </div>
-                <div class="spec-row">
-                    <span class="spec-label">Доступно:</span>
-                    <span class="spec-value spec-value--stock"
-                        style="color:#2e7d32;font-weight:700;">
-                        {{ stems }}шт
-                    </span>
-                </div>
             </div>
-
-            <div class="product-card__price-block">
-                <div class="product-card__price">
-                    {{ "%.2f"|format(item.price) }} ₽<span
-                        style="font-size:.7em;font-weight:normal;color:#777;">/шт</span>
-                </div>
-            </div>
-
-            {% if not is_out and stems >= min_stems %}
-            <form action="/add_to_cart" method="post" class="product-card__form">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <input type="hidden" name="supply_item_id" value="{{ item.id }}">
-                <div class="qty-cart-group">
-                    <div class="qty-control">
-                        <button type="button"
-                            onclick="this.nextElementSibling.stepDown()">−</button>
-                        <input type="number" name="quantity_stems"
-                            value="{{ min_stems }}"
-                            min="{{ min_stems }}"
-                            max="{{ max_stems_valid }}"
-                            step="{{ pack }}" required>
-                        <button type="button"
-                            onclick="this.previousElementSibling.stepUp()">+</button>
-                    </div>
-                    <button type="submit" class="btn-cart-icon">
-                        <i class="fas fa-shopping-cart"></i>
-                    </button>
-                </div>
-            </form>
-            {% elif not is_out %}
-                <button class="btn-cart--disabled" disabled>
-                    <i class="fas fa-info-circle"></i> Минимум {{ min_stems }} шт
-                </button>
-            {% else %}
-                <button class="btn-cart--disabled" disabled>
-                    <i class="fas fa-ban"></i> Нет в наличии
-                </button>
-            {% endif %}
-
-            {# ── Кнопка «Подробнее» ── #}
-            <a href="/product/{{ item.id }}"
-            class="btn-cart--disabled"
-            style="display:flex;align-items:center;justify-content:center;
-                    gap:6px;text-decoration:none;margin-top:6px;">
-                <i class="fas fa-info-circle"></i> Подробнее
-            </a>
-        </div>
+        {% endfor %}
     </div>
-    {% endfor %}
-</div>
+{% endif %}
 
 {% if total_pages > 1 %}
 <nav class="pagination-nav">
