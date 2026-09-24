@@ -20,28 +20,22 @@
             <div class="product-gallery">
                 {% for url in photos %}
                     <img src="{{ url }}"
-                        alt="{{ product.name }}"
-                        class="product-gallery__photo {% if loop.first %}active{% endif %}"
-                        data-index="{{ loop.index0 }}">
+                         alt="{{ product.name }}"
+                         class="product-gallery__photo {% if loop.first %}active{% endif %}"
+                         data-index="{{ loop.index0 }}">
                 {% endfor %}
             </div>
             {% if photos|length > 1 %}
                 <div class="product-card__dots mt-2 d-flex justify-content-center gap-2">
                     {% for url in photos %}
                         <span class="product-card__dot {% if loop.first %}active{% endif %}"
-                            data-index="{{ loop.index0 }}"
-                            style="width:10px;height:10px;border-radius:50%;
-                                    background:#ccc;cursor:pointer;display:inline-block;"></span>
+                              data-index="{{ loop.index0 }}"
+                              style="width:10px;height:10px;border-radius:50%;
+                                     background:#ccc;cursor:pointer;display:inline-block;"></span>
                     {% endfor %}
                 </div>
             {% endif %}
         {% else %}
-            <div class="product-card__placeholder"
-                style="padding-top:100%; display:flex; align-items:center;
-                        justify-content:center; background:#f8f9fa; border-radius:8px;">
-                <i class="fas fa-seedling fa-3x text-muted"></i>
-            </div>
-        {% endif %}
             <div class="product-card__placeholder"
                  style="padding-top:100%; display:flex; align-items:center;
                         justify-content:center; background:#f8f9fa; border-radius:8px;">
@@ -106,23 +100,4 @@
         {% endif %}
     </div>
 </div>
-
-<script>
-(function() {
-    const gallery = document.querySelectorAll('.product-gallery__photo');
-    const dots = document.querySelectorAll('.product-card__dot');
-    if (!gallery.length) return;
-
-    function show(idx) {
-        gallery.forEach((img, i) => img.classList.toggle('active', i === idx));
-        dots.forEach((d, i) => {
-            d.classList.toggle('active', i === idx);
-            d.style.background = (i === idx) ? '#4a6741' : '#ccc';
-        });
-    }
-    dots.forEach(d => d.addEventListener('click', () => {
-        show(parseInt(d.dataset.index, 10) || 0);
-    }));
-})();
-</script>
 {% endblock %}

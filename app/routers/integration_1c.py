@@ -1,5 +1,5 @@
 """
-Приём данных из 1С. Basic Auth.
+Приём данных из 1С. Basic Auth (в prod).
 POST /api/1c/products/sync
 """
 import logging
@@ -22,18 +22,46 @@ router = APIRouter(prefix="/api/1c", tags=["1C Integration"])
 _basic = HTTPBasic(auto_error=False)
 
 
+# ═══════════════════════════════════════════════════════════
+# АВТОРИЗАЦИЯ
+# ═══════════════════════════════════════════════════════════
+
 def _verify_basic(
     request: Request,
     creds: HTTPBasicCredentials | None = Depends(_basic),
 ) -> bool:
-    if not config.INTEGRATION_USER or not config.INTEGRATION_PASSWORD:
-        raise HTTPException(503, "Интеграция с 1С не настроена на сервере")
+    """
+    Проверяет Basic Auth.
+
+    Логика:
+      - Если INTEGRATION_PASSWORD НЕ задан:
+          • prod:  503 — интеграция отключена
+          • dev:   пропускаем без авторизации (для тестов),
+                   пишем WARNING в лог
+      - Если задан: требуем корректные логин/пароль.
+    """
+    auth_configured = bool(
+        config.INTEGRATION_USER and config.INTEGRATION_PASSWORD
+    )
+
+    if not auth_configured:
+        if config.ENV == "prod":
+            raise HTTPException(
+                503, "Интеграция с 1С не настроена на сервере"
+            )
+        logger.warning(
+            "1С: авторизация отключена (dev-режим, "
+            "INTEGRATION_PASSWORD не задан)"
+        )
+        return True
+
     if creds is None:
         raise HTTPException(
             status_code=401,
             detail="Требуется авторизация",
             headers={"WWW-Authenticate": 'Basic realm="Dianthus 1C"'},
         )
+
     user_ok = secrets.compare_digest(
         creds.username or "", config.INTEGRATION_USER
     )
@@ -53,10 +81,19 @@ def _verify_basic(
     return True
 
 
+# ═══════════════════════════════════════════════════════════
+# УТИЛИТЫ
+# ═══════════════════════════════════════════════════════════
+
 _BAD_SCHEMES = ("javascript:", "data:", "vbscript:", "file:")
 
 
 def _normalize_photos(raw) -> list:
+    """
+    Приводит поле photo/photos из 1С к списку валидных URL-ов.
+    Принимает: None / строку / список строк.
+    Отбрасывает опасные схемы и всё, что не начинается с http(s):// или /static/.
+    """
     if raw is None:
         return []
     if isinstance(raw, str):
@@ -101,6 +138,21 @@ def _ensure_1c_supply(db: Session) -> Supply:
     return supply
 
 
+def _extract_photos_from_item(item: dict) -> list:
+    """Достаёт фото из item — поддерживает photo, photos, image_url."""
+    for key in ("photos", "photo", "image_url"):
+        value = item.get(key)
+        if value:
+            photos = _normalize_photos(value)
+            if photos:
+                return photos
+    return []
+
+
+# ═══════════════════════════════════════════════════════════
+# SYNC ENDPOINT
+# ═══════════════════════════════════════════════════════════
+
 @router.post("/products/sync")
 async def sync_products(
     payload: dict,
@@ -108,11 +160,38 @@ async def sync_products(
     db: Session = Depends(get_db),
     _auth: bool = Depends(_verify_basic),
 ):
+    """
+    Приём товаров из 1С.
+
+    Ожидаемый формат:
+    {
+      "products": [
+        {
+          "sku": "тест1",
+          "name": "товар",
+          "price_per_stem": 100,
+          "stock_packs": 5,
+          "country": "Эквадор",
+          "length_cm": 60,
+          "package_size": 25,
+          "min_quantity": 1,
+          "category": "Роза Эквадор",
+          "description": "тест",
+          "photo": "https://..."   # необязательно
+        }
+      ]
+    }
+    """
+    client_ip = request.client.host if request.client else "?"
+
     products_data = payload.get("products", [])
     if not isinstance(products_data, list):
         raise HTTPException(400, "Поле 'products' должно быть массивом")
 
-    client_ip = request.client.host if request.client else "?"
+    logger.info(
+        "1С sync: ip=%s, товаров в запросе: %d",
+        client_ip, len(products_data),
+    )
 
     if not products_data:
         return JSONResponse({
@@ -122,28 +201,30 @@ async def sync_products(
 
     supply = _ensure_1c_supply(db)
 
-    # ── Batch-load существующих товаров ──
-    skus = []
-    names = []
+    # ── Batch-load существующих товаров (по sku и name) ──
+    skus, names = [], []
     for it in products_data:
         s = str(it.get("sku", "")).strip()
         n = str(it.get("name", "")).strip()
-        if s: skus.append(s)
-        if n: names.append(n)
+        if s:
+            skus.append(s)
+        if n:
+            names.append(n)
 
     existing_by_sku: dict[str, Product] = {}
     existing_by_name: dict[str, Product] = {}
     if skus or names:
         conds = []
-        if skus: conds.append(Product.sku.in_(skus))
-        if names: conds.append(Product.name.in_(names))
+        if skus:
+            conds.append(Product.sku.in_(skus))
+        if names:
+            conds.append(Product.name.in_(names))
         for p in db.query(Product).filter(or_(*conds)).all():
-            if p.sku: existing_by_sku[p.sku] = p
+            if p.sku:
+                existing_by_sku[p.sku] = p
             existing_by_name[p.name] = p
 
-    processed = 0
-    created = 0
-    updated = 0
+    processed = created = updated = 0
     errors: list[str] = []
 
     for idx, item in enumerate(products_data, start=1):
@@ -160,25 +241,29 @@ async def sync_products(
             elif name in existing_by_name:
                 product = existing_by_name[name]
 
-            photos = _normalize_photos(item.get("photo"))
+            photos = _extract_photos_from_item(item)
             main_image = photos[0] if photos else ""
 
             if not product:
                 product = Product(
-                    sku=sku, name=name,
+                    sku=sku,
+                    name=name,
                     description=str(item.get("description", "") or ""),
                     country=str(item.get("country", "") or ""),
                     length_cm=int(item.get("length_cm", 0) or 0),
                     unit="упаковка",
                     package_size=int(item.get("package_size", 1) or 1),
                     min_quantity=int(item.get("min_quantity", 1) or 1),
-                    category=str(item.get("category", "Прочее") or "Прочее"),
+                    category=str(
+                        item.get("category", "Прочее") or "Прочее"
+                    ),
                     image_url=main_image,
                     photos=photos,
                 )
                 db.add(product)
                 db.flush()
-                if sku: existing_by_sku[sku] = product
+                if sku:
+                    existing_by_sku[sku] = product
                 existing_by_name[name] = product
                 created += 1
             else:
@@ -217,7 +302,7 @@ async def sync_products(
             if si:
                 si.price = price
                 si.stock = stock
-                si.is_active = stock > 0   # ← авто-скрытие
+                si.is_active = stock > 0
             else:
                 db.add(SupplyItem(
                     supply_id=supply.id,
@@ -229,7 +314,7 @@ async def sync_products(
             processed += 1
 
         except Exception as e:
-            logger.exception("1С: ошибка #%d", idx)
+            logger.exception("1С: ошибка на #%d", idx)
             errors.append(f"#{idx} ({item.get('name', '?')}): {e}")
 
     try:
@@ -256,4 +341,9 @@ async def sync_products(
 
 @router.get("/ping")
 async def ping(_auth: bool = Depends(_verify_basic)):
-    return {"status": "ok", "service": "dianthus-1c"}
+    return {
+        "status": "ok",
+        "service": "dianthus-1c",
+        "env": config.ENV,
+        "auth": bool(config.INTEGRATION_PASSWORD),
+    }

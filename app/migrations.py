@@ -7,6 +7,9 @@ from .database import engine
 
 logger = logging.getLogger(__name__)
 
+
+# ── DDL-описания колонок ──
+# ВАЖНО: для PostgreSQL и SQLite используются разные типы для JSON-полей.
 EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
     "products": {
         "name":         "VARCHAR(200)",
@@ -17,7 +20,7 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
         "package_size": "INTEGER DEFAULT 1",
         "min_quantity": "INTEGER DEFAULT 1",
         "image_url":    "VARCHAR(500) DEFAULT ''",
-        "photos":       "TEXT DEFAULT '[]'",
+        # ⚠️  photos обрабатывается отдельно (см. _column_ddl)
         "category":     "VARCHAR(100) DEFAULT 'Прочее'",
         "sku":          "VARCHAR(100) DEFAULT ''",
     },
@@ -47,10 +50,10 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
         "package_size": "INTEGER DEFAULT 1",
     },
     "preorders": {
-        "product_id":   "INTEGER",
+        "product_id":     "INTEGER",
         "supply_item_id": "INTEGER",
-        "is_fulfilled": "BOOLEAN DEFAULT FALSE",
-        "quantity":     "INTEGER DEFAULT 0",
+        "is_fulfilled":   "BOOLEAN DEFAULT FALSE",
+        "quantity":       "INTEGER DEFAULT 0",
     },
 }
 
@@ -60,6 +63,21 @@ EXPECTED_INDEXES: dict[str, list[tuple[str, str]]] = {
         ("ix_products_sku", "sku"),
     ],
 }
+
+
+def _column_ddl(table: str, column: str, sqlite_ddl: str) -> str:
+    """
+    Возвращает корректный DDL для ADD COLUMN с учётом диалекта БД.
+    Спец-обработка нужна для JSON-колонок: Postgres ждёт JSONB, SQLite — TEXT.
+    """
+    dialect = engine.dialect.name
+
+    if table == "products" and column == "photos":
+        if dialect == "postgresql":
+            return "JSONB DEFAULT '[]'::jsonb"
+        return "TEXT DEFAULT '[]'"
+
+    return sqlite_ddl
 
 
 def ensure_notifications_table() -> None:
@@ -72,6 +90,10 @@ def ensure_notifications_table() -> None:
     except Exception as e:
         logger.error("Не удалось создать таблицу notifications: %s", e)
 
+
+# ═══════════════════════════════════════════════════════════
+# BACKFILL-функции (совместимые с PostgreSQL и SQLite)
+# ═══════════════════════════════════════════════════════════
 
 def _backfill_order_subtotals() -> None:
     try:
@@ -101,21 +123,38 @@ def _backfill_order_item_pack_sizes() -> None:
 
 
 def _backfill_product_photos() -> None:
-    """Переносит image_url в photos для старых товаров."""
+    """
+    Переносит image_url в photos для старых товаров.
+    Учитывает разницу типов: в PG photos — JSONB, в SQLite — TEXT.
+    """
     try:
+        dialect = engine.dialect.name
         with engine.begin() as conn:
-            conn.execute(text("""
-                UPDATE products
-                SET photos = '["' || image_url || '"]'
-                WHERE (photos IS NULL OR photos = '[]' OR photos = '')
-                  AND image_url IS NOT NULL AND image_url != ''
-            """))
+            if dialect == "postgresql":
+                # PG: photos — JSONB. Сравниваем через ::text, пишем через to_jsonb
+                conn.execute(text("""
+                    UPDATE products
+                    SET photos = to_jsonb(ARRAY[image_url])
+                    WHERE (photos IS NULL
+                           OR photos::text = '[]'
+                           OR photos::text = 'null')
+                      AND image_url IS NOT NULL
+                      AND image_url != ''
+                """))
+            else:
+                # SQLite / MySQL / другие: photos — TEXT с JSON-строкой
+                conn.execute(text("""
+                    UPDATE products
+                    SET photos = '["' || image_url || '"]'
+                    WHERE (photos IS NULL OR photos = '[]' OR photos = '')
+                      AND image_url IS NOT NULL AND image_url != ''
+                """))
+        logger.info("✅ Backfill products.photos выполнен")
     except Exception as e:
         logger.warning("Backfill products.photos: %s", e)
 
 
 def _backfill_order_totals() -> None:
-    """Заполняет total_price для старых заказов, где он 0/null."""
     try:
         with engine.begin() as conn:
             conn.execute(text(
@@ -127,31 +166,43 @@ def _backfill_order_totals() -> None:
         logger.warning("Backfill orders.total_price: %s", e)
 
 
+# ═══════════════════════════════════════════════════════════
+# ОСНОВНАЯ ФУНКЦИЯ АВТО-МИГРАЦИИ
+# ═══════════════════════════════════════════════════════════
+
 def auto_migrate() -> None:
     try:
         insp = inspect(engine)
     except Exception as e:
         logger.error("Не удалось получить схему БД: %s", e)
         return
+
     tables = set(insp.get_table_names())
     added = 0
+    dialect = engine.dialect.name
+    logger.info("🔍 Диалект БД: %s", dialect)
+
     with engine.begin() as conn:
         for table, columns in EXPECTED_COLUMNS.items():
             if table not in tables:
                 continue
             existing = {c["name"] for c in insp.get_columns(table)}
-            for col, ddl in columns.items():
+            for col, sqlite_ddl in columns.items():
                 if col in existing:
                     continue
+                ddl = _column_ddl(table, col, sqlite_ddl)
                 try:
                     conn.execute(text(
                         f'ALTER TABLE {table} ADD COLUMN {col} {ddl}'
                     ))
-                    logger.info("🔧 Добавлена колонка %s.%s", table, col)
+                    logger.info("🔧 Добавлена колонка %s.%s (%s)",
+                                table, col, ddl)
                     added += 1
                 except Exception as e:
                     logger.warning("Не удалось добавить %s.%s: %s",
                                    table, col, e)
+
+        # Индексы
         for table, indexes in EXPECTED_INDEXES.items():
             if table not in tables:
                 continue
@@ -169,6 +220,7 @@ def auto_migrate() -> None:
                 except Exception as e:
                     logger.warning("Индекс %s: %s", idx_name, e)
 
+    # Backfill (в отдельных транзакциях — падение одного не рушит остальные)
     _backfill_order_subtotals()
     _backfill_order_item_pack_sizes()
     _backfill_product_photos()
