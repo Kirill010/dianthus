@@ -347,3 +347,35 @@ async def ping(_auth: bool = Depends(_verify_basic)):
         "env": config.ENV,
         "auth": bool(config.INTEGRATION_PASSWORD),
     }
+
+@router.get("/products/export")
+async def export_products_to_1c(
+    db: Session = Depends(get_db),
+    _auth: bool = Depends(_verify_basic),
+):
+    """Выгрузка товаров для 1С (JSON)."""
+    items = (
+        db.query(SupplyItem)
+        .options(joinedload(SupplyItem.product))
+        .filter(SupplyItem.is_active.is_(True))
+        .all()
+    )
+    return JSONResponse({
+        "products": [
+            {
+                "id": item.id,
+                "sku": item.product.sku or "",
+                "name": item.product.name,
+                "price_per_stem": item.price,
+                "stock_packs": item.stock,
+                "country": item.product.country or "",
+                "length_cm": item.product.length_cm or 0,
+                "package_size": item.product.package_size or 1,
+                "min_quantity": item.product.min_quantity or 1,
+                "category": item.product.category or "Прочее",
+                "description": item.product.description or "",
+                "photo": item.product.all_photos,
+            }
+            for item in items
+        ]
+    })
