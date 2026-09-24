@@ -18,7 +18,7 @@
     <div id="suggestBox" class="suggest-box"></div>
 </form>
 
-{# ─── ГОРИЗОНТАЛЬНЫЕ КАТЕГОРИИ ─── #}
+{# ─── КАТЕГОРИИ ─── #}
 {% if all_categories %}
 <div class="category-scroll mb-3">
     <a href="/catalog" class="category-btn {% if not current_filters.category %}active{% endif %}">
@@ -72,55 +72,114 @@
             {% set stems = item.stock * pack %}
             {% set is_out = stems < 1 %}
             {% set photos = product.all_photos %}
+            {% set min_packs = product.min_quantity or 1 %}
+            {% set min_stems = pack * min_packs %}
 
-            <a href="/product/{{ item.id }}" class="text-decoration-none text-dark d-block h-100">
-                <div class="product-card h-100 {% if is_out %}product-card--out{% endif %}">
-                    <div class="product-card__image-wrap">
+            <div class="product-card-v2 {% if is_out %}product-card-v2--out{% endif %}"
+                 data-step="{{ pack }}"
+                 data-min="{{ min_stems }}"
+                 data-max="{{ stems }}">
+
+                {# ─── ФОТО + КНОПКА «+» В УГЛУ ─── #}
+                <div class="product-card-v2__image-wrap">
+                    <a href="/product/{{ item.id }}" class="product-card-v2__image-link">
                         {% if photos %}
-                            {# ✅ ИСПРАВЛЕНО: рендерим ВСЕ фото, активное — первое #}
-                            {% for photo in photos %}
-                                <img src="{{ photo }}"
-                                     alt="{{ product.name }}"
-                                     class="product-card__photo {% if loop.first %}active{% endif %}"
-                                     data-index="{{ loop.index0 }}"
-                                     loading="lazy">
-                            {% endfor %}
-                            {% if photos|length > 1 %}
-                                <div class="product-card__dots">
-                                    {% for photo in photos %}
-                                        <span class="product-card__dot {% if loop.first %}active{% endif %}"
-                                              data-index="{{ loop.index0 }}"></span>
-                                    {% endfor %}
-                                </div>
-                            {% endif %}
+                            <img src="{{ photos[0] }}"
+                                 alt="{{ product.name }}"
+                                 class="product-card-v2__photo"
+                                 loading="lazy">
                         {% else %}
-                            <div class="product-card__placeholder">
+                            <div class="product-card-v2__placeholder">
                                 <i class="fas fa-seedling"></i>
                             </div>
                         {% endif %}
+                    </a>
 
-                        {% if is_out %}
-                            <div class="product-card__badge product-card__badge--out">
-                                Нет в наличии
+                    {% if not is_out %}
+                        <form action="/add_to_cart" method="post"
+                              class="product-card-v2__plus-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <input type="hidden" name="supply_item_id" value="{{ item.id }}">
+                            <input type="hidden" name="quantity_stems" value="{{ min_stems }}">
+                            <button type="submit"
+                                    class="product-card-v2__plus"
+                                    title="Быстро в корзину: {{ min_stems }} шт">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </form>
+                    {% endif %}
+                </div>
+
+                {# ─── ИНФО ─── #}
+                <div class="product-card-v2__body">
+                    <a href="/product/{{ item.id }}" class="product-card-v2__name">
+                        {{ product.name }}
+                    </a>
+
+                    <div class="product-card-v2__specs">
+                        {% if product.length_cm %}
+                            <div class="spec-line">
+                                <span class="spec-line__label">Размер:</span>
+                                <span class="spec-line__value">{{ product.length_cm }}см</span>
                             </div>
                         {% endif %}
-                    </div>
-                    <div class="product-card__body">
-                        <h3 class="product-card__name">{{ product.name }}</h3>
-                        <div class="product-card__specs">
-                            {% if product.country %}<span>{{ product.country }}</span>{% endif %}
-                            {% if product.length_cm %}<span>{{ product.length_cm }} см</span>{% endif %}
-                            <span>{{ pack }} шт/уп</span>
+                        <div class="spec-line">
+                            <span class="spec-line__label">Кол-во в уп:</span>
+                            <span class="spec-line__value">{{ pack }}шт</span>
                         </div>
-                        <div class="product-card__price">
-                            {{ "%.2f"|format(item.price) }} ₽<small>/шт</small>
-                        </div>
-                        <div class="product-card__pack-price text-muted small">
-                            {{ "%.0f"|format(item.price * pack) }} ₽ за упаковку
+                        <div class="spec-line">
+                            <span class="spec-line__label">Доступно:</span>
+                            <span class="spec-line__value spec-line__value--stock">
+                                {{ stems }}шт
+                            </span>
                         </div>
                     </div>
+
+                    <div class="product-card-v2__price">
+                        {{ "%.2f"|format(item.price) }} ₽
+                    </div>
+
+                    {# ─── ФОРМА: КОЛИЧЕСТВО + В КОРЗИНУ ─── #}
+                    {% if not is_out %}
+                        <form action="/add_to_cart" method="post"
+                              class="product-card-v2__cart-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <input type="hidden" name="supply_item_id" value="{{ item.id }}">
+
+                            <div class="qty-row">
+                                <button type="button"
+                                        class="qty-btn js-qty"
+                                        data-dir="-1"
+                                        aria-label="Уменьшить">−</button>
+
+                                <input type="number"
+                                       name="quantity_stems"
+                                       class="qty-input"
+                                       value="{{ min_stems }}"
+                                       min="{{ min_stems }}"
+                                       max="{{ stems }}"
+                                       step="{{ pack }}"
+                                       inputmode="numeric">
+
+                                <button type="button"
+                                        class="qty-btn js-qty"
+                                        data-dir="1"
+                                        aria-label="Увеличить">+</button>
+
+                                <button type="submit"
+                                        class="btn-cart-green"
+                                        title="В корзину">
+                                    <i class="fas fa-shopping-cart"></i>
+                                </button>
+                            </div>
+                        </form>
+                    {% else %}
+                        <button class="product-card-v2__out-btn" disabled>
+                            Нет в наличии
+                        </button>
+                    {% endif %}
                 </div>
-            </a>
+            </div>
         {% endfor %}
     </div>
 
@@ -142,6 +201,7 @@
 {% endif %}
 
 <script>
+/* ─── Поиск с автоподсказками ─── */
 (function() {
     const input = document.getElementById('searchInput');
     const box = document.getElementById('suggestBox');
@@ -165,6 +225,35 @@
     });
     document.addEventListener('click', e => {
         if (!box.contains(e.target) && e.target !== input) box.style.display = 'none';
+    });
+})();
+
+/* ─── Кнопки «+»/«−»: шаг = размер упаковки ───
+   Работает через data-* карточки, чтобы не писать Jinja в onclick. */
+(function() {
+    document.querySelectorAll('.js-qty').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const card = this.closest('.product-card-v2');
+            if (!card) return;
+
+            const input = card.querySelector('.qty-input');
+            if (!input) return;
+
+            const step = parseInt(card.dataset.step, 10) || 1;
+            const min  = parseInt(card.dataset.min, 10) || 1;
+            const max  = parseInt(card.dataset.max, 10) || Number.MAX_SAFE_INTEGER;
+            const dir  = parseInt(this.dataset.dir, 10) || 1;
+
+            let v = (parseInt(input.value, 10) || 0) + dir * step;
+
+            // Округляем до кратного шага
+            v = Math.round(v / step) * step;
+
+            if (v < min) v = min;
+            if (v > max) v = Math.floor(max / step) * step;
+
+            input.value = v;
+        });
     });
 })();
 </script>
