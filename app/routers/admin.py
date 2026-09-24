@@ -1,12 +1,9 @@
-# Админка: заказы, клиенты, справочник, поставки, разгрузка, Excel.
 import logging
 from datetime import datetime, timedelta
 from typing import List
 
-from fastapi import (APIRouter, Depends, File, Form, HTTPException,
-                     Request, UploadFile)
-from fastapi.responses import (HTMLResponse, RedirectResponse,
-                                StreamingResponse)
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import select, or_, func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
@@ -14,157 +11,71 @@ from sqlalchemy.orm import Session, selectinload
 from ..database import get_db
 from ..deps import require_admin
 from ..models import (ORDER_STATUSES, PRODUCT_CATEGORIES, SUPPLY_STATUSES,
-                      Notification, Order, OrderItem, Product, Supply,
-                      SupplyItem, User)
+                      Notification, Order, OrderItem, Product, Supply, SupplyItem, User)
 from ..security import check_csrf
-from ..services.excel_service import (
-    build_products_import_template, export_customers_to_excel,
-    export_orders_to_excel, guess_package_size,
-    import_products_from_excel, parse_invoice,
-)
-from ..services.notifier import (
-    notify_admin_new_order,
-    notify_client_status_changed,
-)
+from ..services.excel_service import (build_products_import_template, export_customers_to_excel,
+                                      export_orders_to_excel, guess_package_size,
+                                      import_products_from_excel, parse_invoice)
+from ..services.notifier import notify_client_status_changed
 from ..services.upload_service import delete_upload, save_uploads
 from ..templating import render
-from ..validators import (validate_country, validate_positive_int,
-                          validate_price, validate_stock)
+from ..validators import validate_country, validate_positive_int, validate_price, validate_stock
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin")
-XLSX_MIME = ("application/vnd.openxmlformats-officedocument"
-             ".spreadsheetml.sheet")
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 MAX_EXCEL_SIZE = 10 * 1024 * 1024
 CHUNK = 64 * 1024
 ORDERS_PER_PAGE = 20
 
-
 def _xlsx(stream, filename: str) -> StreamingResponse:
-    return StreamingResponse(
-        stream, media_type=XLSX_MIME,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
+    return StreamingResponse(stream, media_type=XLSX_MIME, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 def _parse_date(v: str):
     v = (v or "").strip()
-    if not v:
-        return None
-    try:
-        return datetime.strptime(v, "%Y-%m-%d")
-    except ValueError:
-        return None
-
+    if not v: return None
+    try: return datetime.strptime(v, "%Y-%m-%d")
+    except ValueError: return None
 
 def _err(request: Request, errors: list[str]) -> None:
     request.session["flash"] = "Ошибки: " + "; ".join(errors)
 
-
 # ДАШБОРД
 
 @router.get("", response_class=HTMLResponse)
-async def dashboard(
-    request: Request,
-    db: Session = Depends(get_db),
-    admin=Depends(require_admin),
-    q: str = "",
-    status: str = "",
-    page: int = 1,
-):
-    q = (q or "").strip()
-    status = (status or "").strip()
-    page = max(1, page)
-
-    # Заказы: поиск + фильтр + пагинация
-    orders_query = (
-        db.query(Order)
-        .options(selectinload(Order.user), selectinload(Order.items))
-    )
+async def dashboard(request: Request, db: Session = Depends(get_db), admin=Depends(require_admin), q: str = "", status: str = "", page: int = 1):
+    q, status, page = (q or "").strip(), (status or "").strip(), max(1, page)
+    orders_query = db.query(Order).options(selectinload(Order.user), selectinload(Order.items))
     if q:
-        conditions = []
-        if q.isdigit():
-            conditions.append(Order.id == int(q))
-        conditions.append(User.company_name.ilike(f"%{q}%"))
-        conditions.append(User.email.ilike(f"%{q}%"))
-        conditions.append(User.full_name.ilike(f"%{q}%"))
-
-        orders_query = (
-            orders_query
-            .outerjoin(User, Order.user_id == User.id)
-            .filter(or_(*conditions))
-        )
-    if status:
-        orders_query = orders_query.filter(Order.status == status)
-
+        conditions = [Order.id == int(q)] if q.isdigit() else []
+        conditions.extend([User.company_name.ilike(f"%{q}%"), User.email.ilike(f"%{q}%"), User.full_name.ilike(f"%{q}%")])
+        orders_query = orders_query.outerjoin(User, Order.user_id == User.id).filter(or_(*conditions))
+    if status: orders_query = orders_query.filter(Order.status == status)
+    
     total_orders = orders_query.count()
-    orders_total_pages = max(
-        1, (total_orders + ORDERS_PER_PAGE - 1) // ORDERS_PER_PAGE
-    )
+    orders_total_pages = max(1, (total_orders + ORDERS_PER_PAGE - 1) // ORDERS_PER_PAGE)
     page = min(page, orders_total_pages)
-    orders = (
-        orders_query
-        .order_by(Order.created_at.desc())
-        .offset((page - 1) * ORDERS_PER_PAGE)
-        .limit(ORDERS_PER_PAGE)
-        .all()
-    )
+    orders = orders_query.order_by(Order.created_at.desc()).offset((page - 1) * ORDERS_PER_PAGE).limit(ORDERS_PER_PAGE).all()
 
-    # Статистика
     today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     week_ago = today - timedelta(days=7)
-
     stats = {
         "orders_today": db.query(Order).filter(Order.created_at >= today).count(),
         "orders_week": db.query(Order).filter(Order.created_at >= week_ago).count(),
-        "revenue_today": db.query(func.coalesce(func.sum(Order.total_price), 0))
-            .filter(Order.created_at >= today,
-                    Order.status != "Отменён").scalar() or 0,
-        "revenue_week": db.query(func.coalesce(func.sum(Order.total_price), 0))
-            .filter(Order.created_at >= week_ago,
-                    Order.status != "Отменён").scalar() or 0,
-        "avg_check": db.query(func.coalesce(func.avg(Order.total_price), 0))
-            .filter(Order.status != "Отменён").scalar() or 0,
-        "new_clients_week": db.query(User)
-            .filter(User.created_at >= week_ago,
-                    User.is_admin.is_(False)).count(),
+        "revenue_today": db.query(func.coalesce(func.sum(Order.total_price), 0)).filter(Order.created_at >= today, Order.status != "Отменён").scalar() or 0,
+        "revenue_week": db.query(func.coalesce(func.sum(Order.total_price), 0)).filter(Order.created_at >= week_ago, Order.status != "Отменён").scalar() or 0,
         "pending_orders": db.query(Order).filter(Order.status == "Новый").count(),
     }
-
-    # Остальные данные
     products = db.query(Product).order_by(Product.name).all()
-    supplies = (db.query(Supply)
-                .options(selectinload(Supply.items))
-                .order_by(Supply.arrival_date.asc()).all())
+    supplies = db.query(Supply).options(selectinload(Supply.items)).order_by(Supply.arrival_date.asc()).all()
     users = db.query(User).order_by(User.created_at.desc()).all()
-    pending_count = sum(1 for u in users
-                        if not u.is_approved and not u.is_admin)
-    active_items = (db.query(SupplyItem)
-                    .options(selectinload(SupplyItem.product),
-                             selectinload(SupplyItem.supply))
-                    .filter(SupplyItem.is_active.is_(True),
-                            SupplyItem.stock > 0).all())
+    pending_count = sum(1 for u in users if not u.is_approved and not u.is_admin)
+    active_items = db.query(SupplyItem).options(selectinload(SupplyItem.product), selectinload(SupplyItem.supply)).filter(SupplyItem.is_active.is_(True), SupplyItem.stock > 0).all()
 
-    return render(
-        request, "admin.html", db,
-        user=admin,
-        orders=orders,
-        total_orders=total_orders,
-        orders_page=page,
-        orders_total_pages=orders_total_pages,
-        orders_q=q,
-        orders_status=status,
-        products=products,
-        supplies=supplies,
-        users=users,
-        pending_count=pending_count,
-        active_items=active_items,
-        statuses=ORDER_STATUSES,
-        supply_statuses=SUPPLY_STATUSES,
-        categories=PRODUCT_CATEGORIES,
-        stats=stats,
-    )
-
+    return render(request, "admin.html", db, user=admin, orders=orders, total_orders=total_orders, orders_page=page,
+                  orders_total_pages=orders_total_pages, orders_q=q, orders_status=status, products=products,
+                  supplies=supplies, users=users, pending_count=pending_count, active_items=active_items,
+                  statuses=ORDER_STATUSES, supply_statuses=SUPPLY_STATUSES, categories=PRODUCT_CATEGORIES, stats=stats)
 
 # ДЕТАЛИ ЗАКАЗА
 
@@ -515,45 +426,6 @@ async def product_new_page(request: Request, db: Session = Depends(get_db),
                   user=admin, product=None, categories=PRODUCT_CATEGORIES)
 
 
-@router.post("/products/new")
-async def product_new(
-    request: Request,
-    name: str = Form(""), description: str = Form(""),
-    country: str = Form(""), length_cm: int = Form(0),
-    unit: str = Form("упаковка"), package_size: int = Form(25),
-    min_quantity: int = Form(1), category: str = Form("Прочее"),
-    image_url: str = Form(""),
-    image_files: List[UploadFile] = File(None),
-    db: Session = Depends(get_db),
-    _a=Depends(require_admin),
-    _csrf: None = Depends(check_csrf),
-):
-    errors = _validate_product(name, length_cm, package_size, min_quantity)
-    if errors:
-        _err(request, errors)
-        return RedirectResponse(url="/admin/products/new", status_code=303)
-
-    # Собираем фото: сначала мультизагрузка, потом URL
-    photos: list[str] = []
-    if image_files:
-        photos.extend(save_uploads(image_files))
-    if image_url.strip():
-        photos.append(image_url.strip())
-
-    main_image = photos[0] if photos else ""
-
-    db.add(Product(
-        name=name.strip(), description=description.strip(),
-        country=country.strip(), length_cm=length_cm,
-        unit=unit, package_size=package_size, min_quantity=min_quantity,
-        category=category, image_url=main_image, photos=photos,
-    ))
-    db.commit()
-    request.session["flash"] = (
-        f"Товар добавлен в справочник ({len(photos)} фото)"
-    )
-    return RedirectResponse(url="/admin", status_code=303)
-
 
 @router.get("/products/{product_id}/edit", response_class=HTMLResponse)
 async def product_edit_page(product_id: int, request: Request,
@@ -565,62 +437,63 @@ async def product_edit_page(product_id: int, request: Request,
     return render(request, "product_form.html", db,
                   user=admin, product=product, categories=PRODUCT_CATEGORIES)
 
-
-@router.post("/products/{product_id}/edit")
-async def product_edit(
-    product_id: int, request: Request,
-    name: str = Form(""), description: str = Form(""),
-    country: str = Form(""), length_cm: int = Form(0),
-    unit: str = Form("упаковка"), package_size: int = Form(25),
-    min_quantity: int = Form(1), category: str = Form("Прочее"),
-    image_url: str = Form(""),
-    image_files: List[UploadFile] = File(None),
-    remove_photos: List[str] = Form(default=[]),
-    db: Session = Depends(get_db),
-    _a=Depends(require_admin),
-    _csrf: None = Depends(check_csrf),
-):
-    product = db.query(Product).filter(Product.id == product_id).first()
-    if not product:
-        raise HTTPException(404, "Товар не найден")
-
-    errors = _validate_product(name, length_cm, package_size, min_quantity)
+@router.post("/products/new")
+async def product_new(request: Request, name: str = Form(""), description: str = Form(""), country: str = Form(""),
+                      length_cm: int = Form(0), unit: str = Form("упаковка"), package_size: int = Form(25),
+                      min_quantity: int = Form(1), category: str = Form("Прочее"), image_url: str = Form(""),
+                      image_files: List[UploadFile] = File(None), db: Session = Depends(get_db),
+                      _a=Depends(require_admin), _csrf: None = Depends(check_csrf)):
+    errors = []
+    if not (name or "").strip(): errors.append("Укажите название")
+    if package_size < 1: errors.append("Размер упаковки должен быть >= 1")
+    if min_quantity < 1: errors.append("Мин. заказ должен быть >= 1")
     if errors:
         _err(request, errors)
-        return RedirectResponse(
-            url=f"/admin/products/{product_id}/edit", status_code=303)
+        return RedirectResponse(url="/admin/products/new", status_code=303)
 
-    product.name = name.strip()
-    product.description = description.strip()
-    product.country = country.strip()
-    product.length_cm = length_cm
-    product.unit = unit
-    product.package_size = package_size
-    product.min_quantity = min_quantity
-    product.category = category
+    photos = []
+    if image_files: photos.extend(save_uploads(image_files))
+    if image_url.strip(): photos.append(image_url.strip())
 
-    # Текущие фото
+    db.add(Product(name=name.strip(), description=description.strip(), country=country.strip(), length_cm=length_cm,
+                   unit=unit, package_size=package_size, min_quantity=min_quantity, category=category,
+                   image_url=photos[0] if photos else "", photos=photos))
+    db.commit()
+    request.session["flash"] = f"Товар добавлен ({len(photos)} фото)"
+    return RedirectResponse(url="/admin", status_code=303)
+
+@router.post("/products/{product_id}/edit")
+async def product_edit(product_id: int, request: Request, name: str = Form(""), description: str = Form(""),
+                       country: str = Form(""), length_cm: int = Form(0), unit: str = Form("упаковка"),
+                       package_size: int = Form(25), min_quantity: int = Form(1), category: str = Form("Прочее"),
+                       image_url: str = Form(""), image_files: List[UploadFile] = File(None),
+                       remove_photos: List[str] = Form(default=[]), db: Session = Depends(get_db),
+                       _a=Depends(require_admin), _csrf: None = Depends(check_csrf)):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product: raise HTTPException(404, "Товар не найден")
+
+    errors = []
+    if not (name or "").strip(): errors.append("Укажите название")
+    if errors:
+        _err(request, errors)
+        return RedirectResponse(url=f"/admin/products/{product_id}/edit", status_code=303)
+
+    product.name, product.description, product.country = name.strip(), description.strip(), country.strip()
+    product.length_cm, product.unit, product.package_size, product.min_quantity, product.category = length_cm, unit, package_size, min_quantity, category
+
     current = list(product.photos or [])
-    if not current and product.image_url:
-        current = [product.image_url]
+    if not current and product.image_url: current = [product.image_url]
 
-    # Удаляем отмеченные
     if remove_photos:
         for url in remove_photos:
             if url in current:
                 current.remove(url)
-                if url.startswith("/static/uploads/"):
-                    delete_upload(url)
+                if url.startswith("/static/uploads/"): delete_upload(url)
 
-    # Добавляем новые
-    if image_files:
-        current.extend(save_uploads(image_files))
-    if image_url.strip():
-        current.append(image_url.strip())
+    if image_files: current.extend(save_uploads(image_files))
+    if image_url.strip(): current.append(image_url.strip())
 
-    # Убираем дубликаты, сохраняя порядок
-    seen = set()
-    final = []
+    seen, final = set(), []
     for u in current:
         if u and u not in seen:
             seen.add(u)
@@ -628,7 +501,6 @@ async def product_edit(
 
     product.photos = final
     product.image_url = final[0] if final else ""
-
     db.commit()
     request.session["flash"] = f"Товар обновлён ({len(final)} фото)"
     return RedirectResponse(url="/admin", status_code=303)

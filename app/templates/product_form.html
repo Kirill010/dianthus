@@ -1,35 +1,28 @@
 {% extends "base.html" %}
 {% block content %}
 <a href="/admin" class="back-link"><i class="fas fa-arrow-left"></i> Назад в админку</a>
-
 <h2 class="mb-4">{{ 'Редактирование' if product else 'Новый товар' }}</h2>
 
 <form method="post" enctype="multipart/form-data" class="needs-validation" novalidate>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-
     <div class="row g-3">
         <div class="col-md-8">
             <div class="mb-3">
                 <label class="form-label">Название товара *</label>
-                <input type="text" name="name" class="form-control" 
-                       value="{{ product.name if product else '' }}" required maxlength="200">
+                <input type="text" name="name" class="form-control" value="{{ product.name if product else '' }}" required maxlength="200">
             </div>
-
             <div class="mb-3">
                 <label class="form-label">Описание</label>
                 <textarea name="description" class="form-control" rows="3">{{ product.description if product else '' }}</textarea>
             </div>
-
             <div class="row g-3">
                 <div class="col-md-4">
                     <label class="form-label">Страна</label>
-                    <input type="text" name="country" class="form-control" 
-                           value="{{ product.country if product else '' }}" maxlength="100">
+                    <input type="text" name="country" class="form-control" value="{{ product.country if product else '' }}" maxlength="100">
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Длина (см)</label>
-                    <input type="number" name="length_cm" class="form-control" 
-                           value="{{ product.length_cm if product else 0 }}" min="0" max="500">
+                    <input type="number" name="length_cm" class="form-control" value="{{ product.length_cm if product else 0 }}" min="0" max="500">
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Категория</label>
@@ -40,25 +33,21 @@
                     </select>
                 </div>
             </div>
-
             <div class="row g-3 mt-1">
                 <div class="col-md-4">
                     <label class="form-label">Единица измерения</label>
                     <select name="unit" class="form-select">
                         <option value="упаковка" {% if product and product.unit == 'упаковка' %}selected{% endif %}>упаковка</option>
                         <option value="шт" {% if product and product.unit == 'шт' %}selected{% endif %}>шт</option>
-                        <option value="коробка" {% if product and product.unit == 'коробка' %}selected{% endif %}>коробка</option>
                     </select>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Штук в упаковке *</label>
-                    <input type="number" name="package_size" class="form-control" 
-                           value="{{ product.package_size if product else 25 }}" min="1" required>
+                    <input type="number" name="package_size" class="form-control" value="{{ product.package_size if product else 25 }}" min="1" required>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Мин. заказ (упаковок) *</label>
-                    <input type="number" name="min_quantity" class="form-control" 
-                           value="{{ product.min_quantity if product else 1 }}" min="1" required>
+                    <input type="number" name="min_quantity" class="form-control" value="{{ product.min_quantity if product else 1 }}" min="1" required>
                 </div>
             </div>
         </div>
@@ -66,8 +55,6 @@
         <div class="col-md-4">
             <div class="card p-3">
                 <h5 class="card-title mb-3">Изображения</h5>
-                
-                <!-- Существующие фото -->
                 {% set current_photos = product.photos if product and product.photos else [] %}
                 {% if not current_photos and product and product.image_url %}
                     {% set current_photos = [product.image_url] %}
@@ -86,13 +73,11 @@
                     </div>
                 {% endif %}
 
-                <!-- Загрузка новых фото -->
                 <div class="mb-3">
                     <label class="form-label small">Добавить новые фото (можно несколько сразу)</label>
                     <input type="file" name="image_files" class="form-control" accept="image/*" multiple>
                     <div class="form-text">JPG / PNG / WebP · до 5 МБ каждое</div>
                 </div>
-
                 <div class="mb-3">
                     <label class="form-label small">Или вставить URL картинки</label>
                     <input type="text" name="image_url" class="form-control" maxlength="500" 
@@ -101,11 +86,8 @@
             </div>
         </div>
     </div>
-
     <div class="mt-4 d-flex gap-2">
-        <button type="submit" class="btn btn-primary">
-            <i class="fas fa-save me-2"></i>Сохранить товар
-        </button>
+        <button type="submit" class="btn btn-primary"><i class="fas fa-save me-2"></i>Сохранить товар</button>
         <a href="/admin" class="btn btn-secondary">Отмена</a>
     </div>
 </form>

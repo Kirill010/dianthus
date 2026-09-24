@@ -1,150 +1,29 @@
 {% extends "base.html" %}
 {% block content %}
 
-<div class="catalog-top-bar">
-    <h1 class="catalog-title">Каталог</h1>
-    <span class="catalog-count">{{ total_items }}</span>
+<div class="catalog-top-bar d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Каталог</h1>
+    <span class="badge bg-secondary">{{ total_items }} товаров</span>
 </div>
 
-{# ── ПРЕДЗАКАЗЫ ── #}
-{% if preorder_items %}
-<div class="preorder-section">
-    <div class="preorder-section__head">
-        <h5 class="mb-0">
-            <i class="fas fa-truck-fast me-2"></i>
-            Товар в пути — можно оформить предзаказ
-        </h5>
-        <span class="badge bg-warning text-dark">
-            {{ preorder_items|length }} поз.
-        </span>
+<form class="catalog-search mb-4" method="get" action="/catalog">
+    <div class="input-group">
+        <span class="input-group-text"><i class="fas fa-search"></i></span>
+        <input type="text" id="searchInput" name="q" class="form-control form-control-lg" 
+               placeholder="Поиск по названию или стране..." value="{{ search_q or '' }}" autocomplete="off">
+        <button type="submit" class="btn btn-primary">Найти</button>
     </div>
-    <div class="preorder-grid">
-        {% for item in preorder_items %}
-        {% set pack = item.product.package_size or 1 %}
-        {% set min_packs = item.product.min_quantity or 1 %}
-        {% set min_stems = pack * min_packs %}
-        <div class="preorder-card">
-            <div class="preorder-card__image">
-                {% if item.product.image_url %}
-                    <img src="{{ item.product.image_url }}" alt="">
-                {% else %}
-                    <div class="product-card__placeholder">
-                        <i class="fas fa-seedling"></i>
-                    </div>
-                {% endif %}
-                <span class="preorder-card__badge">
-                    <i class="fas fa-truck"></i>
-                </span>
-            </div>
-            <div class="preorder-card__body">
-                <div class="preorder-card__name">{{ item.product.name }}</div>
-                <div class="preorder-card__date">
-                    <i class="fas fa-calendar-alt me-1"></i>
-                    Прибытие:
-                    <strong>
-                        {% if item.supply.arrival_date %}
-                            {{ item.supply.arrival_date.strftime('%d.%m.%Y') }}
-                        {% else %}—{% endif %}
-                    </strong>
-                </div>
-                <div class="preorder-card__price">
-                    {{ "%.2f"|format(item.price) }} ₽<small>/шт</small>
-                </div>
-                <form action="/add_to_preorder" method="post">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                    <input type="hidden" name="supply_item_id" value="{{ item.id }}">
-                    <div class="qty-cart-group">
-                        <div class="qty-control">
-                            <button type="button"
-                                onclick="this.nextElementSibling.stepDown()">−</button>
-                            <input type="number" name="quantity_stems"
-                                   value="{{ min_stems }}"
-                                   min="{{ min_stems }}"
-                                   step="{{ pack }}" required>
-                            <button type="button"
-                                onclick="this.previousElementSibling.stepUp()">+</button>
-                        </div>
-                        <button type="submit" class="btn-cart-icon"
-                                title="Предзаказ">
-                            <i class="fas fa-clock"></i>
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-        {% endfor %}
-    </div>
-</div>
-{% endif %}
-
-<!-- Категории -->
-<div class="category-scroll">
-    <a href="{{ category_url('') }}"
-       class="category-btn {% if not current_filters.category %}active{% endif %}">
-        Все
-    </a>
-    {% for cat in active_categories %}
-        <a href="{{ category_url(cat) }}"
-           class="category-btn {% if current_filters.category == cat %}active{% endif %}">
-            {{ cat }}
-        </a>
-    {% endfor %}
-    {% for cat in all_categories %}
-        {% if cat not in active_categories %}
-            <a href="{{ category_url(cat) }}"
-               class="category-btn {% if current_filters.category == cat %}active{% endif %}">
-                {{ cat }}
-            </a>
-        {% endif %}
-    {% endfor %}
-</div>
-
-<!-- Наличие -->
-<div class="level-tabs">
-    {% for key, label in quantity_levels %}
-        {% set cnt = level_counts.get(key, 0) %}
-        {% if key == 'available' or cnt > 0 %}
-            <a href="{{ level_url(key) }}"
-               class="level-tab level-tab--{{ key }} {% if current_filters.level == key %}active{% endif %}">
-                <span class="level-tab__dot"></span>
-                <span class="level-tab__label">{{ label }}</span>
-                <span class="level-tab__count">{{ cnt }}</span>
-            </a>
-        {% endif %}
-    {% endfor %}
-</div>
-
-<!-- Поиск -->
-<form class="catalog-search" method="get" action="/catalog">
-    {% if current_filters.category %}
-        <input type="hidden" name="category" value="{{ current_filters.category }}">
-    {% endif %}
-    {% if current_filters.level and current_filters.level != 'available' %}
-        <input type="hidden" name="level" value="{{ current_filters.level }}">
-    {% endif %}
-    <div class="catalog-search__input">
-        <i class="fas fa-search"></i>
-        <input type="text" name="q" id="searchInput" autocomplete="off"
-               placeholder="Поиск товара..." value="{{ current_filters.q }}">
-        <div id="suggestBox" class="suggest-box" style="display:none"></div>
-    </div>
-    {% if has_filters %}
-        <a href="/catalog" class="btn-clear"><i class="fas fa-times"></i></a>
-    {% endif %}
+    <div id="suggestBox" class="suggest-box"></div>
 </form>
 
-{% extends "base.html" %}
-{% block content %}
-
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h1 class="h3 mb-0">Каталог</h1>
-    <!-- Фильтры или сортировка, если есть -->
-</div>
-
 {% if not items %}
-    <div class="alert alert-info">
-        <i class="fas fa-info-circle me-2"></i>В данный момент товаров в наличии нет. 
-        Следите за обновлениями поставок!
+    <div class="empty-state text-center py-5">
+        <i class="fas fa-seedling fa-3x text-muted mb-3"></i>
+        <h4>Ничего не найдено</h4>
+        <p class="text-muted">В данный момент товаров в наличии нет.</p>
+        {% if search_q %}
+            <a href="/catalog" class="btn btn-outline-primary mt-2">Сбросить поиск</a>
+        {% endif %}
     </div>
 {% else %}
     <div class="row g-3 g-md-4">
@@ -154,7 +33,6 @@
             {% set stems = item.stock * pack %}
             {% set is_out = stems < 1 %}
             
-            <!-- Получаем фото: берём первое из списка photos, либо image_url -->
             {% set photos = product.photos or [] %}
             {% if not photos and product.image_url %}
                 {% set photos = [product.image_url] %}
@@ -162,7 +40,6 @@
             {% set main_photo = photos[0] if photos else '' %}
 
             <div class="col-6 col-md-4 col-lg-3">
-                <!-- ВСЯ карточка теперь является ссылкой -->
                 <a href="/product/{{ item.id }}" class="text-decoration-none text-dark d-block h-100">
                     <div class="product-card h-100 {% if is_out %}product-card--out{% endif %}">
                         <div class="product-card__image-wrap">
@@ -175,23 +52,16 @@
                                         {% endfor %}
                                     </div>
                                 {% endif %}
-                                <button type="button" class="product-card__zoom" 
-                                        data-photos='{{ photos | tojson }}' 
-                                        aria-label="Увеличить"
-                                        onclick="event.preventDefault(); event.stopPropagation();">
+                                <button type="button" class="product-card__zoom" data-photos='{{ photos | tojson }}' aria-label="Увеличить" onclick="event.preventDefault(); event.stopPropagation();">
                                     <i class="fas fa-expand"></i>
                                 </button>
                             {% else %}
-                                <div class="product-card__placeholder">
-                                    <i class="fas fa-seedling"></i>
-                                </div>
+                                <div class="product-card__placeholder"><i class="fas fa-seedling"></i></div>
                             {% endif %}
-                            
                             {% if is_out %}
                                 <div class="product-card__badge product-card__badge--out">Нет в наличии</div>
                             {% endif %}
                         </div>
-                        
                         <div class="product-card__body">
                             <h3 class="product-card__name">{{ product.name }}</h3>
                             <div class="product-card__specs">
@@ -199,44 +69,28 @@
                                 {% if product.length_cm %}<span>{{ product.length_cm }} см</span>{% endif %}
                                 <span>{{ pack }} шт/уп</span>
                             </div>
-                            <div class="product-card__price">
-                                {{ "%.2f"|format(item.price) }} ₽<small>/шт</small>
-                            </div>
-                            <div class="product-card__pack-price text-muted small">
-                                {{ "%.0f"|format(item.price * pack) }} ₽ за упаковку
-                            </div>
+                            <div class="product-card__price">{{ "%.2f"|format(item.price) }} ₽<small>/шт</small></div>
+                            <div class="product-card__pack-price text-muted small">{{ "%.0f"|format(item.price * pack) }} ₽ за упаковку</div>
                         </div>
                     </div>
                 </a>
             </div>
         {% endfor %}
     </div>
-{% endif %}
 
-{% if total_pages > 1 %}
-<nav class="pagination-nav">
-    {% if page > 1 %}
-        <a href="{{ page_url(page - 1) }}" class="page-btn">
-            <i class="fas fa-chevron-left"></i>
-        </a>
+    {% if total_pages > 1 %}
+    <nav class="pagination-nav mt-5 d-flex justify-content-center">
+        <ul class="pagination">
+            {% if page > 1 %}
+                <li class="page-item"><a class="page-link" href="/catalog?page={{ page - 1 }}{% if search_q %}&q={{ search_q }}{% endif %}">Назад</a></li>
+            {% endif %}
+            <li class="page-item active"><span class="page-link">{{ page }} из {{ total_pages }}</span></li>
+            {% if page < total_pages %}
+                <li class="page-item"><a class="page-link" href="/catalog?page={{ page + 1 }}{% if search_q %}&q={{ search_q }}{% endif %}">Вперёд</a></li>
+            {% endif %}
+        </ul>
+    </nav>
     {% endif %}
-    <span class="page-info">{{ page }} / {{ total_pages }}</span>
-    {% if page < total_pages %}
-        <a href="{{ page_url(page + 1) }}" class="page-btn">
-            <i class="fas fa-chevron-right"></i>
-        </a>
-    {% endif %}
-</nav>
-{% endif %}
-
-{% else %}
-<div class="empty-state">
-    <i class="fas fa-search"></i>
-    <h4>Ничего не найдено</h4>
-    {% if has_filters %}
-        <a href="/catalog" class="btn btn-primary mt-2">Сбросить</a>
-    {% endif %}
-</div>
 {% endif %}
 
 <script>
@@ -254,17 +108,12 @@
                 const r = await fetch('/api/search-suggest?q=' + encodeURIComponent(q));
                 const d = await r.json();
                 if (!d.items.length) { box.style.display = 'none'; return; }
-                box.innerHTML = d.items.map(i =>
-                    `<a href="${i.url}" class="suggest-item">${i.name}</a>`
-                ).join('');
+                box.innerHTML = d.items.map(i => `<a href="${i.url}" class="suggest-item">${i.name}</a>`).join('');
                 box.style.display = 'block';
             } catch(e) { box.style.display = 'none'; }
         }, 200);
     });
-    document.addEventListener('click', e => {
-        if (!box.contains(e.target) && e.target !== input) box.style.display = 'none';
-    });
+    document.addEventListener('click', e => { if (!box.contains(e.target) && e.target !== input) box.style.display = 'none'; });
 })();
 </script>
-
 {% endblock %}
