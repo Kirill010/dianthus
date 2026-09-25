@@ -284,7 +284,6 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
         }
 
         # ✅ Определяем product_ids из ВСЕХ корзинных позиций
-        # (включая деактивированные), чтобы мигрировать
         all_items = {
             i.id: i
             for i in db.query(SupplyItem)
@@ -296,8 +295,10 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
         # ✅ Ищем НОВЫЕ активные позиции для миграции
         new_by_product = {}
         if product_ids:
-            for i in (
+            # ✅ Явно загружаем product, чтобы избежать ошибок при доступе
+            new_items = (
                 db.query(SupplyItem)
+                .options(joinedload(SupplyItem.product))  # <-- ИСПРАВЛЕНИЕ
                 .filter(
                     SupplyItem.product_id.in_(product_ids),
                     SupplyItem.is_active.is_(True),
@@ -305,8 +306,8 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
                 )
                 .order_by(SupplyItem.id.desc())
                 .all()
-            ):
-                # Берём самый свежий
+            )
+            for i in new_items:
                 if i.product_id not in new_by_product:
                     new_by_product[i.product_id] = i
 
@@ -323,7 +324,8 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
                 old = all_items.get(c["supply_item_id"])
                 if old:
                     new_item = new_by_product.get(old.product_id)
-                    if new_item:
+                    # ✅ Проверяем, что new_item и его product не None
+                    if new_item and new_item.product:
                         c["supply_item_id"] = new_item.id
                         c["price"] = new_item.price
                         c["package_size"] = max(
@@ -335,7 +337,7 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
                         item = new_item
                         migrated = True
 
-            if item is None or item.available_stock <= 0:
+            if item is None or item.available_stock <= 0 or not item.product:
                 removed_names.append(c.get("name", "?"))
                 continue
 
@@ -382,7 +384,6 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
         discount_amount=discount_amount,
         total=total,
     )
-
 
 @router.post("/remove_from_cart")
 async def remove_from_cart(
