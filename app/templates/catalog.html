@@ -229,7 +229,11 @@
                 {% set product = item.product %}
                 {% set pack = product.package_size or 1 %}
                 {% set photos = product.all_photos %}
-                <div class="product-card-v2">
+                {# Добавляем data-атрибуты для работы кнопок + и - #}
+                <div class="product-card-v2"
+                     data-step="{{ pack }}"
+                     data-min="{{ pack }}"
+                     data-max="1000">
                     <div class="product-card-v2__image-wrap">
                         <a href="/product/{{ item.id }}" class="product-card-v2__image-link">
                             {% if photos %}
@@ -267,13 +271,27 @@
                             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                             <input type="hidden" name="supply_item_id" value="{{ item.id }}">
                             <div class="qty-row">
+                                {# Добавляем кнопку МИНУС #}
+                                <button type="button"
+                                        class="qty-btn js-qty"
+                                        data-dir="-1"
+                                        aria-label="Уменьшить">−</button>
+
                                 <input type="number"
                                        name="quantity_stems"
                                        class="qty-input"
                                        value="{{ pack }}"
                                        min="{{ pack }}"
+                                       max="1000"
                                        step="{{ pack }}"
                                        inputmode="numeric">
+                                
+                                {# Добавляем кнопку ПЛЮС #}
+                                <button type="button"
+                                        class="qty-btn js-qty"
+                                        data-dir="1"
+                                        aria-label="Увеличить">+</button>
+
                                 <button type="submit"
                                         class="btn-cart-green"
                                         title="В предзаказ">
