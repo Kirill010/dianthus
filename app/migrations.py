@@ -208,6 +208,27 @@ def _backfill_order_subtotals() -> None:
 # ОСНОВНАЯ ФУНКЦИЯ АВТО-МИГРАЦИИ
 # ═══════════════════════════════════════════════════════════
 
+def _exec_one(sql: str, label: str) -> bool:
+    """
+    fix #68: выполняет ОДИН DDL/DML в ОТДЕЛЬНОЙ транзакции.
+    
+    Безопасно при `--workers 2`: если другой воркер уже создал этот
+    индекс/колонку — получим ошибку и просто пропустим её.
+    НЕ портит соседние операции (в PostgreSQL ошибка в одной
+    транзакции отменяет всю транзакцию до конца).
+    """
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(sql))
+        logger.info("🔧 %s", label)
+        return True
+    except Exception as e:
+        # Не логируем весь трейсбек — это ожидаемая гонка воркеров
+        msg = str(e).split("\n")[0][:200]
+        logger.debug("Авто-миграция: %s — %s", label, msg)
+        return False
+
+
 def auto_migrate() -> None:
     try:
         insp = inspect(engine)
@@ -216,51 +237,50 @@ def auto_migrate() -> None:
         return
 
     tables = set(insp.get_table_names())
-    added = 0
     dialect = engine.dialect.name
     logger.info("🔍 Диалект БД: %s", dialect)
 
-    with engine.begin() as conn:
-        # Добавление колонок
-        for table, columns in EXPECTED_COLUMNS.items():
-            if table not in tables:
-                continue
+    added = 0
+
+    # ── 1. Колонки ──
+    for table, columns in EXPECTED_COLUMNS.items():
+        if table not in tables:
+            continue
+        try:
             existing = {c["name"] for c in insp.get_columns(table)}
-            for col, sqlite_ddl in columns.items():
-                if col in existing:
-                    continue
-                ddl = _column_ddl(table, col, sqlite_ddl)
-                try:
-                    conn.execute(text(
-                        f'ALTER TABLE {table} ADD COLUMN {col} {ddl}'
-                    ))
-                    logger.info("🔧 Добавлена колонка %s.%s (%s)",
-                                table, col, ddl)
-                    added += 1
-                except Exception as e:
-                    logger.warning("Не удалось добавить %s.%s: %s",
-                                   table, col, e)
+        except Exception as e:
+            logger.warning("Не удалось прочитать колонки %s: %s", table, e)
+            continue
 
-        # ✅ Создание индексов
-        for table, indexes in EXPECTED_INDEXES.items():
-            if table not in tables:
+        for col, sqlite_ddl in columns.items():
+            if col in existing:
                 continue
-            existing_idx = {i["name"] for i in insp.get_indexes(table)}
-            for idx_name, columns in indexes:
-                if idx_name in existing_idx:
-                    continue
-                try:
-                    conn.execute(text(
-                        f"CREATE INDEX IF NOT EXISTS {idx_name} "
-                        f"ON {table} ({columns})"
-                    ))
-                    logger.info("🔧 Создан индекс %s ON %s (%s)",
-                                idx_name, table, columns)
-                    added += 1
-                except Exception as e:
-                    logger.warning("Индекс %s: %s", idx_name, e)
+            ddl = _column_ddl(table, col, sqlite_ddl)
+            sql = f'ALTER TABLE {table} ADD COLUMN {col} {ddl}'
+            if _exec_one(sql, f"Добавлена колонка {table}.{col}"):
+                added += 1
 
-    # Одноразовые бэкфиллы
+    # ── 2. Индексы (fix #68: КАЖДЫЙ в своей транзакции) ──
+    for table, indexes in EXPECTED_INDEXES.items():
+        if table not in tables:
+            continue
+        try:
+            existing_idx = {i["name"] for i in insp.get_indexes(table)}
+        except Exception as e:
+            logger.warning("Не удалось прочитать индексы %s: %s", table, e)
+            continue
+
+        for idx_name, columns in indexes:
+            if idx_name in existing_idx:
+                continue
+            sql = (
+                f"CREATE INDEX IF NOT EXISTS {idx_name} "
+                f"ON {table} ({columns})"
+            )
+            if _exec_one(sql, f"Создан индекс {idx_name} ON {table}"):
+                added += 1
+
+    # ── 3. Одноразовые бэкфиллы ──
     _backfill_order_item_pack_sizes()
     _backfill_product_photos()
     _backfill_order_subtotals()
