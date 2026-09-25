@@ -19,8 +19,8 @@ from .database import Base, engine, get_db
 from .deps import get_current_user
 from .migrations import auto_migrate, ensure_notifications_table
 from .scheduler import start_scheduler, stop_scheduler
-from .security import (CsrfError, init_rate_limiter, close_rate_limiter,
-                       _redis_client, _redis_enabled)
+from . import security
+from .security import CsrfError, init_rate_limiter, close_rate_limiter
 from .templating import render
 from .routers import admin, cart, catalog, profile, integration_1c
 from .middleware import SecurityHeadersMiddleware
@@ -206,7 +206,6 @@ async def registration_pending(request: Request, db: Session = Depends(get_db)):
     return render(request, "registration_pending.html", db)
 
 
-# ✅ УЛУЧШЕННЫЙ HEALTH-CHECK с проверкой Redis
 @app.get("/health")
 async def health(db: Session = Depends(get_db)):
     result = {
@@ -223,10 +222,10 @@ async def health(db: Session = Depends(get_db)):
         result["db"] = f"error: {str(e)[:100]}"
         result["status"] = "degraded"
 
-    # Проверка Redis
+    # Проверка Redis — обращаемся к модулю, а не к снимку значений
     try:
-        if _redis_enabled and _redis_client:
-            await _redis_client.ping()
+        if security._redis_enabled and security._redis_client:
+            await security._redis_client.ping()
             result["redis"] = "ok"
         else:
             result["redis"] = "not_configured"
