@@ -23,9 +23,25 @@ from .sentry_config import init_sentry
 from . import security
 from .security import CsrfError, init_rate_limiter, close_rate_limiter
 from .templating import render
-from .routers import admin, cart, catalog, profile, integration_1c
 from .middleware import SecurityHeadersMiddleware
+from importlib import import_module
 
+def _safe_load_routers():
+    out = {}
+    for name in ("admin", "cart", "catalog", "profile", "integration_1c"):
+        try:
+            mod = import_module(f".routers.{name}", package="app")
+            if not hasattr(mod, "router"):
+                logger.error(
+                    "❌ Роутер %s не содержит 'router' — пропущен", name,
+                )
+                continue
+            out[name] = mod
+        except Exception as e:
+            logger.exception("❌ Не удалось загрузить роутер %s: %s", name, e)
+    return out
+
+_routers = _safe_load_routers()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -114,11 +130,12 @@ _check_vendor()
 
 # ── РОУТЕРЫ ──
 app.include_router(auth_router)
-app.include_router(catalog.router)
-app.include_router(cart.router)
-app.include_router(admin.router)
-app.include_router(profile.router)
-app.include_router(integration_1c.router)
+for _n, _m in _routers.items():
+    try:
+        app.include_router(_m.router)
+        logger.info("✅ Подключён роутер: %s", _n)
+    except Exception as e:
+        logger.exception("❌ Ошибка include_router(%s): %s", _n, e)
 
 ensure_default_admin()
 
