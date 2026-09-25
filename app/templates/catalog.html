@@ -104,10 +104,23 @@
                 <div class="product-card-v2__image-wrap">
                     <a href="/product/{{ item.id }}" class="product-card-v2__image-link">
                         {% if photos %}
-                            <img src="{{ photos[0] }}"
-                                 alt="{{ product.name }}"
-                                 class="product-card-v2__photo"
-                                 loading="lazy">
+                            <div class="product-card-v2__gallery">
+                                {% for url in photos[:5] %}
+                                    <img src="{{ url }}"
+                                        alt="{{ product.name }}"
+                                        class="product-card-v2__photo product-card-v2__photo--slide {% if loop.first %}active{% endif %}"
+                                        loading="lazy"
+                                        data-index="{{ loop.index0 }}">
+                                {% endfor %}
+                            </div>
+                            {% if photos|length > 1 %}
+                                <div class="product-card-v2__dots">
+                                    {% for url in photos[:5] %}
+                                        <span class="product-card-v2__dot {% if loop.first %}active{% endif %}"
+                                            data-index="{{ loop.index0 }}"></span>
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
                         {% else %}
                             <div class="product-card-v2__placeholder">
                                 <i class="fas fa-seedling"></i>
@@ -360,5 +373,38 @@
         });
     });
 })();
+
+/* ─── Переключение слайдов на карточке каталога ─── */
+document.querySelectorAll('.product-card-v2__gallery').forEach(function(gallery) {
+    const slides = gallery.querySelectorAll('.product-card-v2__photo--slide');
+    const dots   = gallery.parentElement.querySelectorAll('.product-card-v2__dot');
+    if (slides.length < 2) return;
+    let idx = 0, sx = 0, moved = false;
+
+    function show(n) {
+        idx = (n + slides.length) % slides.length;
+        slides.forEach((s, k) => s.classList.toggle('active', k === idx));
+        dots.forEach((d, k) => d.classList.toggle('active', k === idx));
+    }
+
+    gallery.addEventListener('touchstart', e => {
+        sx = e.touches[0].clientX; moved = false;
+    }, {passive: true});
+    gallery.addEventListener('touchmove', e => {
+        if (Math.abs(e.touches[0].clientX - sx) > 10) moved = true;
+    }, {passive: true});
+    gallery.addEventListener('touchend', e => {
+        if (!moved) return;
+        const dx = e.changedTouches[0].clientX - sx;
+        show(idx + (dx < 0 ? 1 : -1));
+    });
+
+    // Клик по точкам (если будешь делать их кликабельными)
+    dots.forEach(d => d.addEventListener('click', e => {
+        e.preventDefault();
+        show(parseInt(d.dataset.index, 10) || 0);
+    }));
+});
+
 </script>
 {% endblock %}

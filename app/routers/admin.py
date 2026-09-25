@@ -362,6 +362,32 @@ async def update_order_status(
     request.session["flash"] = f"Заказ №{order.id}: «{status}»"
     return RedirectResponse(url=_back(request), status_code=303)
 
+@router.get("/orders/{order_id}", response_class=HTMLResponse)
+async def order_detail(
+    order_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin=Depends(require_admin),
+):
+    """Карточка заказа для админа."""
+    order = (
+        db.query(Order)
+        .options(
+            selectinload(Order.user),
+            selectinload(Order.items),
+        )
+        .filter(Order.id == order_id)
+        .first()
+    )
+    if not order:
+        raise HTTPException(404, "Заказ не найден")
+
+    return render(
+        request, "admin_order_detail.html", db,
+        user=admin,
+        order=order,
+        statuses=ORDER_STATUSES,
+    )
 
 # ───────────────────────── EXCEL ─────────────────────────
 

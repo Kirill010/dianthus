@@ -19,29 +19,31 @@
             <div class="product-gallery">
                 {% for url in photos %}
                     <img src="{{ url }}"
-                         alt="{{ product.name }}"
-                         class="product-gallery__photo {% if loop.first %}active{% endif %}"
-                         data-index="{{ loop.index0 }}">
+                        alt="{{ product.name }}"
+                        class="product-gallery__photo {% if loop.first %}active{% endif %}"
+                        data-index="{{ loop.index0 }}">
                 {% endfor %}
             </div>
-            {% if photos|length > 1 %}
-                <div class="product-card__dots mt-2 d-flex justify-content-center gap-2">
-                    {% for url in photos %}
-                        <span class="product-card__dot {% if loop.first %}active{% endif %}"
-                              data-index="{{ loop.index0 }}"
-                              style="width:10px;height:10px;border-radius:50%;
-                                     background:#ccc;cursor:pointer;display:inline-block;"></span>
-                    {% endfor %}
-                </div>
-            {% endif %}
         {% else %}
             <div class="product-card__placeholder"
-                 style="padding-top:100%; display:flex; align-items:center;
+                style="padding-top:100%; display:flex; align-items:center;
                         justify-content:center; background:#f8f9fa; border-radius:8px;">
                 <i class="fas fa-seedling fa-3x text-muted"></i>
             </div>
         {% endif %}
     </div>
+
+    {# ✅ ТОЧКИ — ВЫНЕСЕНЫ наружу, теперь видны #}
+    {% if photos|length > 1 %}
+        <div class="product-card__dots d-flex justify-content-center gap-2 mt-3 mb-2">
+            {% for url in photos %}
+                <span class="product-card__dot {% if loop.first %}active{% endif %}"
+                    data-index="{{ loop.index0 }}"
+                    style="width:10px;height:10px;border-radius:50%;
+                            background:#ccc;cursor:pointer;display:inline-block;"></span>
+            {% endfor %}
+        </div>
+    {% endif %}
 
     <div class="product-detail__info mt-4">
         <h1 class="product-detail__name mb-3">{{ product.name }}</h1>
