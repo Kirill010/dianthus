@@ -105,9 +105,19 @@ async def lifespan(app: FastAPI):
     _check_vendor()
     await init_rate_limiter()
     start_scheduler()
-    yield
-    stop_scheduler()
-    await close_rate_limiter()
+    try:
+        yield
+    finally:
+        # fix: корректное завершение за отведённое systemd время
+        logger.info("🛑 Завершение приложения...")
+        stop_scheduler()
+        await close_rate_limiter()
+        try:
+            import sentry_sdk
+            sentry_sdk.flush(timeout=2.0)
+        except Exception:
+            pass
+        logger.info("✅ Приложение остановлено")
 
 
 app = FastAPI(

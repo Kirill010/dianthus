@@ -41,7 +41,10 @@ def _acquire_scheduler_lock() -> bool:
             os.write(_lock_fd, f"pid={os.getpid()}\n".encode())
         except OSError:
             pass
-        logger.info("🔒 Lock планировщика: %s", LOCK_FILE)
+        logger.info(
+            "🔒 Lock планировщика получен: %s (pid=%d)",
+            LOCK_FILE, os.getpid(),
+        )
         return True
     except BlockingIOError:
         logger.info("ℹ️ Планировщик уже запущен в другом воркере")
@@ -50,7 +53,11 @@ def _acquire_scheduler_lock() -> bool:
             _lock_fd = None
         return False
     except OSError as e:
-        logger.warning("Lock недоступен (%s) — запускаю без блокировки", e)
+        logger.warning(
+            "Lock недоступен (%s) — запускаю без блокировки. "
+            "Проверьте RuntimeDirectory=dianthus в systemd.",
+            e,
+        )
         return True
 
 

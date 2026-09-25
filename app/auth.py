@@ -2,7 +2,7 @@
 """Регистрация, вход, выход."""
 import logging
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# fix #15: rate limit ВЫПОЛНЯЕТСЯ ДО CSRF — защищает от брутфорса
 async def _rate_register(request: Request) -> None:
     await check_rate_limit(request, "register", max_hits=5, window=300)
 
@@ -33,6 +32,7 @@ async def _rate_login(request: Request) -> None:
 @router.post("/register")
 async def register(
     request: Request,
+    background_tasks: BackgroundTasks,
     _rate: None = Depends(_rate_register),
     _csrf: None = Depends(check_csrf),
     email: str = Form(""),
@@ -99,10 +99,8 @@ async def register(
         request.session["register_errors"] = ["Этот email уже зарегистрирован"]
         return RedirectResponse(url="/login", status_code=303)
 
-    try:
-        notify_admin_new_client(user)
-    except Exception as e:
-        logger.warning("Не удалось уведомить админа: %s", e)
+    # fix: уведомление в фоне ПОСЛЕ успешного commit
+    background_tasks.add_task(notify_admin_new_client, user)
 
     logger.info("Заявка: %s (%s)", email, company_name)
     return RedirectResponse(url="/registration_pending", status_code=303)
@@ -141,7 +139,6 @@ async def login(
     return RedirectResponse(url="/catalog", status_code=303)
 
 
-# fix #1: logout теперь POST + CSRF
 @router.post("/logout")
 async def logout(
     request: Request,

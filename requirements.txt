@@ -1,20 +1,38 @@
-fastapi>=0.115.0,<1.0
-uvicorn[standard]>=0.30.0
-sqlalchemy>=2.0.31,<3.0
-jinja2>=3.1.4
-python-multipart>=0.0.12
-bcrypt>=4.2.0,<5.0
-python-dotenv>=1.0.1
-itsdangerous>=2.2.0
-pillow>=10.4.0
-psycopg2-binary>=2.9.9
-openpyxl>=3.1.5
-xlrd>=2.0.1,<3.0
-xhtml2pdf>=0.2.16
-apscheduler>=3.10.0
-redis>=5.0.0
-alembic>=1.13.0
-sentry-sdk[fastapi]>=2.0.0
-pywebpush>=2.0.0
-pytest>=8.0.0
-httpx>=0.27.0
+# Web
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+starlette==0.41.2
+jinja2==3.1.4
+python-multipart==0.0.12
+itsdangerous==2.2.0
+
+# БД
+SQLAlchemy==2.0.35
+psycopg2-binary==2.9.9
+alembic==1.13.3
+
+# Безопасность
+bcrypt==4.0.1
+redis==5.1.1
+python-dotenv==1.0.1
+
+# Email
+# (используется встроенный smtplib)
+
+# Excel
+openpyxl==3.1.5
+xlrd==2.0.1
+
+# PDF
+xhtml2pdf==0.2.16
+reportlab==4.2.5
+Pillow==10.4.0
+
+# Мониторинг
+sentry-sdk[fastapi]==2.17.0
+
+# Планировщик
+APScheduler==3.10.4
+
+# WebPush (опционально)
+pywebpush==2.0.3

@@ -1,9 +1,15 @@
-# Настройки из .env.
+# app/config.py
+"""Настройки из .env.
+
+ВНИМАНИЕ: конфиг НЕ падает при импорте. Иначе main.py не сможет
+загрузить роутеры, и приложение не стартует вообще.
+В prod генерируется временный SECRET_KEY + пишется CRITICAL в лог.
+"""
 import logging
 import os
+import secrets
 
 from dotenv import load_dotenv
-
 
 if os.getenv("ENV") != "prod":
     load_dotenv()
@@ -50,14 +56,12 @@ class Config:
     SHOP_MAX_LINK: str = _str_env("SHOP_MAX_LINK", "")
     SHOP_MAP_URL: str = _str_env("SHOP_MAP_URL", "")
 
-    # 1С интеграция
     INTEGRATION_USER: str = _str_env("INTEGRATION_USER", "1c_dianthus")
     INTEGRATION_PASSWORD: str = (
         _str_env("INTEGRATION_PASSWORD", "")
         or _str_env("INTEGRATION_SECRET", "")
     )
 
-    # SMTP
     SMTP_HOST: str = _str_env("SMTP_HOST", "")
     SMTP_PORT: int = _int_env("SMTP_PORT", 465)
     SMTP_USER: str = _str_env("SMTP_USER", "")
@@ -71,14 +75,19 @@ class Config:
 
 config = Config()
 
+# ─── Проверки в prod: НЕ raise, а CRITICAL + генерация временного ключа ───
 if config.ENV == "prod":
     if not config.SECRET_KEY or config.SECRET_KEY == "dev-change-me":
-        raise RuntimeError(
-            "❌ В ENV=prod обязательно задайте SECRET_KEY! "
-            'Сгенерировать: python -c "import secrets; print(secrets.token_hex(32))"'
+        logger.critical(
+            "❌ SECRET_KEY не задан! Сгенерирован временный. "
+            "Сессии будут сбрасываться при рестарте. ЗАДАЙТЕ SECRET_KEY в .env!"
         )
-    if len(config.SECRET_KEY) < 32:
-        raise RuntimeError("❌ SECRET_KEY слишком короткий (минимум 32 символа).")
+        config.SECRET_KEY = secrets.token_hex(32)
+    elif len(config.SECRET_KEY) < 32:
+        logger.critical(
+            "❌ SECRET_KEY короче 32 символов! Сгенерирован временный."
+        )
+        config.SECRET_KEY = secrets.token_hex(32)
 
     if not config.INTEGRATION_PASSWORD:
         logger.warning(
@@ -93,16 +102,13 @@ if config.ENV == "prod":
 
     if config.DATABASE_URL.startswith("sqlite"):
         if not config.ALLOW_SQLITE_IN_PROD:
-            raise RuntimeError(
-                "❌ ENV=prod + SQLite несовместимы: "
-                "SELECT ... FOR UPDATE игнорируется, race condition "
-                "при оформлении заказов НЕ защищён.\n"
-                "   ▸ Решение: перейдите на PostgreSQL "
-                "(DATABASE_URL=postgresql://...).\n"
-                "   ▸ Осознанно принять риск (НЕ рекомендуется): "
-                "установите ALLOW_SQLITE_IN_PROD=1."
+            logger.critical(
+                "❌ ENV=prod + SQLite: race conditions в place_order "
+                "НЕ защищены! Перейдите на PostgreSQL или "
+                "установите ALLOW_SQLITE_IN_PROD=1 (НЕ рекомендуется)."
             )
-        logger.warning(
-            "⚠️ SQLite в prod с ALLOW_SQLITE_IN_PROD=1 — "
-            "race condition при оформлении заказов НЕ защищён!"
-        )
+        else:
+            logger.warning(
+                "⚠️ SQLite в prod с ALLOW_SQLITE_IN_PROD=1 — "
+                "race condition при оформлении заказов НЕ защищён!"
+            )

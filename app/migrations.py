@@ -1,12 +1,24 @@
-# app/migrations.py (полный код)
-"""Лёгкая авто-миграция: добавляет недостающие колонки, индексы и таблицы."""
+# app/migrations.py
+"""Лёгкая авто-миграция.
+
+ИСПРАВЛЕНИЯ:
+  * файловый lock — миграцию выполняет ТОЛЬКО один воркер
+  * engine.begin() автоматически откатывает транзакцию (фикс InFailedSqlTransaction)
+  * ON CONFLICT DO NOTHING в _backfill_once (защита от гонки)
+  * перед созданием каждого индекса — перечитываем состояние БД
+"""
+import fcntl
 import logging
+import os
+from contextlib import contextmanager
 
 from sqlalchemy import inspect, text
 
 from .database import engine
 
 logger = logging.getLogger(__name__)
+
+MIGRATION_LOCK = os.getenv("MIGRATION_LOCK", "/run/dianthus/migration.lock")
 
 
 EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
@@ -32,8 +44,8 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
         "discount_percent": "FLOAT DEFAULT 0",
     },
     "supplies": {
-        "status": "VARCHAR(30) DEFAULT 'Ожидается'",
-        "notes": "TEXT DEFAULT ''",
+        "status":     "VARCHAR(30) DEFAULT 'Ожидается'",
+        "notes":      "TEXT DEFAULT ''",
         "is_service": "BOOLEAN DEFAULT FALSE NOT NULL",
     },
     "supply_items": {
@@ -57,7 +69,6 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
     },
 }
 
-# ✅ РАСШИРЕННЫЙ набор индексов для критичных полей
 EXPECTED_INDEXES: dict[str, list[tuple[str, str]]] = {
     "products": [
         ("ix_products_category", "category"),
@@ -99,6 +110,39 @@ def _column_ddl(table: str, column: str, sqlite_ddl: str) -> str:
     return sqlite_ddl
 
 
+@contextmanager
+def _migration_lock():
+    """Файловый lock: миграцию выполняет только один воркер.
+
+    Используем БЛОКИРУЮЩИЙ flock — второй воркер просто подождёт,
+    а не выйдет с ошибкой. После освобождения — выйдет с True,
+    но перечитает состояние БД (индексы уже будут созданы первым воркером).
+    """
+    d = os.path.dirname(MIGRATION_LOCK)
+    if d:
+        try:
+            os.makedirs(d, exist_ok=True)
+        except Exception as e:
+            logger.warning("Не создал %s: %s", d, e)
+
+    fd = None
+    try:
+        fd = os.open(MIGRATION_LOCK, os.O_CREAT | os.O_RDWR, 0o644)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        logger.info("🔒 Lock миграции получен: %s", MIGRATION_LOCK)
+        yield True
+    except OSError as e:
+        logger.warning("Lock миграции недоступен (%s) — без блокировки", e)
+        yield True
+    finally:
+        if fd is not None:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+                os.close(fd)
+            except OSError:
+                pass
+
+
 def ensure_notifications_table() -> None:
     try:
         insp = inspect(engine)
@@ -110,12 +154,28 @@ def ensure_notifications_table() -> None:
         logger.error("Не удалось создать таблицу notifications: %s", e)
 
 
-# ═══════════════════════════════════════════════════════════
-# ОДНОРАЗОВЫЕ BACKFILL-функции
-# ═══════════════════════════════════════════════════════════
+def _exec_one(sql: str, label: str) -> bool:
+    """Выполняет ОДИН DDL/DML в отдельной транзакции.
+
+    engine.begin() автоматически откатывает транзакцию при исключении —
+    это фиксит 'InFailedSqlTransaction: current transaction is aborted'.
+    """
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(sql))
+        logger.info("🔧 %s", label)
+        return True
+    except Exception as e:
+        msg = str(e).split("\n")[0][:200]
+        logger.debug("Авто-миграция: %s — %s", label, msg)
+        return False
+
 
 def _backfill_once(flag: str) -> bool:
-    """Проверяет, выполнен ли бэкфилл с данным флагом."""
+    """True, если бэкфилл ещё не выполнялся.
+
+    ON CONFLICT DO NOTHING защищает от гонки воркеров.
+    """
     try:
         with engine.begin() as conn:
             conn.execute(text("""
@@ -129,9 +189,10 @@ def _backfill_once(flag: str) -> bool:
             ), {"n": flag}).first()
             if row:
                 return False
-            conn.execute(text(
-                "INSERT INTO _migrations (name) VALUES (:n)"
-            ), {"n": flag})
+            conn.execute(text("""
+                INSERT INTO _migrations (name) VALUES (:n)
+                ON CONFLICT (name) DO NOTHING
+            """), {"n": flag})
         return True
     except Exception as e:
         logger.warning("_backfill_once(%s): %s", flag, e)
@@ -204,32 +265,7 @@ def _backfill_order_subtotals() -> None:
         logger.warning("Backfill orders: %s", e)
 
 
-# ═══════════════════════════════════════════════════════════
-# ОСНОВНАЯ ФУНКЦИЯ АВТО-МИГРАЦИИ
-# ═══════════════════════════════════════════════════════════
-
-def _exec_one(sql: str, label: str) -> bool:
-    """
-    fix #68: выполняет ОДИН DDL/DML в ОТДЕЛЬНОЙ транзакции.
-    
-    Безопасно при `--workers 2`: если другой воркер уже создал этот
-    индекс/колонку — получим ошибку и просто пропустим её.
-    НЕ портит соседние операции (в PostgreSQL ошибка в одной
-    транзакции отменяет всю транзакцию до конца).
-    """
-    try:
-        with engine.begin() as conn:
-            conn.execute(text(sql))
-        logger.info("🔧 %s", label)
-        return True
-    except Exception as e:
-        # Не логируем весь трейсбек — это ожидаемая гонка воркеров
-        msg = str(e).split("\n")[0][:200]
-        logger.debug("Авто-миграция: %s — %s", label, msg)
-        return False
-
-
-def auto_migrate() -> None:
+def _auto_migrate_inner() -> None:
     try:
         insp = inspect(engine)
     except Exception as e:
@@ -251,7 +287,6 @@ def auto_migrate() -> None:
         except Exception as e:
             logger.warning("Не удалось прочитать колонки %s: %s", table, e)
             continue
-
         for col, sqlite_ddl in columns.items():
             if col in existing:
                 continue
@@ -260,17 +295,18 @@ def auto_migrate() -> None:
             if _exec_one(sql, f"Добавлена колонка {table}.{col}"):
                 added += 1
 
-    # ── 2. Индексы (fix #68: КАЖДЫЙ в своей транзакции) ──
+    # ── 2. Индексы — перечитываем состояние перед КАЖДЫМ ──
     for table, indexes in EXPECTED_INDEXES.items():
         if table not in tables:
             continue
-        try:
-            existing_idx = {i["name"] for i in insp.get_indexes(table)}
-        except Exception as e:
-            logger.warning("Не удалось прочитать индексы %s: %s", table, e)
-            continue
-
         for idx_name, columns in indexes:
+            try:
+                insp_local = inspect(engine)
+                existing_idx = {
+                    i["name"] for i in insp_local.get_indexes(table)
+                }
+            except Exception:
+                existing_idx = set()
             if idx_name in existing_idx:
                 continue
             sql = (
@@ -289,6 +325,12 @@ def auto_migrate() -> None:
         logger.info("✅ Авто-миграция: +%d изменений", added)
     else:
         logger.info("✅ Схема БД актуальна")
+
+
+def auto_migrate() -> None:
+    """Внешняя обёртка: получает lock, затем делает реальную работу."""
+    with _migration_lock():
+        _auto_migrate_inner()
 
 
 if __name__ == "__main__":

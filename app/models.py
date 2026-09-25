@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey,
                         Integer, JSON, String, Text)
 from sqlalchemy.orm import relationship
-
+from sqlalchemy.dialects.postgresql import JSONB
 from .database import Base
 
 
@@ -86,7 +86,12 @@ class Product(Base):
     package_size = Column(Integer, default=1)
     min_quantity = Column(Integer, default=1)
     image_url = Column(String(500), default="")
-    photos = Column(JSON, default=list, server_default="[]")
+    photos = Column(
+        JSON().with_variant(JSONB(), "postgresql"),
+        default=list,
+        server_default="[]",
+        nullable=False,
+    )
     category = Column(String(100), default="Прочее", index=True)
     created_at = Column(DateTime, default=_utcnow)
     supply_items = relationship("SupplyItem", back_populates="product",
