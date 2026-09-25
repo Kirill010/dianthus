@@ -56,15 +56,31 @@ def _clean_cart(cart: list[dict]) -> list[dict]:
 
 
 def _merge_into_cart(cart: list[dict], new_item: dict) -> None:
-    """Добавляет товар в корзину, инкрементируя количество если уже есть."""
+    """
+    Добавляет товар в корзину, инкрементируя количество если уже есть.
+    ✅ Если флаг from_preorder совпадает — мерджим, иначе создаём отдельную
+    позицию, чтобы не потерять признак "списано из стока".
+    """
     si_id = new_item["supply_item_id"]
+    new_from_preorder = bool(new_item.get("from_preorder"))
+
     for ci in cart:
-        if ci.get("supply_item_id") == si_id:
-            ci["quantity"] += new_item["quantity"]
-            ci["package_size"] = new_item.get("package_size") or 1
-            ci["price"] = new_item.get("price") or ci["price"]
-            return
-    cart.append(new_item)
+        if ci.get("supply_item_id") != si_id:
+            continue
+        ci_from_preorder = bool(ci.get("from_preorder"))
+        if ci_from_preorder != new_from_preorder:
+            # Разные источники — не мерджим
+            continue
+        ci["quantity"] += new_item["quantity"]
+        ci["package_size"] = new_item.get("package_size") or 1
+        ci["price"] = new_item.get("price") or ci["price"]
+        return
+
+    # Не нашли подходящую — добавляем новой позицией
+    entry = dict(new_item)
+    if new_from_preorder:
+        entry["from_preorder"] = True
+    cart.append(entry)
 
 
 # ДОБАВЛЕНИЕ В КОРЗИНУ
@@ -118,8 +134,11 @@ async def add_to_cart(
     quantity_packs = quantity_stems // pack
 
     cart = request.session.get("cart", [])
+    # Ищем существующую позицию (не из предзаказа) и увеличиваем её
+    merged = False
     for ci in cart:
-        if ci.get("supply_item_id") == supply_item_id:
+        if (ci.get("supply_item_id") == supply_item_id
+                and not ci.get("from_preorder")):
             new_packs = ci["quantity"] + quantity_packs
             if new_packs > item.available_stock:
                 new_packs = item.available_stock
@@ -129,8 +148,10 @@ async def add_to_cart(
                 )
             ci["quantity"] = new_packs
             ci["package_size"] = pack
+            merged = True
             break
-    else:
+
+    if not merged:
         cart.append({
             "supply_item_id": item.id,
             "product_id": product.id,
@@ -275,7 +296,6 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
     if cart:
         ids = [c["supply_item_id"] for c in cart]
 
-        # ✅ Ищем активные позиции с явно загруженным product
         alive = {
             i.id: i
             for i in db.query(SupplyItem)
@@ -287,7 +307,6 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
             .all()
         }
 
-        # Определяем product_ids из ВСЕХ корзинных позиций
         all_items = {
             i.id: i
             for i in db.query(SupplyItem)
@@ -297,8 +316,6 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
         }
         product_ids = [i.product_id for i in all_items.values()]
 
-        # ✅ Ищем НОВЫЕ активные позиции для миграции
-        # ⚠️ ВАЖНО: используем SQL-выражение, а не Python-свойство!
         new_by_product = {}
         if product_ids:
             new_items = (
@@ -307,7 +324,6 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
                 .filter(
                     SupplyItem.product_id.in_(product_ids),
                     SupplyItem.is_active.is_(True),
-                    # ✅ Правильная замена: stock > reserved_stock
                     SupplyItem.stock > func.coalesce(
                         SupplyItem.reserved_stock, 0
                     ),
@@ -327,8 +343,9 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
             item = alive.get(c["supply_item_id"])
             migrated = False
 
-            if item is None:
-                # Позиция деактивирована — мигрируем на новую
+            # Позиции из предзаказа нельзя мигрировать на новую партию —
+            # их сток уже списан и закреплён за этой партией.
+            if item is None and not c.get("from_preorder"):
                 old = all_items.get(c["supply_item_id"])
                 if old:
                     new_item = new_by_product.get(old.product_id)
@@ -348,13 +365,15 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
                 removed_names.append(c.get("name", "?"))
                 continue
 
-            if item.available_stock <= 0:
+            if item.available_stock <= 0 and not c.get("from_preorder"):
                 removed_names.append(c.get("name", "?"))
                 continue
 
             c["price"] = item.price
             c["package_size"] = max(1, item.product.package_size or 1)
-            c["quantity"] = min(c["quantity"], item.available_stock)
+            # Не урезаем позиции из предзаказа — они уже оплачены резервом
+            if not c.get("from_preorder"):
+                c["quantity"] = min(c["quantity"], item.available_stock)
 
             if c["quantity"] <= 0:
                 removed_names.append(c.get("name", "?"))
@@ -495,6 +514,7 @@ async def place_order(
         request.session["flash"] = "Ошибка БД. Попробуйте ещё раз."
         return RedirectResponse(url="/cart", status_code=303)
 
+    # Валидация
     for c in cart:
         item = items_map.get(c["supply_item_id"])
         if item is None:
@@ -503,29 +523,35 @@ async def place_order(
                 f"Удалите его из корзины."
             )
             return RedirectResponse(url="/cart", status_code=303)
-        if not item.is_active:
+        if not item.is_active and not c.get("from_preorder"):
             request.session["flash"] = (
                 f"«{c.get('name', '?')}» снят с продажи. "
                 f"Удалите его из корзины."
             )
             return RedirectResponse(url="/cart", status_code=303)
-        if item.available_stock < c["quantity"]:
-            request.session["flash"] = (
-                f"«{c.get('name', '?')}»: "
-                f"только {item.available_stock} упак. на складе"
-            )
-            return RedirectResponse(url="/cart", status_code=303)
+        # Для позиций из предзаказа сток уже списан — просто доверяем
+        if not c.get("from_preorder"):
+            if item.available_stock < c["quantity"]:
+                request.session["flash"] = (
+                    f"«{c.get('name', '?')}»: "
+                    f"только {item.available_stock} упак. на складе"
+                )
+                return RedirectResponse(url="/cart", status_code=303)
 
     subtotal = _cart_subtotal(cart)
     discount_percent = float(user.discount_percent or 0)
     _, total = _apply_discount(subtotal, discount_percent)
 
-    # Списываем остатки
+    # ✅ Списываем сток ТОЛЬКО для позиций, добавленных обычным способом.
+    # Для позиций из предзаказа сток уже был списан в
+    # move_fulfilled_preorder_to_cart — иначе получим двойное списание.
     for c in cart:
-        items_map[c["supply_item_id"]].stock -= c["quantity"]
-        # Деактивируем если сток ушёл в 0
-        if items_map[c["supply_item_id"]].available_stock <= 0:
-            items_map[c["supply_item_id"]].is_active = False
+        item = items_map[c["supply_item_id"]]
+        if c.get("from_preorder"):
+            continue
+        item.stock -= c["quantity"]
+        if item.available_stock <= 0:
+            item.is_active = False
 
     try:
         order = Order(

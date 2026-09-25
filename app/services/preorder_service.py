@@ -177,12 +177,13 @@ def get_all_user_preorders(db: Session, user_id: int) -> list:
 
 
 def preorder_count_db(db: Session, user_id: int) -> int:
+    """
+    ✅ ИСПРАВЛЕНО: количество ВСЕХ предзаказов (включая уже поступившие),
+    чтобы бейдж в шапке не пропадал, когда поставка разгрузилась.
+    """
     rows = (
         db.query(Preorder)
-        .filter(
-            Preorder.user_id == user_id,
-            Preorder.is_fulfilled.is_(False),
-        )
+        .filter(Preorder.user_id == user_id)
         .all()
     )
     return sum(p.quantity for p in rows)
@@ -222,10 +223,15 @@ def remove_fulfilled_preorder_db(db: Session, user_id: int, preorder_id: int) ->
     return False
 
 
-def move_fulfilled_preorder_to_cart(db, user, preorder_id: int) -> tuple[bool, dict | str]:
+def move_fulfilled_preorder_to_cart(
+    db, user, preorder_id: int
+) -> tuple[bool, dict | str]:
     """
     Готовит данные для переноса поступившего предзаказа в корзину.
-    Возвращает (True, dict_с_данными) или (False, сообщение_об_ошибке).
+
+    ✅ ИСПРАВЛЕНО: помечаем результат флагом `from_preorder=True`.
+    При оформлении заказа `place_order` не будет вычитать stock повторно,
+    т.к. списание уже произошло здесь.
     """
     preorder = (
         db.query(Preorder)
@@ -250,9 +256,8 @@ def move_fulfilled_preorder_to_cart(db, user, preorder_id: int) -> tuple[bool, d
     pack = max(1, product.package_size or 1)
     min_packs = max(1, product.min_quantity or 1)
 
-    # ✅ Берём из reserved_stock — оно зарезервировано под нас
+    # Берём из reserved_stock — оно зарезервировано под нас
     reserved = item.reserved_stock or 0
-    # Если зарезервировано меньше, чем нужно — используем зарезервированное
     if reserved < preorder.quantity:
         want_packs = reserved
     else:
@@ -265,7 +270,8 @@ def move_fulfilled_preorder_to_cart(db, user, preorder_id: int) -> tuple[bool, d
     # Освобождаем резерв
     item.reserved_stock = max(0, reserved - want_packs)
 
-    # ✅ Списываем сток прямо сейчас, чтобы другой клиент не купил
+    # ✅ Списываем сток СРАЗУ — чтобы другой клиент не купил.
+    # При оформлении заказа повторно НЕ вычитаем (см. from_preorder).
     item.stock = max(0, item.stock - want_packs)
 
     # Если stock стал 0 — деактивируем
@@ -283,4 +289,6 @@ def move_fulfilled_preorder_to_cart(db, user, preorder_id: int) -> tuple[bool, d
         "price": item.price,
         "image_url": product.image_url or "",
         "quantity": want_packs,
+        # ✅ ВАЖНО: этот флаг не даст place_order списать сток второй раз
+        "from_preorder": True,
     }

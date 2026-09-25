@@ -15,7 +15,15 @@
             {% if item.image_url %}<img src="{{ item.image_url }}" alt="">{% endif %}
         </div>
         <div class="cart-item__body">
-            <div class="cart-item__name">{{ item.name }}</div>
+            <div class="cart-item__name">
+                {{ item.name }}
+                {% if item.from_preorder %}
+                    <span class="badge bg-warning text-dark ms-1"
+                          title="Зарезервировано из предзаказа">
+                        <i class="fas fa-truck-fast me-1"></i>из предзаказа
+                    </span>
+                {% endif %}
+            </div>
             <div class="cart-item__price">
                 {{ "%.2f"|format(item.price) }} ₽/шт × {{ pack }} шт × {{ item.quantity }} упак.
                 <span class="cart-item__stems">= {{ stems }} шт</span>
@@ -85,7 +93,6 @@
                 Прибытие: <strong>{{ p.arrival_date or "—" }}</strong>
             </div>
 
-            {# ─── Суммы со скидкой ─── #}
             <div style="margin-top:6px;">
                 <div style="font-size:.82rem; color:#8a857a;">
                     Подытог: {{ "%.2f"|format(p.subtotal) }} ₽

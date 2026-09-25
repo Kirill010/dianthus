@@ -1,9 +1,24 @@
 {% extends "base.html" %}
 {% block content %}
 
-<h1 class="catalog-title mb-4">
-    <i class="fas fa-truck-fast me-2"></i>Мои предзаказы
-</h1>
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <h1 class="catalog-title mb-0">
+        <i class="fas fa-truck-fast me-2"></i>Мои предзаказы
+    </h1>
+    {% if preorders %}
+        {# ✅ Счётчик всех предзаказов #}
+        {% set total_preorders = preorders|length %}
+        {% set total_packs = preorders|sum(attribute='quantity') %}
+        <div class="d-flex gap-2">
+            <span class="badge bg-success fs-6 px-3 py-2">
+                <i class="fas fa-box me-1"></i>{{ total_preorders }} поз.
+            </span>
+            <span class="badge bg-warning text-dark fs-6 px-3 py-2">
+                <i class="fas fa-cubes me-1"></i>{{ total_packs }} упак.
+            </span>
+        </div>
+    {% endif %}
+</div>
 
 {% if preorders %}
 <div class="orders-list">
