@@ -224,8 +224,9 @@ async def health(db: Session = Depends(get_db)):
 
     # Проверка Redis — обращаемся к модулю, а не к снимку значений
     try:
-        if security._redis_enabled and security._redis_client:
-            await security._redis_client.ping()
+        client = security.get_redis_client()
+        if security.is_redis_enabled() and client is not None:
+            await client.ping()
             result["redis"] = "ok"
         else:
             result["redis"] = "not_configured"

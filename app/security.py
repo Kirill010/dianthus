@@ -1,4 +1,4 @@
-# app/security.py (полный код)
+# app/security.py
 """
 Модуль безопасности Диантуса.
 CSRF + rate limiting (Redis или in-memory).
@@ -9,6 +9,7 @@ import secrets
 import time
 from collections import defaultdict
 from typing import Optional
+from urllib.parse import urlparse
 
 from fastapi import HTTPException, Request
 
@@ -39,6 +40,14 @@ def ensure_csrf_token(request: Request) -> str:
     return token
 
 
+def _host_of(url: str) -> str:
+    """Возвращает hostname из URL или пустую строку."""
+    try:
+        return (urlparse(url).hostname or "").lower()
+    except Exception:
+        return ""
+
+
 async def check_csrf(request: Request) -> None:
     """
     Проверяет CSRF-токен + Origin/Referer.
@@ -67,19 +76,28 @@ async def check_csrf(request: Request) -> None:
     if not client_token:
         raise CsrfError("Отсутствует CSRF-токен")
 
-    # Constant-time сравнение
     if not secrets.compare_digest(str(session_token), str(client_token)):
         raise CsrfError("Неверный CSRF-токен")
 
-    # ✅ ДОПОЛНИТЕЛЬНО: проверка Origin/Referer
-    from .config import config
+    # ✅ ДОПОЛНИТЕЛЬНО: проверка Origin/Referer по hostname,
+    # а не по полному URL. Работает за Nginx-прокси.
     origin = (
         request.headers.get("origin")
         or request.headers.get("referer", "")
     )
-    if origin and config.APP_URL not in origin:
-        logger.warning("CSRF: неверный Origin/Referer: %s", origin)
-        raise CsrfError("Неверный источник запроса")
+    if origin:
+        origin_host = _host_of(origin)
+        req_host = (request.url.hostname or "").lower()
+        from .config import config
+        app_host = _host_of(config.APP_URL)
+
+        allowed = {h for h in (req_host, app_host) if h}
+        if origin_host and origin_host not in allowed:
+            logger.warning(
+                "CSRF: неверный Origin/Referer: %s (allowed=%s)",
+                origin, allowed,
+            )
+            raise CsrfError("Неверный источник запроса")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -102,11 +120,16 @@ async def _redis_incr(bucket: str, window: int) -> Optional[int]:
         return None
     try:
         key = f"rl:{bucket}"
+        # ✅ INCR + TTL: не сбрасываем TTL на каждом запросе.
         pipe = _redis_client.pipeline()
         pipe.incr(key)
-        pipe.expire(key, window)
-        res = await pipe.execute()
-        return int(res[0])
+        pipe.ttl(key)
+        results = await pipe.execute()
+        count = int(results[0])
+        ttl = int(results[1])
+        if ttl < 0:  # у ключа не было TTL — ставим один раз
+            await _redis_client.expire(key, window)
+        return count
     except Exception as e:
         logger.warning("Redis rate limit failed: %s", e)
         return None
@@ -199,3 +222,12 @@ async def close_rate_limiter() -> None:
             pass
         _redis_client = None
         _redis_enabled = False
+
+
+# ✅ Публичный доступ для health-check
+def is_redis_enabled() -> bool:
+    return _redis_enabled
+
+
+def get_redis_client():
+    return _redis_client

@@ -6,6 +6,8 @@
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
+from .config import config
+
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -18,8 +20,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "geolocation=(), microphone=(), camera=(), payment=()"
         )
 
-        # Только для продакшена с HTTPS
-        from .config import config
         if config.ENV == "prod":
             response.headers["Strict-Transport-Security"] = (
                 "max-age=31536000; includeSubDomains"

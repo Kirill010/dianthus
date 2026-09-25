@@ -261,8 +261,8 @@ async def catalog(
 
 @router.get("/api/search-suggest")
 async def search_suggest(
+    request: Request,
     q: str = "",
-    request: Request = None,
     db: Session = Depends(get_db),
 ):
     user = get_current_user(request, db)

@@ -30,6 +30,7 @@ class Config:
     APP_URL: str = _str_env("APP_URL", "http://127.0.0.1:8000")
     DATABASE_URL: str = _str_env("DATABASE_URL", "sqlite:///./dianthus.db")
     PAGE_SIZE: int = _int_env("PAGE_SIZE", 12)
+    CACHE_TTL: int = _int_env("CACHE_TTL", 300)
 
     SHOP_NAME: str = _str_env("SHOP_NAME", "ООО «Диантус»")
     SHOP_PHONE: str = _str_env("SHOP_PHONE", "")
@@ -41,9 +42,13 @@ class Config:
 
     # 1С интеграция
     INTEGRATION_USER: str = _str_env("INTEGRATION_USER", "1c_dianthus")
-    INTEGRATION_PASSWORD: str = _str_env("INTEGRATION_PASSWORD", "")
+    # ✅ Поддержка обоих имён: INTEGRATION_PASSWORD и INTEGRATION_SECRET
+    INTEGRATION_PASSWORD: str = (
+        _str_env("INTEGRATION_PASSWORD", "")
+        or _str_env("INTEGRATION_SECRET", "")
+    )
 
-    # Email-уведомления (SMTP)
+    # SMTP
     SMTP_HOST: str = _str_env("SMTP_HOST", "")
     SMTP_PORT: int = _int_env("SMTP_PORT", 465)
     SMTP_USER: str = _str_env("SMTP_USER", "")
@@ -68,4 +73,10 @@ if config.ENV == "prod":
     if not config.INTEGRATION_PASSWORD:
         logger.warning(
             "⚠️ INTEGRATION_PASSWORD не задан — 1С-интеграция вернёт 503"
+        )
+    # ✅ Проверка APP_URL
+    if config.APP_URL.startswith("http://127.0.0.1"):
+        logger.warning(
+            "⚠️ APP_URL указывает на localhost — CSRF/письма будут "
+            "со ссылками на localhost. Установите https://ваш-домен."
         )
