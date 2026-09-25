@@ -89,7 +89,7 @@
         {% for item in items %}
             {% set product = item.product %}
             {% set pack = product.package_size or 1 %}
-            {% set stems = item.stock * pack %}
+            {% set stems = item.available_stems %}
             {% set is_out = stems < 1 %}
             {% set photos = product.all_photos %}
             {% set min_packs = product.min_quantity or 1 %}

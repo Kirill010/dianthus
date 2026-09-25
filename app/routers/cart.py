@@ -14,6 +14,7 @@ from ..services.notifier import notify_admin_new_order
 from ..services.preorder_service import (
     add_preorder_to_db, get_user_preorders, remove_preorder_db,
     get_all_user_preorders, move_fulfilled_preorder_to_cart,
+    remove_fulfilled_preorder_db,
 )
 from ..templating import render
 
@@ -39,7 +40,6 @@ def _apply_discount(subtotal: float, discount_percent: float):
 
 
 def _clean_cart(cart: list[dict]) -> list[dict]:
-    """Убирает элементы без нужных ключей."""
     result = []
     for c in cart:
         if not isinstance(c, dict):
@@ -52,6 +52,18 @@ def _clean_cart(cart: list[dict]) -> list[dict]:
             continue
         result.append(c)
     return result
+
+
+def _merge_into_cart(cart: list[dict], new_item: dict) -> None:
+    """Добавляет товар в корзину, инкрементируя количество если уже есть."""
+    si_id = new_item["supply_item_id"]
+    for ci in cart:
+        if ci.get("supply_item_id") == si_id:
+            ci["quantity"] += new_item["quantity"]
+            ci["package_size"] = new_item.get("package_size") or 1
+            ci["price"] = new_item.get("price") or ci["price"]
+            return
+    cart.append(new_item)
 
 
 # ДОБАВЛЕНИЕ В КОРЗИНУ
@@ -83,9 +95,9 @@ async def add_to_cart(
     pack = max(1, product.package_size or 1)
     min_packs = max(1, product.min_quantity or 1)
     min_stems = pack * min_packs
-    max_stems = item.stock * pack
+    max_stems = item.available_stock * pack
 
-    if item.stock <= 0:
+    if item.available_stock <= 0:
         request.session["flash"] = f"«{product.name}» закончился"
         return RedirectResponse(
             url=f"/product/{supply_item_id}", status_code=303
@@ -107,10 +119,11 @@ async def add_to_cart(
     for ci in cart:
         if ci.get("supply_item_id") == supply_item_id:
             new_packs = ci["quantity"] + quantity_packs
-            if new_packs > item.stock:
-                new_packs = item.stock
+            if new_packs > item.available_stock:
+                new_packs = item.available_stock
                 request.session["flash"] = (
-                    f"Максимум {item.stock} упак. ({item.stock * pack} шт)"
+                    f"Максимум {item.available_stock} упак. "
+                    f"({item.available_stock * pack} шт)"
                 )
             ci["quantity"] = new_packs
             ci["package_size"] = pack
@@ -149,7 +162,6 @@ async def add_to_preorder_route(
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
-    # ✅ ФИКС: проверяем и is_active, и статус поставки
     item = (
         db.query(SupplyItem)
         .options(selectinload(SupplyItem.supply))
@@ -189,7 +201,7 @@ async def add_to_preorder_route(
     return RedirectResponse(url="/catalog", status_code=303)
 
 
-# ЗАКАЗАТЬ ПОСТУПИВШИЙ ПРЕДЗАКАЗ (в 1 клик)
+# ЗАКАЗАТЬ ПОСТУПИВШИЙ ПРЕДЗАКАЗ
 
 @router.post("/preorders/{preorder_id}/to_cart")
 async def preorder_to_cart(
@@ -198,10 +210,7 @@ async def preorder_to_cart(
     db: Session = Depends(get_db),
     _csrf: None = Depends(check_csrf),
 ):
-    """
-    Переносит поступивший предзаказ в основную корзину.
-    ✅ Новая функция — упрощает оформление.
-    """
+    """Переносит поступивший предзаказ в корзину."""
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
@@ -211,24 +220,12 @@ async def preorder_to_cart(
         request.session["flash"] = result
         return RedirectResponse(url="/preorders", status_code=303)
 
-    # result — это dict с данными для корзины
     cart = request.session.get("cart", [])
-    si_id = result["supply_item_id"]
-
-    # Ищем существующую позицию и увеличиваем количество
-    for ci in cart:
-        if ci.get("supply_item_id") == si_id:
-            ci["quantity"] += result["quantity"]
-            ci["package_size"] = result["package_size"]
-            ci["price"] = result["price"]
-            break
-    else:
-        cart.append(result)
-
+    _merge_into_cart(cart, result)
     request.session["cart"] = cart
 
-    # Помечаем предзаказ как обработанный (удаляем из списка активных)
-    remove_preorder_db(db, user.id, preorder_id)
+    # Удаляем предзаказ (он уже превратился в позицию корзины)
+    remove_fulfilled_preorder_db(db, user.id, preorder_id)
 
     request.session["flash"] = (
         f"🌸 «{result['name']}» добавлен в корзину "
@@ -241,7 +238,6 @@ async def preorder_to_cart(
 
 @router.get("/preorders", response_class=HTMLResponse)
 async def preorders_page(request: Request, db: Session = Depends(get_db)):
-    """Страница «Мои предзаказы»."""
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
@@ -275,6 +271,8 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
 
     if cart:
         ids = [c["supply_item_id"] for c in cart]
+
+        # ✅ Ищем активные позиции
         alive = {
             i.id: i
             for i in db.query(SupplyItem)
@@ -285,28 +283,91 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
             .all()
         }
 
+        # ✅ Определяем product_ids из ВСЕХ корзинных позиций
+        # (включая деактивированные), чтобы мигрировать
+        all_items = {
+            i.id: i
+            for i in db.query(SupplyItem)
+            .filter(SupplyItem.id.in_(ids))
+            .all()
+        }
+        product_ids = [i.product_id for i in all_items.values()]
+
+        # ✅ Ищем НОВЫЕ активные позиции для миграции
+        new_by_product = {}
+        if product_ids:
+            for i in (
+                db.query(SupplyItem)
+                .filter(
+                    SupplyItem.product_id.in_(product_ids),
+                    SupplyItem.is_active.is_(True),
+                    SupplyItem.available_stock > 0,
+                )
+                .order_by(SupplyItem.id.desc())
+                .all()
+            ):
+                # Берём самый свежий
+                if i.product_id not in new_by_product:
+                    new_by_product[i.product_id] = i
+
         clean_cart = []
         removed_names = []
+        migrated_names = []
+
         for c in cart:
             item = alive.get(c["supply_item_id"])
+            migrated = False
+
             if item is None:
+                # Позиция деактивирована — мигрируем на новую
+                old = all_items.get(c["supply_item_id"])
+                if old:
+                    new_item = new_by_product.get(old.product_id)
+                    if new_item:
+                        c["supply_item_id"] = new_item.id
+                        c["price"] = new_item.price
+                        c["package_size"] = max(
+                            1, new_item.product.package_size or 1
+                        )
+                        c["quantity"] = min(
+                            c["quantity"], new_item.available_stock
+                        )
+                        item = new_item
+                        migrated = True
+
+            if item is None or item.available_stock <= 0:
                 removed_names.append(c.get("name", "?"))
                 continue
+
             c["price"] = item.price
             c["package_size"] = max(1, item.product.package_size or 1)
-            c["quantity"] = min(c["quantity"], item.stock)
+            c["quantity"] = min(c["quantity"], item.available_stock)
+
             if c["quantity"] <= 0:
                 removed_names.append(c.get("name", "?"))
                 continue
+
+            if migrated:
+                migrated_names.append(c.get("name", "?"))
+
             clean_cart.append(c)
 
+        request.session["cart"] = clean_cart
+
         if removed_names:
-            request.session["cart"] = clean_cart
             request.session["flash"] = (
                 "Из корзины убраны недоступные товары: "
                 + ", ".join(removed_names)
             )
             return RedirectResponse(url="/cart", status_code=303)
+
+        if migrated_names:
+            request.session["flash"] = (
+                "Корзина обновлена: товары доступны в новой партии: "
+                + ", ".join(migrated_names)
+            )
+            return RedirectResponse(url="/cart", status_code=303)
+
         cart = clean_cart
 
     subtotal = _cart_subtotal(cart)
@@ -391,13 +452,6 @@ async def place_order(
     db: Session = Depends(get_db),
     _csrf: None = Depends(check_csrf),
 ):
-    """
-    Оформление заказа. Устойчиво к:
-      - битым данным в сессии
-      - None в unit / product_id
-      - ошибкам БД (обёрнуто в try/except)
-    ⚠️ Убран with_for_update() — конфликтует с joinedload на PostgreSQL.
-    """
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
@@ -419,10 +473,7 @@ async def place_order(
         rows = (
             db.query(SupplyItem)
             .options(joinedload(SupplyItem.product))
-            .filter(
-                SupplyItem.id.in_(cart_ids),
-                SupplyItem.is_active.is_(True),
-            )
+            .filter(SupplyItem.id.in_(cart_ids))
             .all()
         )
         items_map = {i.id: i for i in rows}
@@ -439,9 +490,16 @@ async def place_order(
                 f"Удалите его из корзины."
             )
             return RedirectResponse(url="/cart", status_code=303)
-        if item.stock < c["quantity"]:
+        if not item.is_active:
             request.session["flash"] = (
-                f"«{c.get('name', '?')}»: только {item.stock} упак. на складе"
+                f"«{c.get('name', '?')}» снят с продажи. "
+                f"Удалите его из корзины."
+            )
+            return RedirectResponse(url="/cart", status_code=303)
+        if item.available_stock < c["quantity"]:
+            request.session["flash"] = (
+                f"«{c.get('name', '?')}»: "
+                f"только {item.available_stock} упак. на складе"
             )
             return RedirectResponse(url="/cart", status_code=303)
 
@@ -449,8 +507,12 @@ async def place_order(
     discount_percent = float(user.discount_percent or 0)
     _, total = _apply_discount(subtotal, discount_percent)
 
+    # Списываем остатки
     for c in cart:
         items_map[c["supply_item_id"]].stock -= c["quantity"]
+        # Деактивируем если сток ушёл в 0
+        if items_map[c["supply_item_id"]].available_stock <= 0:
+            items_map[c["supply_item_id"]].is_active = False
 
     try:
         order = Order(
@@ -563,30 +625,18 @@ async def repeat_order(
         pack = max(1, si.product.package_size or 1)
         min_packs = max(1, si.product.min_quantity or 1)
         want_packs = item.quantity or min_packs
-        want_packs = max(min_packs, min(want_packs, si.stock))
+        want_packs = max(min_packs, min(want_packs, si.available_stock))
 
-        found = False
-        for ci in cart:
-            if ci.get("supply_item_id") == si.id:
-                new_packs = ci["quantity"] + want_packs
-                if new_packs > si.stock:
-                    new_packs = si.stock
-                ci["quantity"] = new_packs
-                ci["package_size"] = pack
-                found = True
-                break
-
-        if not found:
-            cart.append({
-                "supply_item_id": si.id,
-                "product_id": si.product.id,
-                "name": si.product.name,
-                "unit": si.product.unit or "упаковка",
-                "package_size": pack,
-                "price": si.price,
-                "image_url": si.product.image_url or "",
-                "quantity": want_packs,
-            })
+        _merge_into_cart(cart, {
+            "supply_item_id": si.id,
+            "product_id": si.product.id,
+            "name": si.product.name,
+            "unit": si.product.unit or "упаковка",
+            "package_size": pack,
+            "price": si.price,
+            "image_url": si.product.image_url or "",
+            "quantity": want_packs,
+        })
         added += 1
 
     request.session["cart"] = cart

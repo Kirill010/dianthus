@@ -67,8 +67,8 @@ def _release_scheduler_lock() -> None:
 def do_unload(db: Session, supply) -> int:
     """
     Разгружает поставку:
-      - деактивирует все старые партии;
-      - резервирует товар под предзаказы;
+      - деактивирует старые партии;
+      - резервирует товар под предзаказы (через reserved_stock);
       - рассылает уведомления клиентам;
       - активирует новую партию.
     Возвращает количество активированных позиций.
@@ -76,7 +76,7 @@ def do_unload(db: Session, supply) -> int:
     from .models import SupplyItem, Preorder, Notification
     from .services.notifier import notify_client_preorder_available
 
-    # Деактивируем старые партии (только если есть активные)
+    # Деактивируем старые партии
     active_count = (
         db.query(SupplyItem)
         .filter(SupplyItem.is_active.is_(True))
@@ -85,7 +85,9 @@ def do_unload(db: Session, supply) -> int:
     if active_count > 0:
         db.query(SupplyItem).filter(
             SupplyItem.is_active.is_(True)
-        ).update({SupplyItem.is_active: False}, synchronize_session=False)
+        ).update({SupplyItem.is_active: False,
+                  SupplyItem.reserved_stock: 0},
+                 synchronize_session=False)
         logger.info("📦 Деактивировано %d старых партий", active_count)
 
     activated = 0
@@ -107,23 +109,17 @@ def do_unload(db: Session, supply) -> int:
         reserved = sum(p.quantity for p in preorders)
 
         if reserved > 0:
-            if item.stock >= reserved:
-                item.stock -= reserved
-                logger.info(
-                    "📦 '%s': зарезервировано %d упак. под предзаказы",
-                    item.product.name, reserved,
-                )
-            else:
-                logger.warning(
-                    "⚠️ '%s': нужно %d упак. под предзаказы, "
-                    "есть только %d",
-                    item.product.name, reserved, item.stock,
-                )
-                item.stock = 0
+            # ✅ Устанавливаем reserved_stock вместо уменьшения stock
+            actual_reserve = min(reserved, item.stock)
+            item.reserved_stock = actual_reserve
+            logger.info(
+                "📦 '%s': зарезервировано %d упак. под предзаказы "
+                "(всего %d)",
+                item.product.name, actual_reserve, item.stock,
+            )
 
-            # Создаём уведомления и рассылаем email
+            # Обновляем все предзаказы: привязываем к актуальной позиции
             for preorder in preorders:
-                # ✅ ФИКС: обновляем supply_item_id на активированную позицию
                 preorder.supply_item_id = item.id
                 preorder.is_fulfilled = True
 
@@ -134,7 +130,8 @@ def do_unload(db: Session, supply) -> int:
                             f"🌸 Предзаказ поступил: "
                             f"«{item.product.name}» "
                             f"— {preorder.quantity} упак. "
-                            f"Перейдите в «Мои предзаказы», чтобы оформить."
+                            f"Перейдите в «Мои предзаказы», "
+                            f"чтобы оформить заказ."
                         ),
                     )
                     db.add(note)
@@ -146,8 +143,8 @@ def do_unload(db: Session, supply) -> int:
                 except Exception as e:
                     logger.warning("Email о предзаказе: %s", e)
 
-        # Активируем, если остался stock
-        if item.stock > 0:
+        # Активируем, если остался свободный сток
+        if item.available_stock > 0:
             item.is_active = True
             activated += 1
 

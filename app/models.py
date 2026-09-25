@@ -37,7 +37,6 @@ QUANTITY_SMALL_MIN = 1
 
 
 def _is_valid_photo_url(value) -> bool:
-    """Возвращает True, если это похоже на URL картинки."""
     if not value or not isinstance(value, str):
         return False
     s = value.strip()
@@ -47,7 +46,6 @@ def _is_valid_photo_url(value) -> bool:
 
 
 def _normalize_url(value: str) -> str:
-    """Приводит URL к виду /static/... или http(s)://..."""
     s = (value or "").strip()
     if not s:
         return ""
@@ -87,7 +85,7 @@ class Product(Base):
     unit = Column(String(30), default="упаковка")
     package_size = Column(Integer, default=1)
     min_quantity = Column(Integer, default=1)
-    image_url = Column(String(500), default="")     # главное фото
+    image_url = Column(String(500), default="")
     photos = Column(JSON, default=list, server_default="[]")
     category = Column(String(100), default="Прочее", index=True)
     created_at = Column(DateTime, default=_utcnow)
@@ -96,32 +94,22 @@ class Product(Base):
 
     @property
     def all_photos(self) -> list:
-        """
-        Возвращает только ВАЛИДНЫЕ URL-ы фото.
-        Отбрасывает числа (ID из 1С), пустые строки,
-        javascript:/data: схемы.
-        """
         result = []
-
         raw = self.photos
         if isinstance(raw, str):
             try:
                 raw = json.loads(raw)
             except (ValueError, TypeError):
                 raw = []
-
         if isinstance(raw, list):
             for p in raw:
                 s = _normalize_url(str(p))
                 if _is_valid_photo_url(s):
                     result.append(s)
-
-        # Фолбэк на image_url
         if not result:
             main = _normalize_url(self.image_url or "")
             if _is_valid_photo_url(main):
                 result = [main]
-
         return result
 
 
@@ -153,6 +141,7 @@ class SupplyItem(Base):
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     price = Column(Float, nullable=False, default=0)
     stock = Column(Integer, default=0)
+    reserved_stock = Column(Integer, default=0, nullable=False)
     is_active = Column(Boolean, default=False, nullable=False, index=True)
     created_at = Column(DateTime, default=_utcnow)
     supply = relationship("Supply", back_populates="items")
@@ -169,12 +158,21 @@ class SupplyItem(Base):
         return self.stock * self.pack_size
 
     @property
+    def available_stock(self) -> int:
+        """Свободный сток = всего - зарезервировано."""
+        return max(0, self.stock - (self.reserved_stock or 0))
+
+    @property
+    def available_stems(self) -> int:
+        return self.available_stock * self.pack_size
+
+    @property
     def price_per_pack(self) -> float:
         return self.price * self.pack_size
 
     @property
     def is_available(self) -> bool:
-        return self.stock > 0 and self.is_active
+        return self.available_stock > 0 and self.is_active
 
 
 class Order(Base):

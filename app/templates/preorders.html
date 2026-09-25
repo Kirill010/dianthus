@@ -56,16 +56,21 @@
 
         <div class="order-card__actions">
             {% if p.is_fulfilled %}
-                {# ✅ Новая кнопка — в 1 клик переносит в корзину #}
-                <form action="/preorders/{{ p.id }}/to_cart" method="post"
-                      class="d-inline">
-                    <input type="hidden" name="csrf_token"
-                           value="{{ csrf_token }}">
-                    <button type="submit" class="btn btn-sm btn-success">
-                        <i class="fas fa-shopping-cart me-1"></i>
-                        В корзину ({{ p.quantity }} упак.)
-                    </button>
-                </form>
+                {% if p.available_stock and p.available_stock > 0 %}
+                    <form action="/preorders/{{ p.id }}/to_cart" method="post"
+                          class="d-inline">
+                        <input type="hidden" name="csrf_token"
+                               value="{{ csrf_token }}">
+                        <button type="submit" class="btn btn-sm btn-success">
+                            <i class="fas fa-shopping-cart me-1"></i>
+                            В корзину ({{ p.quantity }} упак.)
+                        </button>
+                    </form>
+                {% else %}
+                    <span class="badge bg-secondary">
+                        <i class="fas fa-ban me-1"></i>Товар уже распродан
+                    </span>
+                {% endif %}
                 <a href="/product/{{ p.supply_item_id }}"
                    class="btn btn-sm btn-outline-secondary">
                     <i class="fas fa-eye me-1"></i>Открыть товар

@@ -8,8 +8,6 @@ from .database import engine
 logger = logging.getLogger(__name__)
 
 
-# ── DDL-описания колонок ──
-# ВАЖНО: для PostgreSQL и SQLite используются разные типы для JSON-полей.
 EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
     "products": {
         "name":         "VARCHAR(200)",
@@ -20,7 +18,6 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
         "package_size": "INTEGER DEFAULT 1",
         "min_quantity": "INTEGER DEFAULT 1",
         "image_url":    "VARCHAR(500) DEFAULT ''",
-        # ⚠️  photos обрабатывается отдельно (см. _column_ddl)
         "category":     "VARCHAR(100) DEFAULT 'Прочее'",
         "sku":          "VARCHAR(100) DEFAULT ''",
     },
@@ -38,7 +35,9 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
         "notes":  "TEXT DEFAULT ''",
     },
     "supply_items": {
-        "is_active": "BOOLEAN DEFAULT FALSE",
+        "is_active":      "BOOLEAN DEFAULT FALSE",
+        # ✅ НОВОЕ ПОЛЕ
+        "reserved_stock": "INTEGER DEFAULT 0 NOT NULL",
     },
     "orders": {
         "status":           "VARCHAR(30) DEFAULT 'Новый'",
@@ -66,17 +65,11 @@ EXPECTED_INDEXES: dict[str, list[tuple[str, str]]] = {
 
 
 def _column_ddl(table: str, column: str, sqlite_ddl: str) -> str:
-    """
-    Возвращает корректный DDL для ADD COLUMN с учётом диалекта БД.
-    Спец-обработка нужна для JSON-колонок: Postgres ждёт JSONB, SQLite — TEXT.
-    """
     dialect = engine.dialect.name
-
     if table == "products" and column == "photos":
         if dialect == "postgresql":
             return "JSONB DEFAULT '[]'::jsonb"
         return "TEXT DEFAULT '[]'"
-
     return sqlite_ddl
 
 
@@ -92,21 +85,40 @@ def ensure_notifications_table() -> None:
 
 
 # ═══════════════════════════════════════════════════════════
-# BACKFILL-функции (совместимые с PostgreSQL и SQLite)
+# ОДНОРАЗОВЫЕ BACKFILL-функции
 # ═══════════════════════════════════════════════════════════
 
-def _backfill_order_subtotals() -> None:
+def _backfill_once(flag: str) -> bool:
+    """
+    Проверяет, выполнен ли бэкфилл с данным флагом.
+    Использует таблицу _migrations (создаётся при первом вызове).
+    """
     try:
         with engine.begin() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS _migrations (
+                    name VARCHAR(100) PRIMARY KEY,
+                    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            row = conn.execute(text(
+                "SELECT 1 FROM _migrations WHERE name = :n"
+            ), {"n": flag}).first()
+            if row:
+                return False  # уже применён
             conn.execute(text(
-                "UPDATE orders SET subtotal = total_price "
-                "WHERE subtotal = 0 AND total_price > 0"
-            ))
+                "INSERT INTO _migrations (name) VALUES (:n)"
+            ), {"n": flag})
+        return True
     except Exception as e:
-        logger.warning("Backfill orders.subtotal: %s", e)
+        logger.warning("_backfill_once(%s): %s", flag, e)
+        return False
 
 
 def _backfill_order_item_pack_sizes() -> None:
+    """Одноразовый бэкфилл: восстанавливает package_size у старых заказов."""
+    if not _backfill_once("order_item_pack_sizes_v1"):
+        return
     try:
         with engine.begin() as conn:
             conn.execute(text("""
@@ -118,20 +130,18 @@ def _backfill_order_item_pack_sizes() -> None:
                 )
                 WHERE package_size = 1
             """))
+        logger.info("✅ Backfill order_items.package_size выполнен")
     except Exception as e:
         logger.warning("Backfill order_items.package_size: %s", e)
 
 
 def _backfill_product_photos() -> None:
-    """
-    Переносит image_url в photos для старых товаров.
-    Учитывает разницу типов: в PG photos — JSONB, в SQLite — TEXT.
-    """
+    if not _backfill_once("product_photos_v1"):
+        return
     try:
         dialect = engine.dialect.name
         with engine.begin() as conn:
             if dialect == "postgresql":
-                # PG: photos — JSONB. Сравниваем через ::text, пишем через to_jsonb
                 conn.execute(text("""
                     UPDATE products
                     SET photos = to_jsonb(ARRAY[image_url])
@@ -142,7 +152,6 @@ def _backfill_product_photos() -> None:
                       AND image_url != ''
                 """))
             else:
-                # SQLite / MySQL / другие: photos — TEXT с JSON-строкой
                 conn.execute(text("""
                     UPDATE products
                     SET photos = '["' || image_url || '"]'
@@ -154,16 +163,23 @@ def _backfill_product_photos() -> None:
         logger.warning("Backfill products.photos: %s", e)
 
 
-def _backfill_order_totals() -> None:
+def _backfill_order_subtotals() -> None:
+    if not _backfill_once("order_subtotals_v1"):
+        return
     try:
         with engine.begin() as conn:
+            conn.execute(text(
+                "UPDATE orders SET subtotal = total_price "
+                "WHERE subtotal = 0 AND total_price > 0"
+            ))
             conn.execute(text(
                 "UPDATE orders SET total_price = subtotal "
                 "WHERE (total_price IS NULL OR total_price = 0) "
                 "AND subtotal > 0"
             ))
+        logger.info("✅ Backfill orders.subtotal/total_price выполнен")
     except Exception as e:
-        logger.warning("Backfill orders.total_price: %s", e)
+        logger.warning("Backfill orders: %s", e)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -202,7 +218,6 @@ def auto_migrate() -> None:
                     logger.warning("Не удалось добавить %s.%s: %s",
                                    table, col, e)
 
-        # Индексы
         for table, indexes in EXPECTED_INDEXES.items():
             if table not in tables:
                 continue
@@ -220,11 +235,10 @@ def auto_migrate() -> None:
                 except Exception as e:
                     logger.warning("Индекс %s: %s", idx_name, e)
 
-    # Backfill (в отдельных транзакциях — падение одного не рушит остальные)
-    _backfill_order_subtotals()
+    # Одноразовые бэкфиллы
     _backfill_order_item_pack_sizes()
     _backfill_product_photos()
-    _backfill_order_totals()
+    _backfill_order_subtotals()
 
     if added:
         logger.info("✅ Авто-миграция: +%d изменений", added)

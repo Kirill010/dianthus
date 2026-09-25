@@ -8,10 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 def _calc_preorder_totals(preorder, item, product, user_discount: float):
-    """
-    Считает суммы для одного предзаказа с учётом скидки клиента.
-    Возвращает словарь с subtotal / discount_percent / discount_amount / total.
-    """
+    """Считает суммы для одного предзаказа с учётом скидки клиента."""
     pack = max(1, product.package_size or 1)
     subtotal = round(item.price * preorder.quantity * pack, 2)
     pct = max(0.0, min(100.0, float(user_discount or 0)))
@@ -28,16 +25,15 @@ def _calc_preorder_totals(preorder, item, product, user_discount: float):
 def add_preorder_to_db(
     db: Session, user_id: int, supply_item_id: int, quantity_packs: int
 ) -> bool:
-    """Добавляет или увеличивает предзаказ. True при успехе."""
+    """Добавляет или увеличивает предзаказ."""
     item = db.query(SupplyItem).filter(SupplyItem.id == supply_item_id).first()
     if not item or item.is_active:
         return False
 
-    # Проверяем, что поставка действительно активна (Ожидается / В пути)
     if not item.supply or item.supply.status not in ("Ожидается", "В пути"):
         logger.warning(
-            "Попытка предзаказа из неактивной поставки: supply_id=%s, status=%s",
-            item.supply_id, item.supply.status if item.supply else "?",
+            "Попытка предзаказа из неактивной поставки: supply_id=%s",
+            item.supply_id,
         )
         return False
 
@@ -53,7 +49,7 @@ def add_preorder_to_db(
 
     if preorder:
         preorder.quantity += quantity_packs
-        preorder.supply_item_id = item.id  # обновляем ссылку на актуальную позицию
+        preorder.supply_item_id = item.id
     else:
         preorder = Preorder(
             user_id=user_id,
@@ -73,7 +69,6 @@ def add_preorder_to_db(
 
 
 def _get_user_discount(db: Session, user_id: int) -> float:
-    """Возвращает процент скидки пользователя (0, если нет)."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         return 0.0
@@ -81,16 +76,8 @@ def _get_user_discount(db: Session, user_id: int) -> float:
 
 
 def _resolve_item_for_preorder(db: Session, preorder: Preorder):
-    """
-    Возвращает SupplyItem для предзаказа.
-    Если позиция ещё не активна — берём её же.
-    Если позиция уже разгружена (is_active=True) — берём её же
-    (в do_unload мы обновляем supply_item_id на актуальную).
-    """
     if preorder.supply_item is not None:
         return preorder.supply_item
-
-    # Фолбэк: ищем последнюю позицию по продукту
     return (
         db.query(SupplyItem)
         .options(joinedload(SupplyItem.product), joinedload(SupplyItem.supply))
@@ -101,7 +88,7 @@ def _resolve_item_for_preorder(db: Session, preorder: Preorder):
 
 
 def get_user_preorders(db: Session, user_id: int) -> list:
-    """Активные предзаказы для корзины (только is_fulfilled=False)."""
+    """Активные предзаказы для корзины."""
     discount = _get_user_discount(db, user_id)
 
     rows = (
@@ -145,7 +132,7 @@ def get_user_preorders(db: Session, user_id: int) -> list:
 
 
 def get_all_user_preorders(db: Session, user_id: int) -> list:
-    """ВСЕ предзаказы пользователя (включая выполненные) — для /preorders."""
+    """ВСЕ предзаказы пользователя (включая выполненные)."""
     discount = _get_user_discount(db, user_id)
 
     rows = (
@@ -183,13 +170,13 @@ def get_all_user_preorders(db: Session, user_id: int) -> list:
                 item.supply.arrival_date.strftime("%d.%m.%Y")
                 if item.supply and item.supply.arrival_date else "—"
             ),
+            "available_stock": item.available_stock if item.is_active else 0,
             **totals,
         })
     return result
 
 
 def preorder_count_db(db: Session, user_id: int) -> int:
-    """Количество упаковок в активных предзаказах (для бейджа в шапке)."""
     rows = (
         db.query(Preorder)
         .filter(
@@ -218,10 +205,27 @@ def remove_preorder_db(db: Session, user_id: int, preorder_id: int) -> bool:
     return False
 
 
-def move_fulfilled_preorder_to_cart(db, user, preorder_id: int) -> tuple[bool, str]:
+def remove_fulfilled_preorder_db(db: Session, user_id: int, preorder_id: int) -> bool:
+    """Удаляет предзаказ независимо от статуса (для конвертации в корзину)."""
+    preorder = (
+        db.query(Preorder)
+        .filter(
+            Preorder.id == preorder_id,
+            Preorder.user_id == user_id,
+        )
+        .first()
+    )
+    if preorder:
+        db.delete(preorder)
+        db.commit()
+        return True
+    return False
+
+
+def move_fulfilled_preorder_to_cart(db, user, preorder_id: int) -> tuple[bool, dict | str]:
     """
-    Переносит ВЫПОЛНЕННЫЙ предзаказ в основную корзину пользователя.
-    Возвращает (успех, сообщение).
+    Готовит данные для переноса поступившего предзаказа в корзину.
+    Возвращает (True, dict_с_данными) или (False, сообщение_об_ошибке).
     """
     preorder = (
         db.query(Preorder)
@@ -245,10 +249,31 @@ def move_fulfilled_preorder_to_cart(db, user, preorder_id: int) -> tuple[bool, s
     product = item.product
     pack = max(1, product.package_size or 1)
     min_packs = max(1, product.min_quantity or 1)
-    want_packs = max(min_packs, min(preorder.quantity, item.stock or preorder.quantity))
 
-    # Сессия недоступна в сервисе, поэтому вернём данные для добавления
-    # (используется в роутере, где есть request.session)
+    # ✅ Берём из reserved_stock — оно зарезервировано под нас
+    reserved = item.reserved_stock or 0
+    # Если зарезервировано меньше, чем нужно — используем зарезервированное
+    if reserved < preorder.quantity:
+        want_packs = reserved
+    else:
+        want_packs = preorder.quantity
+    want_packs = max(min_packs, want_packs)
+
+    if want_packs <= 0:
+        return False, "Товар закончился"
+
+    # Освобождаем резерв
+    item.reserved_stock = max(0, reserved - want_packs)
+
+    # ✅ Списываем сток прямо сейчас, чтобы другой клиент не купил
+    item.stock = max(0, item.stock - want_packs)
+
+    # Если stock стал 0 — деактивируем
+    if item.available_stock <= 0:
+        item.is_active = False
+
+    db.commit()
+
     return True, {
         "supply_item_id": item.id,
         "product_id": product.id,

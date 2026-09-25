@@ -1,4 +1,4 @@
-# Каталог: только для авторизованных. Гостей редиректит на /login.
+# Каталог: только для авторизованных.
 from typing import Optional
 from urllib.parse import urlencode
 
@@ -27,12 +27,16 @@ SORT_OPTIONS = [
 
 
 def _stems_expr():
-    """Количество штук = упаковок * размер упаковки."""
-    return SupplyItem.stock * Product.package_size
+    """
+    Количество штук = (stock - reserved_stock) * package_size.
+    ✅ Учитываем зарезервированное под предзаказы.
+    """
+    from sqlalchemy import func
+    return (func.coalesce(SupplyItem.stock, 0)
+            - func.coalesce(SupplyItem.reserved_stock, 0)) * Product.package_size
 
 
 def _base_query(db: Session):
-    """Базовый запрос: только активные товары."""
     return (
         db.query(SupplyItem)
         .options(
@@ -45,7 +49,6 @@ def _base_query(db: Session):
 
 
 def _preorder_query(db: Session):
-    """Товары, которые ещё едут — для предзаказа."""
     return (
         db.query(SupplyItem)
         .options(
@@ -56,13 +59,12 @@ def _preorder_query(db: Session):
         .join(Supply, SupplyItem.supply_id == Supply.id)
         .filter(
             SupplyItem.is_active.is_(False),
-            Supply.status.in_(["Ожидается", "В пути"]),  # ✅ ИСПРАВЛЕНО
+            Supply.status.in_(["Ожидается", "В пути"]),
         )
     )
 
 
 def _apply_quantity_filter(query, level: str):
-    """Фильтр по уровню наличия: available / big / medium / small / out."""
     stems = _stems_expr()
     if level == "big":
         return query.filter(stems >= QUANTITY_BIG_MIN)
@@ -74,13 +76,11 @@ def _apply_quantity_filter(query, level: str):
                             stems < QUANTITY_MEDIUM_MIN)
     if level == "out":
         return query.filter(stems < QUANTITY_SMALL_MIN)
-    # "available" по умолчанию
     return query.filter(stems >= QUANTITY_SMALL_MIN)
 
 
 def _apply_filters(query, q, country, category, min_price, max_price,
                    min_length, max_length):
-    """Поиск и фильтры."""
     if q:
         pattern = f"%{q}%"
         query = query.filter(or_(
@@ -104,7 +104,6 @@ def _apply_filters(query, q, country, category, min_price, max_price,
 
 
 def _apply_sort(query, sort: str):
-    """Сортировка: newest / price_asc / price_desc / name."""
     if sort == "price_asc":
         return query.order_by(SupplyItem.price.asc())
     if sort == "price_desc":
@@ -115,7 +114,6 @@ def _apply_sort(query, sort: str):
 
 
 def _make_page_url(request: Request):
-    """Генератор URL для пагинации с сохранением фильтров."""
     def page_url(page: int) -> str:
         params = {k: v for k, v in request.query_params.items() if v}
         params["page"] = str(page)
@@ -124,7 +122,6 @@ def _make_page_url(request: Request):
 
 
 def _count_by_level(db: Session, category: str) -> dict:
-    """Сколько товаров в каждой группе по наличию."""
     stems = _stems_expr()
     base = (
         db.query(SupplyItem)
@@ -147,7 +144,6 @@ def _count_by_level(db: Session, category: str) -> dict:
 
 
 def _category_url(current: dict, new_category: str) -> str:
-    """URL при клике на категорию — сохраняет остальные фильтры."""
     params = {}
     if new_category:
         params["category"] = new_category
@@ -161,7 +157,6 @@ def _category_url(current: dict, new_category: str) -> str:
 
 
 def _level_url(current: dict, new_level: str) -> str:
-    """URL при клике на уровень наличия."""
     params = {}
     if current.get("category"):
         params["category"] = current["category"]
@@ -189,12 +184,10 @@ async def catalog(
     page: int = 1,
     db: Session = Depends(get_db),
 ):
-    """Главная страница каталога."""
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
-    # ── Нормализация параметров ──
     page = max(1, page)
     sort = sort if any(sort == k for k, _ in SORT_OPTIONS) else "newest"
     q, country, category = q.strip(), country.strip(), category.strip()
@@ -203,7 +196,6 @@ async def catalog(
     if level not in valid_levels:
         level = "available"
 
-    # ── Строим запрос ──
     query = _base_query(db)
     query = _apply_quantity_filter(query, level)
     query = _apply_filters(
@@ -212,7 +204,6 @@ async def catalog(
     )
     query = _apply_sort(query, sort)
 
-    # ── Пагинация ──
     page_size = config.PAGE_SIZE
     total = query.count()
     total_pages = max(1, (total + page_size - 1) // page_size)
@@ -220,7 +211,6 @@ async def catalog(
 
     items = query.offset((page - 1) * page_size).limit(page_size).all()
 
-    # ── Предзаказ (только на 1-й странице без фильтров) ──
     preorder_items = []
     if page == 1 and not q and not category and level == "available":
         preorder_items = (
@@ -230,7 +220,6 @@ async def catalog(
             .all()
         )
 
-    # ── Справочники для фильтров ──
     countries = sorted({
         c[0] for c in db.query(Product.country).distinct().all() if c[0]
     })
@@ -289,7 +278,6 @@ async def search_suggest(
     request: Request = None,
     db: Session = Depends(get_db),
 ):
-    """Автоподсказки поиска."""
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"items": []})
@@ -320,7 +308,6 @@ async def search_suggest(
 async def product_detail(
     item_id: int, request: Request, db: Session = Depends(get_db)
 ):
-    """Детальная страница товара."""
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)

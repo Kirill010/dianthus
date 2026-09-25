@@ -5,13 +5,12 @@
 </a>
 
 {% set pack = product.package_size or 1 %}
-{% set stems = item.stock * pack %}
+{% set stems = item.available_stems %}
 {% set min_packs = product.min_quantity or 1 %}
 {% set min_stems = pack * min_packs %}
 {% set is_out = stems < 1 %}
 {% set max_stems_valid = (stems // pack) * pack %}
 
-{# Используем all_photos — только валидные URL #}
 {% set photos = product.all_photos %}
 
 <div class="product-detail">
@@ -60,7 +59,7 @@
             <div class="spec-row d-flex justify-content-between py-2 border-bottom">
                 <span class="spec-label text-muted">Доступно:</span>
                 <span class="spec-value fw-medium {% if is_out %}text-danger{% else %}text-success{% endif %}">
-                    {{ item.stock }} упак. ({{ stems }} шт)
+                    {{ item.available_stock }} упак. ({{ stems }} шт)
                 </span>
             </div>
         </div>
