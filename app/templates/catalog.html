@@ -6,10 +6,7 @@
     <span class="badge bg-secondary">{{ total_items }} товаров</span>
 </div>
 
-{# ═══════ ФОРМА ПОИСКА ═══════
-   ⚠️ ИСПРАВЛЕНО: скрытые поля сохраняют активные фильтры,
-   когда пользователь отправляет поиск.
-#}
+{# ═══════ ФОРМА ПОИСКА ═══════ #}
 <form class="catalog-search mb-4" method="get" action="/catalog">
     {% if current_filters.category %}
         <input type="hidden" name="category" value="{{ current_filters.category }}">
@@ -77,6 +74,7 @@
     </a>
 </div>
 
+{# ═══════ ТОВАРЫ В НАЛИЧИИ ═══════ #}
 {% if not items %}
     <div class="empty-state text-center py-5">
         <i class="fas fa-seedling fa-3x text-muted mb-3"></i>
@@ -220,6 +218,74 @@
         {% endif %}
     </nav>
     {% endif %}
+{% endif %}
+
+{# ═══════ ПРЕДЗАКАЗЫ ═══════ #}
+{% if preorder_items %}
+    <div class="preorder-section mt-5">
+        <h3 class="mb-3"><i class="fas fa-truck-fast me-2"></i>Товары в пути (Предзаказ)</h3>
+        <div class="product-grid">
+            {% for item in preorder_items %}
+                {% set product = item.product %}
+                {% set pack = product.package_size or 1 %}
+                {% set photos = product.all_photos %}
+                <div class="product-card-v2">
+                    <div class="product-card-v2__image-wrap">
+                        <a href="/product/{{ item.id }}" class="product-card-v2__image-link">
+                            {% if photos %}
+                                <img src="{{ photos[0] }}"
+                                     alt="{{ product.name }}"
+                                     class="product-card-v2__photo"
+                                     loading="lazy">
+                            {% else %}
+                                <div class="product-card-v2__placeholder">
+                                    <i class="fas fa-seedling"></i>
+                                </div>
+                            {% endif %}
+                        </a>
+                    </div>
+                    <div class="product-card-v2__body">
+                        <a href="/product/{{ item.id }}" class="product-card-v2__name">
+                            {{ product.name }}
+                        </a>
+                        <div class="product-card-v2__specs">
+                            <div class="spec-line">
+                                <span class="spec-line__label">Кол-во в уп:</span>
+                                <span class="spec-line__value">{{ pack }}шт</span>
+                            </div>
+                            <div class="spec-line">
+                                <span class="spec-line__label">Прибытие:</span>
+                                <span class="spec-line__value">
+                                    {{ item.supply.arrival_date.strftime('%d.%m.%Y') if item.supply and item.supply.arrival_date else '—' }}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="product-card-v2__price">
+                            {{ "%.2f"|format(item.price) }} ₽
+                        </div>
+                        <form action="/add_to_preorder" method="post" class="product-card-v2__cart-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <input type="hidden" name="supply_item_id" value="{{ item.id }}">
+                            <div class="qty-row">
+                                <input type="number"
+                                       name="quantity_stems"
+                                       class="qty-input"
+                                       value="{{ pack }}"
+                                       min="{{ pack }}"
+                                       step="{{ pack }}"
+                                       inputmode="numeric">
+                                <button type="submit"
+                                        class="btn-cart-green"
+                                        title="В предзаказ">
+                                    <i class="fas fa-clock"></i>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
 {% endif %}
 
 <script>

@@ -56,7 +56,7 @@ def _preorder_query(db: Session):
         .join(Supply, SupplyItem.supply_id == Supply.id)
         .filter(
             SupplyItem.is_active.is_(False),
-            Supply.status.in_(["Ожидается", "В пути"]),
+            Supply.status.in_(["Ожидается", "В пути"]), # <-- ИСПРАВЛЕНО
         )
     )
 
@@ -265,7 +265,7 @@ async def catalog(
         request, "catalog.html", db,
         user=user,
         items=items,
-        preorder_items=preorder_items,
+        preorder_items=preorder_items, # <-- ПЕРЕДАЕМ В ШАБЛОН
         countries=countries,
         active_categories=active_categories,
         all_categories=PRODUCT_CATEGORIES,
@@ -273,7 +273,6 @@ async def catalog(
         level_counts=level_counts,
         sort_options=SORT_OPTIONS,
         current_filters=current_filters,
-        # ⚠️ ИСПРАВЛЕНО: передаём search_q, иначе поле поиска теряет значение
         search_q=q,
         page=page, total_pages=total_pages, total_items=total,
         page_url=_make_page_url(request),
@@ -315,7 +314,6 @@ async def search_suggest(
         .limit(8)
         .all()
     )
-    # ⚠️ ИСПРАВЛЕНО: url теперь ведёт на конкретный товар, а не на /catalog
     return JSONResponse({
         "items": [
             {"name": r.name, "url": f"/product/{r.si}"}
