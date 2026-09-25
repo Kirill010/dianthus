@@ -169,6 +169,37 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     # JSON для API
     return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
 
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Ловим все необработанные исключения — показываем error.html."""
+    logger.exception(
+        "💥 Необработанная ошибка на %s: %s", request.url.path, exc
+    )
+
+    # HTML-страница для браузера
+    if request.headers.get("accept", "").startswith("text/html"):
+        try:
+            db = next(get_db())
+            try:
+                return render(
+                    request,
+                    "error.html",
+                    db,
+                    code=500,
+                    title="Ошибка сервера",
+                    message="Мы уже знаем о проблеме и чиним её.",
+                )
+            finally:
+                db.close()
+        except Exception as render_err:
+            logger.error("Не удалось отрисовать error.html: %s", render_err)
+
+    # JSON для API
+    return JSONResponse(
+        {"detail": "Internal server error"},
+        status_code=500,
+    )
+
 
 # ═══════════════════════════════════════════════════════════
 # ОБЩИЕ МАРШРУТЫ

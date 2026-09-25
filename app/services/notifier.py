@@ -382,3 +382,54 @@ def notify_admin_status_changed(order, status: str) -> None:
     """
 
     send_email(f"Заказ №{order.id}: {status}", body)
+
+def notify_client_preorder_available(preorder, supply_item) -> None:
+    """Уведомление клиенту: предзаказ поступил."""
+    if not preorder or not preorder.user:
+        return
+
+    user = preorder.user
+    product = supply_item.product
+
+    body = f"""
+    <!DOCTYPE html>
+    <html><head><meta charset="UTF-8">{_BASE_STYLE}</head>
+    <body>
+      <div class="card">
+        <h1>🌸 Ваш предзаказ поступил!</h1>
+        <p style="font-size:16px;">Здравствуйте, <b>{user.full_name}</b>!</p>
+        <p>Товар из вашего предзаказа <b>«{product.name}»</b>
+           уже на складе.</p>
+
+        <table>
+          <tr><td>Количество:</td>
+              <td><b>{preorder.quantity} упак.</b></td></tr>
+          <tr><td>Цена:</td>
+              <td><b>{supply_item.price:.2f} ₽/шт</b></td></tr>
+          <tr><td>В упаковке:</td>
+              <td><b>{product.package_size} шт</b></td></tr>
+        </table>
+
+        <p>Вы можете оформить заказ прямо сейчас —
+           товар уже доступен в каталоге.</p>
+
+        <a href="{config.APP_URL}/product/{supply_item.id}" class="btn">
+            Перейти к товару
+        </a>
+
+        <div class="footer">
+          {config.SHOP_NAME} · {config.SHOP_PHONE}
+        </div>
+      </div>
+    </body></html>
+    """
+
+    try:
+        send_email_to(
+            to=user.email,
+            subject=f"🌸 Предзаказ поступил: {product.name}",
+            body_html=body,
+        )
+    except Exception as e:
+        logger.warning("Ошибка email о предзаказе: %s", e)
+        

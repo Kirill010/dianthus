@@ -1,7 +1,6 @@
 """
 Планировщик фоновых задач.
-Lock-файл — в /run/dianthus (systemd RuntimeDirectory),
-чтобы работал при PrivateTmp=true.
+Lock-файл — в /run/dianthus (systemd RuntimeDirectory).
 """
 import fcntl
 import logging
@@ -66,39 +65,78 @@ def _release_scheduler_lock() -> None:
 
 
 def do_unload(db: Session, supply) -> int:
-    """Разгружает поставку + вычитает предзаказы."""
-    from .models import SupplyItem, Preorder
-    from sqlalchemy import func
+    """
+    Разгружает поставку:
+      - деактивирует все старые партии;
+      - резервирует товар под предзаказы;
+      - рассылает уведомления клиентам;
+      - активирует новую партию.
+    Возвращает количество активированных позиций.
+    """
+    from .models import SupplyItem, Preorder, Notification
+    from .services.notifier import notify_client_preorder_available
 
+    # Деактивируем старые партии
     db.query(SupplyItem).filter(
         SupplyItem.is_active.is_(True)
     ).update({SupplyItem.is_active: False}, synchronize_session=False)
 
+    activated = 0
+
     for item in supply.items:
         if item.stock <= 0:
             continue
-        preordered = (
-            db.query(func.coalesce(func.sum(Preorder.quantity), 0))
+
+        # Ищем предзаказы на этот товар
+        preorders = (
+            db.query(Preorder)
             .filter(
                 Preorder.product_id == item.product_id,
                 Preorder.is_fulfilled.is_(False),
             )
-            .scalar()
+            .all()
         )
-        if preordered > 0:
-            item.stock = max(0, item.stock - preordered)
-            db.query(Preorder).filter(
-                Preorder.product_id == item.product_id,
-                Preorder.is_fulfilled.is_(False),
-            ).update({Preorder.is_fulfilled: True},
-                     synchronize_session=False)
-            logger.info(
-                "📦 '%s': зарезервировано %d упак. под предзаказы",
-                item.product.name, preordered,
-            )
 
-    activated = 0
-    for item in supply.items:
+        reserved = sum(p.quantity for p in preorders)
+
+        if reserved > 0:
+            if item.stock >= reserved:
+                item.stock -= reserved
+                logger.info(
+                    "📦 '%s': зарезервировано %d упак. под предзаказы",
+                    item.product.name, reserved,
+                )
+            else:
+                logger.warning(
+                    "⚠️ '%s': нужно %d упак. под предзаказы, "
+                    "есть только %d",
+                    item.product.name, reserved, item.stock,
+                )
+                item.stock = 0
+
+            # Создаём уведомления и рассылаем email
+            for preorder in preorders:
+                try:
+                    note = Notification(
+                        user_id=preorder.user_id,
+                        text=(
+                            f"🌸 Предзаказ поступил: "
+                            f"«{item.product.name}» "
+                            f"— {preorder.quantity} упак."
+                        ),
+                    )
+                    db.add(note)
+                except Exception as e:
+                    logger.warning("Не удалось создать нотификацию: %s", e)
+
+                try:
+                    notify_client_preorder_available(preorder, item)
+                except Exception as e:
+                    logger.warning("Email о предзаказе: %s", e)
+
+                preorder.is_fulfilled = True
+
+        # Активируем, если остался stock
         if item.stock > 0:
             item.is_active = True
             activated += 1

@@ -1,4 +1,4 @@
-# Корзина и оформление заказа. Цена — за штуку, количество — упаковки.
+# Корзина и оформление заказа.
 import logging
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -13,6 +13,7 @@ from ..security import check_csrf
 from ..services.notifier import notify_admin_new_order
 from ..services.preorder_service import (
     add_preorder_to_db, get_user_preorders, remove_preorder_db,
+    get_all_user_preorders,
 )
 from ..templating import render
 
@@ -38,10 +39,22 @@ def _apply_discount(subtotal: float, discount_percent: float):
 
 
 def _clean_cart(cart: list[dict]) -> list[dict]:
-    return [c for c in cart if c.get("quantity", 0) > 0]
+    """Убирает элементы без нужных ключей."""
+    result = []
+    for c in cart:
+        if not isinstance(c, dict):
+            continue
+        if not c.get("supply_item_id"):
+            continue
+        if not c.get("quantity") or c["quantity"] <= 0:
+            continue
+        if c.get("price") is None:
+            continue
+        result.append(c)
+    return result
 
 
-# ДОБАВЛЕНИЕ В ОБЫЧНУЮ КОРЗИНУ
+# ДОБАВЛЕНИЕ В КОРЗИНУ
 
 @router.post("/add_to_cart")
 async def add_to_cart(
@@ -92,7 +105,7 @@ async def add_to_cart(
 
     cart = request.session.get("cart", [])
     for ci in cart:
-        if ci["supply_item_id"] == supply_item_id:
+        if ci.get("supply_item_id") == supply_item_id:
             new_packs = ci["quantity"] + quantity_packs
             if new_packs > item.stock:
                 new_packs = item.stock
@@ -107,10 +120,10 @@ async def add_to_cart(
             "supply_item_id": item.id,
             "product_id": product.id,
             "name": product.name,
-            "unit": product.unit,
+            "unit": product.unit or "упаковка",
             "package_size": pack,
             "price": item.price,
-            "image_url": product.image_url,
+            "image_url": product.image_url or "",
             "quantity": quantity_packs,
         })
         request.session["flash"] = (
@@ -170,6 +183,25 @@ async def add_to_preorder_route(
         )
     return RedirectResponse(url="/catalog", status_code=303)
 
+
+# СТРАНИЦА ПРЕДЗАКАЗОВ
+
+@router.get("/preorders", response_class=HTMLResponse)
+async def preorders_page(request: Request, db: Session = Depends(get_db)):
+    """Страница «Мои предзаказы»."""
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    preorders = get_all_user_preorders(db, user.id)
+
+    return render(
+        request, "preorders.html", db,
+        user=user,
+        preorders=preorders,
+    )
+
+
 # ПРОСМОТР КОРЗИНЫ
 
 @router.get("/cart", response_class=HTMLResponse)
@@ -178,7 +210,7 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
-    cart = request.session.get("cart", [])
+    cart = _clean_cart(request.session.get("cart", []))
     preorder = get_user_preorders(db, user.id)
 
     if not cart and not preorder:
@@ -205,13 +237,13 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
         for c in cart:
             item = alive.get(c["supply_item_id"])
             if item is None:
-                removed_names.append(c["name"])
+                removed_names.append(c.get("name", "?"))
                 continue
             c["price"] = item.price
             c["package_size"] = max(1, item.product.package_size or 1)
             c["quantity"] = min(c["quantity"], item.stock)
             if c["quantity"] <= 0:
-                removed_names.append(c["name"])
+                removed_names.append(c.get("name", "?"))
                 continue
             clean_cart.append(c)
 
@@ -230,9 +262,7 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
 
     return render(
         request, "cart.html", db,
-        user=user,
-        cart=cart,
-        preorder=preorder,
+        user=user, cart=cart, preorder=preorder,
         subtotal=subtotal,
         discount_percent=discount_percent,
         discount_amount=discount_amount,
@@ -265,7 +295,8 @@ async def remove_from_preorder(
         return RedirectResponse(url="/login", status_code=303)
     if remove_preorder_db(db, user.id, preorder_id):
         request.session["flash"] = "Предзаказ удалён"
-    return RedirectResponse(url="/cart", status_code=303)
+    referer = request.headers.get("referer") or "/cart"
+    return RedirectResponse(url=referer, status_code=303)
 
 
 @router.post("/clear_cart")
@@ -307,6 +338,13 @@ async def place_order(
     db: Session = Depends(get_db),
     _csrf: None = Depends(check_csrf),
 ):
+    """
+    Оформление заказа. Устойчиво к:
+      - битым данным в сессии
+      - None в unit / product_id
+      - ошибкам БД (обёрнуто в try/except)
+    ⚠️ Убран with_for_update() — конфликтует с joinedload на PostgreSQL.
+    """
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
@@ -321,65 +359,91 @@ async def place_order(
         request.session["flash"] = "Комментарий слишком длинный"
         return RedirectResponse(url="/checkout", status_code=303)
 
-    ids = [c["supply_item_id"] for c in cart]
-    query = (
-        db.query(SupplyItem)
-        .options(joinedload(SupplyItem.product))
-        .filter(
-            SupplyItem.id.in_(ids),
-            SupplyItem.is_active.is_(True),
-        )
-    )
-    if db.get_bind().dialect.name == "postgresql":
-        query = query.with_for_update()
-    items_map = {i.id: i for i in query.all()}
+    # ── Собираем ID товаров ──
+    cart_ids = [c["supply_item_id"] for c in cart]
 
+    # ── Загружаем товары (БЕЗ with_for_update!) ──
+    items_map = {}
+    try:
+        rows = (
+            db.query(SupplyItem)
+            .options(joinedload(SupplyItem.product))
+            .filter(
+                SupplyItem.id.in_(cart_ids),
+                SupplyItem.is_active.is_(True),
+            )
+            .all()
+        )
+        items_map = {i.id: i for i in rows}
+    except Exception as e:
+        logger.exception("Ошибка загрузки товаров корзины: %s", e)
+        request.session["flash"] = "Ошибка БД. Попробуйте ещё раз."
+        return RedirectResponse(url="/cart", status_code=303)
+
+    # ── Проверяем наличие ──
     for c in cart:
         item = items_map.get(c["supply_item_id"])
         if item is None:
             request.session["flash"] = (
-                f"«{c['name']}» больше недоступен. Удалите его из корзины."
+                f"«{c.get('name', '?')}» больше недоступен. "
+                f"Удалите его из корзины."
             )
             return RedirectResponse(url="/cart", status_code=303)
         if item.stock < c["quantity"]:
             request.session["flash"] = (
-                f"«{c['name']}»: только {item.stock} упак. на складе"
+                f"«{c.get('name', '?')}»: только {item.stock} упак. на складе"
             )
             return RedirectResponse(url="/cart", status_code=303)
 
+    # ── Считаем суммы ──
     subtotal = _cart_subtotal(cart)
-    discount_percent = user.discount_percent or 0
+    discount_percent = float(user.discount_percent or 0)
     _, total = _apply_discount(subtotal, discount_percent)
 
+    # ── Списываем остатки ──
     for c in cart:
         items_map[c["supply_item_id"]].stock -= c["quantity"]
 
-    order = Order(
-        user_id=user.id,
-        subtotal=subtotal,
-        discount_percent=discount_percent,
-        total_price=total,
-        status="Новый",
-        comment=comment,
-    )
-    db.add(order)
-    db.flush()
+    # ── Создаём заказ ──
+    try:
+        order = Order(
+            user_id=user.id,
+            subtotal=subtotal,
+            discount_percent=discount_percent,
+            total_price=total,
+            status="Новый",
+            comment=comment,
+        )
+        db.add(order)
+        db.flush()
 
-    for c in cart:
-        db.add(OrderItem(
-            order_id=order.id,
-            product_id=c["product_id"],
-            supply_item_id=c["supply_item_id"],
-            product_name=c["name"],
-            unit=c.get("unit", ""),
-            price=c["price"],
-            package_size=c.get("package_size") or 1,
-            quantity=c["quantity"],
-        ))
+        for c in cart:
+            db.add(OrderItem(
+                order_id=order.id,
+                product_id=c.get("product_id"),
+                supply_item_id=c.get("supply_item_id"),
+                product_name=str(c.get("name") or "Товар"),
+                unit=str(c.get("unit") or "упаковка"),
+                price=float(c.get("price") or 0),
+                package_size=int(c.get("package_size") or 1),
+                quantity=int(c.get("quantity") or 1),
+            ))
 
-    db.commit()
-    db.refresh(order)
+        db.commit()
+        db.refresh(order)
 
+    except Exception as e:
+        db.rollback()
+        logger.exception(
+            "❌ Ошибка создания заказа (user_id=%s): %s", user.id, e
+        )
+        request.session["flash"] = (
+            "Не удалось оформить заказ. Попробуйте ещё раз или "
+            "свяжитесь с менеджером."
+        )
+        return RedirectResponse(url="/cart", status_code=303)
+
+    # ── Уведомление админу ──
     try:
         notify_admin_new_order(order, user)
     except Exception as e:
@@ -436,7 +500,6 @@ async def repeat_order(
             skipped.append(item.product_name)
             continue
 
-        # внутри цикла:
         si = (
             db.query(SupplyItem)
             .options(joinedload(SupplyItem.product))
@@ -458,7 +521,7 @@ async def repeat_order(
 
         found = False
         for ci in cart:
-            if ci["supply_item_id"] == si.id:
+            if ci.get("supply_item_id") == si.id:
                 new_packs = ci["quantity"] + want_packs
                 if new_packs > si.stock:
                     new_packs = si.stock
@@ -472,10 +535,10 @@ async def repeat_order(
                 "supply_item_id": si.id,
                 "product_id": si.product.id,
                 "name": si.product.name,
-                "unit": si.product.unit,
+                "unit": si.product.unit or "упаковка",
                 "package_size": pack,
                 "price": si.price,
-                "image_url": si.product.image_url,
+                "image_url": si.product.image_url or "",
                 "quantity": want_packs,
             })
         added += 1

@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h1 class="catalog-title mb-4">
+    <i class="fas fa-truck-fast me-2"></i>Мои предзаказы
+</h1>
+
+{% if preorders %}
+<div class="orders-list">
+    {% for p in preorders %}
+    <div class="order-card">
+        <div class="order-card__head">
+            <strong>{{ p.name }}</strong>
+            <span class="badge
+                {% if p.is_fulfilled %}bg-success
+                {% else %}bg-warning text-dark{% endif %}">
+                {% if p.is_fulfilled %}Поступил{% else %}В пути{% endif %}
+            </span>
+        </div>
+
+        <div class="order-card__meta">
+            {{ p.quantity }} упак. × {{ p.package_size }} шт =
+            {{ p.quantity * p.package_size }} шт
+        </div>
+
+        <div class="order-card__meta">
+            Цена: {{ "%.2f"|format(p.price) }} ₽/шт
+        </div>
+
+        {% if not p.is_fulfilled and p.arrival_date %}
+        <div class="order-card__meta" style="color:#c97b4a;">
+            <i class="fas fa-clock me-1"></i>
+            Ожидаемое прибытие: <strong>{{ p.arrival_date }}</strong>
+        </div>
+        {% endif %}
+
+        <div class="order-card__sum">
+            {{ "%.0f"|format(p.price * p.quantity * p.package_size) }} ₽
+        </div>
+
+        <div class="order-card__actions">
+            {% if p.is_fulfilled %}
+                <a href="/product/{{ p.supply_item_id }}"
+                   class="btn btn-sm btn-success">
+                    <i class="fas fa-shopping-cart me-1"></i>Заказать
+                </a>
+            {% else %}
+                <form action="/remove_from_preorder" method="post"
+                      class="d-inline">
+                    <input type="hidden" name="csrf_token"
+                           value="{{ csrf_token }}">
+                    <input type="hidden" name="preorder_id" value="{{ p.id }}">
+                    <button type="submit"
+                            class="btn btn-sm btn-outline-danger"
+                            onclick="return confirm('Отменить предзаказ?');">
+                        <i class="fas fa-times me-1"></i>Отменить
+                    </button>
+                </form>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <i class="fas fa-truck-fast"></i>
+    <h4>Предзаказов нет</h4>
+    <p class="text-muted">Товары, которые ещё едут, появятся здесь.</p>
+    <a href="/catalog" class="btn btn-primary mt-2">В каталог</a>
+</div>
+{% endif %}
+
+{% endblock %}

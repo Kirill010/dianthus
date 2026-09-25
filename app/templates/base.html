@@ -56,7 +56,7 @@
                 {% if cart_count %}<span class="app-header__badge">{{ cart_count }}</span>{% endif %}
             </a>
             {% if preorder_count %}
-            <a href="/cart" class="app-header__icon" title="Предзаказы">
+            <a href="/preorders" class="app-header__icon" title="Предзаказы">
                 <i class="fas fa-truck-fast"></i>
                 <span class="app-header__badge app-header__badge--preorder">{{ preorder_count }}</span>
             </a>
@@ -87,6 +87,10 @@
     </a>
     <a href="/orders" class="bottom-nav__item {% if request.url.path == '/orders' %}active{% endif %}">
         <i class="fas fa-list"></i><span>Заказы</span>
+    </a>
+    <a href="/preorders" class="bottom-nav__item {% if request.url.path == '/preorders' %}active{% endif %}">
+        <i class="fas fa-truck-fast"></i><span>Предзаказы</span>
+        {% if preorder_count %}<span class="bottom-nav__badge">{{ preorder_count }}</span>{% endif %}
     </a>
     <a href="/cart" class="bottom-nav__item {% if request.url.path in ['/cart', '/checkout'] %}active{% endif %}">
         <i class="fas fa-shopping-cart"></i><span>Корзина</span>
