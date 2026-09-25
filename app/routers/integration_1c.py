@@ -1,4 +1,4 @@
-# app/routers/integration_1c.py (полный код)
+# app/routers/integration_1c.py
 """
 Приём данных из 1С. Basic Auth (в prod).
 POST /api/1c/products/sync
@@ -31,39 +31,28 @@ def _verify_basic(
     request: Request,
     creds: HTTPBasicCredentials | None = Depends(_basic),
 ) -> bool:
-    """
-    Проверяет Basic Auth.
-
-    ✅ ИСПРАВЛЕНО: в dev-режиме при отсутствии пароля — 503,
-    а не молчаливый пропуск (раньше любой мог вызвать sync).
-    """
+    """Проверяет Basic Auth."""
     auth_configured = bool(
         config.INTEGRATION_USER and config.INTEGRATION_PASSWORD
     )
 
     if not auth_configured:
-        # В prod — всегда отказ
         if config.ENV == "prod":
+            logger.error("1С: INTEGRATION_USER/PASSWORD не заданы")
             raise HTTPException(
-                503, "Интеграция с 1С не настроена на сервере"
+                status_code=503,
+                detail="1С-интеграция не настроена на сервере.",
             )
-        # ✅ В dev — требуем пароль, если интеграция используется
-        if not config.INTEGRATION_PASSWORD:
-            logger.warning(
-                "1С: INTEGRATION_PASSWORD не задан — "
-                "запрос отклонён (503)."
-            )
-            raise HTTPException(
-                503,
-                "Задайте INTEGRATION_PASSWORD для разработки "
-                "или используйте ENV=prod"
-            )
-        return True
+        logger.warning("1С: INTEGRATION_PASSWORD не задан")
+        raise HTTPException(
+            status_code=503,
+            detail="1С-интеграция отключена: задайте INTEGRATION_PASSWORD.",
+        )
 
     if creds is None:
         raise HTTPException(
             status_code=401,
-            detail="Требуется авторизация",
+            detail="Требуется авторизация Basic Auth.",
             headers={"WWW-Authenticate": 'Basic realm="Dianthus 1C"'},
         )
 
@@ -80,7 +69,7 @@ def _verify_basic(
         )
         raise HTTPException(
             status_code=401,
-            detail="Неверный логин или пароль",
+            detail="Неверный логин или пароль.",
             headers={"WWW-Authenticate": 'Basic realm="Dianthus 1C"'},
         )
     return True
@@ -139,7 +128,7 @@ def _ensure_1c_supply(db: Session) -> Supply:
             status="Ожидается",
             arrival_date=datetime.now(timezone.utc).replace(tzinfo=None),
             notes="Авто-синхронизация из 1С",
-            is_service=True,   # fix #20
+            is_service=True,
         )
         db.add(supply)
         db.flush()
