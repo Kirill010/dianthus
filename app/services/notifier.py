@@ -3,6 +3,7 @@ import logging
 import os
 import smtplib
 import ssl
+import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -11,6 +12,7 @@ from ..config import config
 logger = logging.getLogger(__name__)
 
 TIMEOUT = 10
+MAX_ATTEMPTS = 3  # fix #63: retry при временных сбоях SMTP
 
 
 # ── КОНФИГУРАЦИЯ ──────────────────────────────────────────
@@ -53,7 +55,58 @@ def _get_smtp_config() -> dict | None:
     }
 
 
-# ── ОТПРАВКА ──────────────────────────────────────────────
+# ── НИЗКОУРОВНЕВАЯ ОТПРАВКА + RETRY ───────────────────────
+
+def _smtp_send_raw(cfg: dict, msg: MIMEMultipart,
+                   recipients: list[str]) -> None:
+    """Отправляет письмо. Бросает исключения (для retry)."""
+    if cfg["use_ssl"]:
+        context = ssl.create_default_context()
+        with smtplib.SMTP_SSL(cfg["host"], cfg["port"],
+                              timeout=TIMEOUT, context=context) as server:
+            server.login(cfg["user"], cfg["password"])
+            server.sendmail(cfg["sender"], recipients, msg.as_string())
+    else:
+        with smtplib.SMTP(cfg["host"], cfg["port"], timeout=TIMEOUT) as server:
+            server.ehlo()
+            server.starttls(context=ssl.create_default_context())
+            server.ehlo()
+            server.login(cfg["user"], cfg["password"])
+            server.sendmail(cfg["sender"], recipients, msg.as_string())
+
+
+def _send_with_retry(cfg: dict, msg: MIMEMultipart,
+                     recipients: list[str]) -> bool:
+    """
+    fix #63: отправка с retry (3 попытки, exponential backoff 1s→2s).
+    НЕ retry-им при ошибках аутентификации / отказа получателя.
+    """
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            _smtp_send_raw(cfg, msg, recipients)
+            return True
+        except smtplib.SMTPAuthenticationError as e:
+            logger.error(
+                "SMTP: неверный логин/пароль. Для Яндекс.Почты нужен "
+                "ПАРОЛЬ ПРИЛОЖЕНИЯ, не обычный. %s", e,
+            )
+            return False
+        except (smtplib.SMTPRecipientsRefused,
+                smtplib.SMTPSenderRefused) as e:
+            logger.error("SMTP: получатель/отправитель отклонён: %s", e)
+            return False
+        except Exception as e:
+            logger.warning(
+                "SMTP: попытка %d/%d не удалась: %s",
+                attempt, MAX_ATTEMPTS, e,
+            )
+            if attempt < MAX_ATTEMPTS:
+                time.sleep(2 ** (attempt - 1))  # 1s, 2s
+    logger.error("SMTP: не удалось отправить после %d попыток", MAX_ATTEMPTS)
+    return False
+
+
+# ── ПУБЛИЧНЫЕ ФУНКЦИИ ─────────────────────────────────────
 
 def send_email(subject: str, body_html: str) -> bool:
     """Отправляет email админам. Никогда не бросает исключение."""
@@ -66,41 +119,14 @@ def send_email(subject: str, body_html: str) -> bool:
     msg["Subject"] = subject
     msg["From"] = cfg["sender"]
     msg["To"] = ", ".join(cfg["recipients"])
-
     msg.attach(MIMEText("Откройте письмо в HTML-совместимом клиенте.",
                         "plain", "utf-8"))
     msg.attach(MIMEText(body_html, "html", "utf-8"))
 
-    try:
-        if cfg["use_ssl"]:
-            context = ssl.create_default_context()
-            with smtplib.SMTP_SSL(cfg["host"], cfg["port"],
-                                  timeout=TIMEOUT, context=context) as server:
-                server.login(cfg["user"], cfg["password"])
-                server.sendmail(cfg["sender"], cfg["recipients"],
-                                msg.as_string())
-        else:
-            with smtplib.SMTP(cfg["host"], cfg["port"],
-                              timeout=TIMEOUT) as server:
-                server.ehlo()
-                server.starttls(context=ssl.create_default_context())
-                server.ehlo()
-                server.login(cfg["user"], cfg["password"])
-                server.sendmail(cfg["sender"], cfg["recipients"],
-                                msg.as_string())
-
+    ok = _send_with_retry(cfg, msg, cfg["recipients"])
+    if ok:
         logger.info("📧 Письмо отправлено: %s", subject)
-        return True
-
-    except smtplib.SMTPAuthenticationError as e:
-        logger.error(
-            "SMTP: неверный логин/пароль. "
-            "Для Яндекс.Почты нужен ПАРОЛЬ ПРИЛОЖЕНИЯ, не обычный. %s", e
-        )
-        return False
-    except Exception as e:
-        logger.warning("Не удалось отправить email: %s", e)
-        return False
+    return ok
 
 
 def send_email_to(to: str, subject: str, body_html: str) -> bool:
@@ -108,32 +134,88 @@ def send_email_to(to: str, subject: str, body_html: str) -> bool:
     cfg = _get_smtp_config()
     if not cfg:
         return False
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = cfg["sender"]
-        msg["To"] = to
-        msg.attach(MIMEText("Откройте в HTML-клиенте.", "plain", "utf-8"))
-        msg.attach(MIMEText(body_html, "html", "utf-8"))
 
-        if cfg["use_ssl"]:
-            with smtplib.SMTP_SSL(cfg["host"], cfg["port"],
-                                  timeout=TIMEOUT) as s:
-                s.login(cfg["user"], cfg["password"])
-                s.sendmail(cfg["sender"], [to], msg.as_string())
-        else:
-            with smtplib.SMTP(cfg["host"], cfg["port"],
-                              timeout=TIMEOUT) as s:
-                s.ehlo()
-                s.starttls()
-                s.ehlo()
-                s.login(cfg["user"], cfg["password"])
-                s.sendmail(cfg["sender"], [to], msg.as_string())
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = cfg["sender"]
+    msg["To"] = to
+    msg.attach(MIMEText("Откройте в HTML-клиенте.", "plain", "utf-8"))
+    msg.attach(MIMEText(body_html, "html", "utf-8"))
+
+    ok = _send_with_retry(cfg, msg, [to])
+    if ok:
         logger.info("📧 Клиенту %s: %s", to, subject)
-        return True
-    except Exception as e:
-        logger.warning("Письмо клиенту %s: %s", to, e)
-        return False
+    return ok
+
+
+def send_batch_emails(messages: list[dict]) -> int:
+    """
+    fix #63: batch-рассылка. Одна SMTP-сессия на все письма +
+    retry на уровне всей сессии (не на каждое письмо).
+    """
+    cfg = _get_smtp_config()
+    if not cfg or not messages:
+        return 0
+
+    sent = 0
+    last_error: Exception | None = None
+
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        sent = 0
+        last_error = None
+        try:
+            if cfg["use_ssl"]:
+                ctx = ssl.create_default_context()
+                with smtplib.SMTP_SSL(cfg["host"], cfg["port"],
+                                      timeout=TIMEOUT, context=ctx) as s:
+                    s.login(cfg["user"], cfg["password"])
+                    sent = _do_batch(s, cfg, messages)
+            else:
+                with smtplib.SMTP(cfg["host"], cfg["port"],
+                                  timeout=TIMEOUT) as s:
+                    s.ehlo()
+                    s.starttls(context=ssl.create_default_context())
+                    s.ehlo()
+                    s.login(cfg["user"], cfg["password"])
+                    sent = _do_batch(s, cfg, messages)
+            # Если всё ушло — успех
+            if sent == len(messages):
+                return sent
+            # Если что-то не ушло (refused), retry не поможет
+            return sent
+        except smtplib.SMTPAuthenticationError as e:
+            logger.error("SMTP: неверный логин/пароль в batch: %s", e)
+            return 0
+        except Exception as e:
+            last_error = e
+            logger.warning(
+                "Batch: попытка %d/%d провалилась: %s",
+                attempt, MAX_ATTEMPTS, e,
+            )
+            if attempt < MAX_ATTEMPTS:
+                time.sleep(2 ** (attempt - 1))
+
+    if last_error:
+        logger.error("send_batch_emails: %s", last_error)
+    return sent
+
+
+def _do_batch(s: smtplib.SMTP, cfg: dict, messages: list[dict]) -> int:
+    """Отправляет пачку в одной сессии. Возвращает число успешных."""
+    sent = 0
+    for m in messages:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = m["subject"]
+        msg["From"] = cfg["sender"]
+        msg["To"] = m["to"]
+        msg.attach(MIMEText("Откройте в HTML-клиенте.", "plain", "utf-8"))
+        msg.attach(MIMEText(m["body_html"], "html", "utf-8"))
+        try:
+            s.sendmail(cfg["sender"], [m["to"]], msg.as_string())
+            sent += 1
+        except Exception as e:
+            logger.warning("Batch: %s → %s", m["to"], e)
+    return sent
 
 
 # ── HTML-ШАБЛОНЫ ПИСЕМ ────────────────────────────────────
@@ -438,51 +520,3 @@ def notify_client_preorder_available(preorder, supply_item) -> None:
         )
     except Exception as e:
         logger.warning("Ошибка email о предзаказе: %s", e)
-
-def send_batch_emails(messages: list[dict]) -> int:
-    cfg = _get_smtp_config()
-    if not cfg:
-        return 0
-    sent = 0
-    try:
-        if cfg["use_ssl"]:
-            ctx = ssl.create_default_context()
-            with smtplib.SMTP_SSL(cfg["host"], cfg["port"],
-                                  timeout=TIMEOUT, context=ctx) as s:
-                s.login(cfg["user"], cfg["password"])
-                for m in messages:
-                    msg = MIMEMultipart("alternative")
-                    msg["Subject"] = m["subject"]
-                    msg["From"] = cfg["sender"]
-                    msg["To"] = m["to"]
-                    msg.attach(MIMEText("Откройте в HTML-клиенте.",
-                                        "plain", "utf-8"))
-                    msg.attach(MIMEText(m["body_html"], "html", "utf-8"))
-                    try:
-                        s.sendmail(cfg["sender"], [m["to"]], msg.as_string())
-                        sent += 1
-                    except Exception as e:
-                        logger.warning("Batch: %s → %s", m["to"], e)
-        else:
-            with smtplib.SMTP(cfg["host"], cfg["port"],
-                              timeout=TIMEOUT) as s:
-                s.ehlo()
-                s.starttls(context=ssl.create_default_context())
-                s.ehlo()
-                s.login(cfg["user"], cfg["password"])
-                for m in messages:
-                    msg = MIMEMultipart("alternative")
-                    msg["Subject"] = m["subject"]
-                    msg["From"] = cfg["sender"]
-                    msg["To"] = m["to"]
-                    msg.attach(MIMEText("Откройте в HTML-клиенте.",
-                                        "plain", "utf-8"))
-                    msg.attach(MIMEText(m["body_html"], "html", "utf-8"))
-                    try:
-                        s.sendmail(cfg["sender"], [m["to"]], msg.as_string())
-                        sent += 1
-                    except Exception as e:
-                        logger.warning("Batch: %s → %s", m["to"], e)
-    except Exception as e:
-        logger.exception("send_batch_emails: %s", e)
-    return sent

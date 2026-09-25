@@ -13,6 +13,12 @@ def init_sentry() -> None:
         logger.info("SENTRY_DSN не задан — мониторинг отключён")
         return
 
+    release = (
+        (os.getenv("APP_VERSION") or "").strip()
+        or (os.getenv("GIT_COMMIT") or "").strip()[:12]
+        or "dev"
+    )
+
     try:
         import sentry_sdk
         from sentry_sdk.integrations.fastapi import FastApiIntegration
@@ -20,11 +26,12 @@ def init_sentry() -> None:
         sentry_sdk.init(
             dsn=dsn,
             environment=os.getenv("ENV", "dev"),
+            release=release,
             traces_sample_rate=float(os.getenv("SENTRY_TRACES_RATE", "0.1")),
             integrations=[FastApiIntegration()],
             send_default_pii=False,
         )
-        logger.info("✅ Sentry подключён")
+        logger.info("✅ Sentry подключён (release=%s)", release)
     except ImportError:
         logger.warning("sentry-sdk не установлен")
     except Exception as e:

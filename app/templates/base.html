@@ -136,6 +136,59 @@
     });
 })();
 
+/* ─── fix #65: fallback для битых картинок ─── */
+(function() {
+    document.addEventListener('error', function(e) {
+        const img = e.target;
+        if (!img || img.tagName !== 'IMG') return;
+        if (img.dataset.fallbackApplied === '1') return;
+        img.dataset.fallbackApplied = '1';
+        // Подставляем логотип
+        img.src = '/static/logo-icon.png';
+        img.style.opacity = '0.35';
+        img.style.objectFit = 'contain';
+        img.style.padding = '22%';
+        img.style.background = '#f4f1ea';
+    }, true);
+})();
+
+/* ─── fix #66: индикатор загрузки на submit-кнопке ─── */
+(function() {
+    document.addEventListener('submit', function(e) {
+        const form = e.target;
+        if (!form || (form.method || '').toLowerCase() !== 'post') return;
+
+        // Если форма помечена — не трогаем
+        if (form.dataset.noLoading === '1') return;
+
+        let submitter = e.submitter;
+        if (!submitter) {
+            submitter = form.querySelector(
+                'button[type="submit"]:not([disabled]), ' +
+                'input[type="submit"]:not([disabled])'
+            );
+        }
+        if (!submitter || submitter.disabled) return;
+
+        const orig = submitter.innerHTML;
+        submitter.disabled = true;
+        submitter.dataset._origHtml = orig;
+        if (submitter.tagName === 'BUTTON') {
+            submitter.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        }
+
+        // Страховка: если что-то пошло не так — вернём через 20 сек
+        setTimeout(() => {
+            if (submitter.disabled) {
+                submitter.disabled = false;
+                if (submitter.tagName === 'BUTTON' && submitter.dataset._origHtml) {
+                    submitter.innerHTML = submitter.dataset._origHtml;
+                }
+            }
+        }, 20000);
+    }, false);
+})();
+
 /* ─── Service Worker ─── */
 if ('serviceWorker' in navigator && !window._swRegistered) {
     window._swRegistered = true;
@@ -173,7 +226,6 @@ if ('serviceWorker' in navigator && !window._swRegistered) {
         return idx < 0 ? 0 : idx;
     }
 
-    // ─── Клик по стрелкам ◀ ▶ и по точкам ───
     document.addEventListener('click', function(e) {
         const arrow = e.target.closest('.product-gallery__arrow');
         if (arrow) {
@@ -199,7 +251,6 @@ if ('serviceWorker' in navigator && !window._swRegistered) {
         showPhoto(wrap, parseInt(dot.dataset.index || '0', 10) || 0);
     });
 
-    // ─── Свайп на мобиле ───
     let startX = 0, startY = 0, activeWrap = null, moved = false;
 
     document.addEventListener('touchstart', function(e) {

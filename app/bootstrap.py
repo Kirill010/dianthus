@@ -13,12 +13,22 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
+def _bool_env(key: str, default: bool = False) -> bool:
+    raw = (os.getenv(key) or "").strip().lower()
+    if not raw:
+        return default
+    return raw in ("1", "true", "yes", "on")
+
+
 def ensure_default_admin() -> None:
     email = (os.getenv("ADMIN_EMAIL") or "").strip().lower()
     password = os.getenv("ADMIN_PASSWORD") or ""
+    force_reset = _bool_env("ADMIN_FORCE_PASSWORD_RESET", False)
+
     if not email or not password:
         logger.info("ADMIN_EMAIL/PASSWORD не заданы")
         return
+
     if len(password) < 8 or len(password.encode("utf-8")) > 72:
         logger.warning("ADMIN_PASSWORD некорректной длины")
         return
@@ -26,12 +36,32 @@ def ensure_default_admin() -> None:
     db = SessionLocal()
     try:
         user = db.query(models.User).filter(models.User.email == email).first()
+
         if user:
+            if force_reset:
+                user.hashed_password = hash_password(password)
+                user.is_admin = True
+                user.is_approved = True
+                db.commit()
+                logger.info(
+                    "🔑 Пароль админа %s принудительно обновлён "
+                    "(ADMIN_FORCE_PASSWORD_RESET=1)",
+                    email,
+                )
+                return
+
             if user.is_admin and user.is_approved:
                 return
+
             if not verify_password(password, user.hashed_password):
-                logger.warning("Email занят, пароль не совпал")
+                logger.warning(
+                    "Email занят (%s), пароль не совпал. "
+                    "Если это ваш аккаунт — задайте "
+                    "ADMIN_FORCE_PASSWORD_RESET=1 и перезапустите.",
+                    email,
+                )
                 return
+
             user.is_admin = True
             user.is_approved = True
             db.commit()

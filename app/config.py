@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 if os.getenv("ENV") != "prod":
     load_dotenv()
-    
+
 logger = logging.getLogger(__name__)
 
 
@@ -25,6 +25,13 @@ def _int_env(key: str, default: int) -> int:
 def _str_env(key: str, default: str) -> str:
     value = os.getenv(key)
     return value if value else default
+
+
+def _bool_env(key: str, default: bool = False) -> bool:
+    raw = (os.getenv(key) or "").strip().lower()
+    if not raw:
+        return default
+    return raw in ("1", "true", "yes", "on")
 
 
 class Config:
@@ -45,7 +52,6 @@ class Config:
 
     # 1С интеграция
     INTEGRATION_USER: str = _str_env("INTEGRATION_USER", "1c_dianthus")
-    # ✅ Поддержка обоих имён: INTEGRATION_PASSWORD и INTEGRATION_SECRET
     INTEGRATION_PASSWORD: str = (
         _str_env("INTEGRATION_PASSWORD", "")
         or _str_env("INTEGRATION_SECRET", "")
@@ -58,9 +64,9 @@ class Config:
     SMTP_PASSWORD: str = _str_env("SMTP_PASSWORD", "")
     SMTP_FROM: str = _str_env("SMTP_FROM", "")
     SMTP_TO: str = _str_env("SMTP_TO", "")
-    SMTP_USE_SSL: bool = (
-        _str_env("SMTP_USE_SSL", "true").lower() in ("1", "true", "yes", "on")
-    )
+    SMTP_USE_SSL: bool = _bool_env("SMTP_USE_SSL", True)
+
+    ALLOW_SQLITE_IN_PROD: bool = _bool_env("ALLOW_SQLITE_IN_PROD", False)
 
 
 config = Config()
@@ -72,14 +78,31 @@ if config.ENV == "prod":
             'Сгенерировать: python -c "import secrets; print(secrets.token_hex(32))"'
         )
     if len(config.SECRET_KEY) < 32:
-        raise RuntimeError("❌ SECRET_KEY слишком короткий.")
+        raise RuntimeError("❌ SECRET_KEY слишком короткий (минимум 32 символа).")
+
     if not config.INTEGRATION_PASSWORD:
         logger.warning(
             "⚠️ INTEGRATION_PASSWORD не задан — 1С-интеграция вернёт 503"
         )
-    # ✅ Проверка APP_URL
+
     if config.APP_URL.startswith("http://127.0.0.1"):
         logger.warning(
             "⚠️ APP_URL указывает на localhost — CSRF/письма будут "
             "со ссылками на localhost. Установите https://ваш-домен."
+        )
+
+    if config.DATABASE_URL.startswith("sqlite"):
+        if not config.ALLOW_SQLITE_IN_PROD:
+            raise RuntimeError(
+                "❌ ENV=prod + SQLite несовместимы: "
+                "SELECT ... FOR UPDATE игнорируется, race condition "
+                "при оформлении заказов НЕ защищён.\n"
+                "   ▸ Решение: перейдите на PostgreSQL "
+                "(DATABASE_URL=postgresql://...).\n"
+                "   ▸ Осознанно принять риск (НЕ рекомендуется): "
+                "установите ALLOW_SQLITE_IN_PROD=1."
+            )
+        logger.warning(
+            "⚠️ SQLite в prod с ALLOW_SQLITE_IN_PROD=1 — "
+            "race condition при оформлении заказов НЕ защищён!"
         )
