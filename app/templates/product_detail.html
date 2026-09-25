@@ -24,6 +24,19 @@
                         data-index="{{ loop.index0 }}">
                 {% endfor %}
             </div>
+
+            {% if photos|length > 1 %}
+                <button type="button"
+                        class="product-gallery__arrow product-gallery__arrow--prev"
+                        aria-label="Предыдущее фото">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <button type="button"
+                        class="product-gallery__arrow product-gallery__arrow--next"
+                        aria-label="Следующее фото">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            {% endif %}
         {% else %}
             <div class="product-card__placeholder"
                 style="padding-top:100%; display:flex; align-items:center;
@@ -33,7 +46,7 @@
         {% endif %}
     </div>
 
-    {# ✅ ТОЧКИ — ВЫНЕСЕНЫ наружу, теперь видны #}
+    {# Точки — снаружи, теперь видны #}
     {% if photos|length > 1 %}
         <div class="product-card__dots d-flex justify-content-center gap-2 mt-3 mb-2">
             {% for url in photos %}

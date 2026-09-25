@@ -1544,37 +1544,48 @@ a.contacts-item__value:hover { color: var(--primary); }
     transform: rotate(90deg);
     transition: transform .25s ease;
 }
-/* ─── Мини-галерея на карточке каталога ─── */
-.product-card-v2__gallery {
+/* =========================================================
+   СТРЕЛКИ ГАЛЕРЕИ на детальной странице
+   ========================================================= */
+.product-gallery__arrow {
     position: absolute;
-    inset: 0;
-}
-.product-card-v2__photo--slide {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    opacity: 0;
-    transition: opacity .25s;
-}
-.product-card-v2__photo--slide.active { opacity: 1; }
-
-.product-card-v2__dots {
-    position: absolute;
-    bottom: 6px;
-    left: 0;
-    right: 0;
-    display: flex;
-    justify-content: center;
-    gap: 5px;
-    pointer-events: none;
-}
-.product-card-v2__dot {
-    width: 6px;
-    height: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 3;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, .55);
-    box-shadow: 0 0 3px rgba(0, 0, 0, .3);
+    background: rgba(255, 255, 255, .85);
+    border: 1px solid var(--border);
+    color: var(--primary-dark);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .12);
+    transition: all .2s ease;
+    padding: 0;
+    line-height: 1;
 }
-.product-card-v2__dot.active { background: #fff; }
+.product-gallery__arrow:hover {
+    background: #fff;
+    color: var(--primary);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .18);
+    transform: translateY(-50%) scale(1.05);
+}
+.product-gallery__arrow:active {
+    transform: translateY(-50%) scale(.95);
+}
+.product-gallery__arrow--prev { left: 12px; }
+.product-gallery__arrow--next { right: 12px; }
+
+@media (max-width: 576px) {
+    .product-gallery__arrow {
+        width: 36px;
+        height: 36px;
+        font-size: .85rem;
+    }
+    .product-gallery__arrow--prev { left: 8px; }
+    .product-gallery__arrow--next { right: 8px; }
+}

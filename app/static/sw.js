@@ -1,7 +1,7 @@
 // Service Worker для Диантуса — офлайн-кэш статики
 // ⚠️ ВЕРСИЯ УВЕЛИЧЕНА ДО v6: при установке новый SW удалит старый кэш
 // и заставит браузер скачать свежие CSS/JS.
-const CACHE_NAME = 'dianthus-v6';
+const CACHE_NAME = 'dianthus-v7';
 const STATIC_ASSETS = [
   '/static/style.css',
   '/static/logo-icon.png',
