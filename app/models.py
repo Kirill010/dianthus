@@ -43,7 +43,6 @@ def _is_valid_photo_url(value) -> bool:
     s = value.strip()
     if not s:
         return False
-    # Разрешаем http(s), /static/ и относительный static/uploads/
     return s.startswith(("http://", "https://", "/static/", "static/"))
 
 
@@ -52,7 +51,6 @@ def _normalize_url(value: str) -> str:
     s = (value or "").strip()
     if not s:
         return ""
-    # Если это "static/uploads/x.webp" — добавим слэш
     if s.startswith("static/"):
         return "/" + s
     return s
@@ -90,7 +88,7 @@ class Product(Base):
     package_size = Column(Integer, default=1)
     min_quantity = Column(Integer, default=1)
     image_url = Column(String(500), default="")     # главное фото
-    photos = Column(JSON, default=list)             # массив URL-ов
+    photos = Column(JSON, default=list, server_default="[]")
     category = Column(String(100), default="Прочее", index=True)
     created_at = Column(DateTime, default=_utcnow)
     supply_items = relationship("SupplyItem", back_populates="product",

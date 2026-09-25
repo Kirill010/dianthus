@@ -229,7 +229,6 @@
                 {% set product = item.product %}
                 {% set pack = product.package_size or 1 %}
                 {% set photos = product.all_photos %}
-                {# Добавляем data-атрибуты для работы кнопок + и - #}
                 <div class="product-card-v2"
                      data-step="{{ pack }}"
                      data-min="{{ pack }}"
@@ -271,7 +270,6 @@
                             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                             <input type="hidden" name="supply_item_id" value="{{ item.id }}">
                             <div class="qty-row">
-                                {# Добавляем кнопку МИНУС #}
                                 <button type="button"
                                         class="qty-btn js-qty"
                                         data-dir="-1"
@@ -285,8 +283,7 @@
                                        max="1000"
                                        step="{{ pack }}"
                                        inputmode="numeric">
-                                
-                                {# Добавляем кнопку ПЛЮС #}
+
                                 <button type="button"
                                         class="qty-btn js-qty"
                                         data-dir="1"

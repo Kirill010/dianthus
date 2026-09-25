@@ -48,12 +48,8 @@ def validate_phone(phone: str) -> str | None:
     if not phone:
         return "Укажите телефон"
     digits = re.sub(r"\D", "", phone)
-    if len(digits) == 11 and digits[0] in ("7", "8"):
-        digits = "7" + digits[1:]
-    elif len(digits) == 10:
-        digits = "7" + digits
-    else:
-        return "Телефон: 11 цифр. Пример +7 (999) 123-45-67"
+    if len(digits) < 10 or len(digits) > 15:
+        return "Телефон: от 10 до 15 цифр. Пример +7 (999) 123-45-67"
     if len(set(digits)) == 1:
         return "Телефон не может состоять из одинаковых цифр"
     return None
@@ -71,7 +67,7 @@ def validate_company_name(name: str) -> str | None:
 
 
 def validate_inn(inn: str, required: bool = True) -> str | None:
-    # ИНН: 10 цифр (юрлицо) или 12 цифр (ИП). :param required: если False — пустое значение допустимо.
+    """ИНН: 10 цифр (юрлицо) или 12 цифр (ИП)."""
     inn = (inn or "").strip()
     if not inn:
         return "Укажите ИНН" if required else None
@@ -83,7 +79,7 @@ def validate_inn(inn: str, required: bool = True) -> str | None:
 
 
 def validate_city(city: str, required: bool = True) -> str | None:
-    # Город. :param required: если False — пустое значение допустимо.
+    """Город."""
     city = (city or "").strip()
     if not city:
         return "Укажите город" if required else None

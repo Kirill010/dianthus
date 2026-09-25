@@ -65,14 +65,17 @@ app = FastAPI(
 # ═══════════════════════════════════════════════════════════
 # MIDDLEWARE
 # ═══════════════════════════════════════════════════════════
-# ВАЖНО: порядок важен!
+# ✅ ИСПРАВЛЕНО: порядок middleware!
 # Starlette оборачивает middleware в обратном порядке: тот, что добавлен
-# последним, выполняется первым. Нам нужно, чтобы заголовки безопасности
-# добавлялись к финальному ответу, поэтому SecurityHeaders ставим ПОСЛЕ
-# Session (то есть выполняется он раньше Session на входе и позже на выходе).
-# На практике разница минимальна, но так правильнее.
+# последним, выполняется первым.
+# Нам нужно, чтобы заголовки безопасности добавлялись к финальному ответу,
+# поэтому SecurityHeaders ставим ПОСЛЕ Session (выполняется раньше на входе
+# и позже на выходе).
 
-# 1. SessionMiddleware — сессии (нужна для CSRF-токена, пользователя, корзины)
+# 1. SecurityHeadersMiddleware — заголовки безопасности
+app.add_middleware(SecurityHeadersMiddleware)
+
+# 2. SessionMiddleware — сессии (нужна для CSRF-токена, пользователя, корзины)
 app.add_middleware(
     SessionMiddleware,
     secret_key=config.SECRET_KEY,
@@ -80,9 +83,6 @@ app.add_middleware(
     same_site="lax",
     https_only=(config.ENV == "prod"),
 )
-
-# 2. SecurityHeadersMiddleware — заголовки безопасности
-app.add_middleware(SecurityHeadersMiddleware)
 
 # ═══════════════════════════════════════════════════════════
 # СТАТИКА
@@ -169,6 +169,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     # JSON для API
     return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
 
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     """Ловим все необработанные исключения — показываем error.html."""
@@ -233,7 +234,9 @@ async def registration_pending(request: Request, db: Session = Depends(get_db)):
         return RedirectResponse(url="/catalog", status_code=303)
     return render(request, "registration_pending.html", db)
 
+
 from sqlalchemy import text
+
 
 @app.get("/health")
 async def health(db: Session = Depends(get_db)):
@@ -243,5 +246,6 @@ async def health(db: Session = Depends(get_db)):
     except Exception as e:
         logger.error("Health DB failed: %s", e)
         raise HTTPException(503, "DB unavailable")
+
 
 logger.info("🌸 Диантус готов (%s)", config.ENV)

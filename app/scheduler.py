@@ -76,10 +76,17 @@ def do_unload(db: Session, supply) -> int:
     from .models import SupplyItem, Preorder, Notification
     from .services.notifier import notify_client_preorder_available
 
-    # Деактивируем старые партии
-    db.query(SupplyItem).filter(
-        SupplyItem.is_active.is_(True)
-    ).update({SupplyItem.is_active: False}, synchronize_session=False)
+    # Деактивируем старые партии (только если есть активные)
+    active_count = (
+        db.query(SupplyItem)
+        .filter(SupplyItem.is_active.is_(True))
+        .count()
+    )
+    if active_count > 0:
+        db.query(SupplyItem).filter(
+            SupplyItem.is_active.is_(True)
+        ).update({SupplyItem.is_active: False}, synchronize_session=False)
+        logger.info("📦 Деактивировано %d старых партий", active_count)
 
     activated = 0
 

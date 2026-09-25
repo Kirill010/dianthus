@@ -56,7 +56,7 @@ def _preorder_query(db: Session):
         .join(Supply, SupplyItem.supply_id == Supply.id)
         .filter(
             SupplyItem.is_active.is_(False),
-            Supply.status.in_(["Ожидается", "В пути"]), # <-- ИСПРАВЛЕНО
+            Supply.status.in_(["Ожидается", "В пути"]),  # ✅ ИСПРАВЛЕНО
         )
     )
 
@@ -80,10 +80,7 @@ def _apply_quantity_filter(query, level: str):
 
 def _apply_filters(query, q, country, category, min_price, max_price,
                    min_length, max_length):
-    """
-    Поиск и фильтры.
-    ВАЖНО: q ищет по названию, описанию И стране.
-    """
+    """Поиск и фильтры."""
     if q:
         pattern = f"%{q}%"
         query = query.filter(or_(
@@ -265,7 +262,7 @@ async def catalog(
         request, "catalog.html", db,
         user=user,
         items=items,
-        preorder_items=preorder_items, # <-- ПЕРЕДАЕМ В ШАБЛОН
+        preorder_items=preorder_items,
         countries=countries,
         active_categories=active_categories,
         all_categories=PRODUCT_CATEGORIES,
@@ -292,10 +289,7 @@ async def search_suggest(
     request: Request = None,
     db: Session = Depends(get_db),
 ):
-    """
-    Автоподсказки поиска.
-    Возвращает список {name, url} — ссылки на карточки товаров.
-    """
+    """Автоподсказки поиска."""
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"items": []})

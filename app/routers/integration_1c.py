@@ -30,16 +30,7 @@ def _verify_basic(
     request: Request,
     creds: HTTPBasicCredentials | None = Depends(_basic),
 ) -> bool:
-    """
-    Проверяет Basic Auth.
-
-    Логика:
-      - Если INTEGRATION_PASSWORD НЕ задан:
-          • prod:  503 — интеграция отключена
-          • dev:   пропускаем без авторизации (для тестов),
-                   пишем WARNING в лог
-      - Если задан: требуем корректные логин/пароль.
-    """
+    """Проверяет Basic Auth."""
     auth_configured = bool(
         config.INTEGRATION_USER and config.INTEGRATION_PASSWORD
     )
@@ -99,7 +90,17 @@ def _normalize_photos(raw) -> list:
     if isinstance(raw, str):
         parts = [p.strip() for p in raw.split(",")]
     elif isinstance(raw, list):
-        parts = [str(p).strip() for p in raw if p is not None]
+        # Поддерживаем вложенные списки и словари
+        parts = []
+        for item in raw:
+            if isinstance(item, dict):
+                # Если это объект, ищем в нем URL
+                for key in ("url", "photo", "image", "link"):
+                    if key in item and item[key]:
+                        parts.append(str(item[key]))
+                        break
+            elif item is not None:
+                parts.append(str(item).strip())
     else:
         return []
 
@@ -160,28 +161,7 @@ async def sync_products(
     db: Session = Depends(get_db),
     _auth: bool = Depends(_verify_basic),
 ):
-    """
-    Приём товаров из 1С.
-
-    Ожидаемый формат:
-    {
-      "products": [
-        {
-          "sku": "тест1",
-          "name": "товар",
-          "price_per_stem": 100,
-          "stock_packs": 5,
-          "country": "Эквадор",
-          "length_cm": 60,
-          "package_size": 25,
-          "min_quantity": 1,
-          "category": "Роза Эквадор",
-          "description": "тест",
-          "photo": "https://..."   # необязательно
-        }
-      ]
-    }
-    """
+    """Приём товаров из 1С."""
     client_ip = request.client.host if request.client else "?"
 
     products_data = payload.get("products", [])
@@ -347,6 +327,7 @@ async def ping(_auth: bool = Depends(_verify_basic)):
         "env": config.ENV,
         "auth": bool(config.INTEGRATION_PASSWORD),
     }
+
 
 @router.get("/products/export")
 async def export_products_to_1c(
