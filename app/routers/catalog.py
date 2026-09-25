@@ -25,16 +25,10 @@ SORT_OPTIONS = [
     ("name", "По названию"),
 ]
 
-
 def _stems_expr():
-    """
-    Количество штук = (stock - reserved_stock) * package_size.
-    ✅ Учитываем зарезервированное под предзаказы.
-    """
     from sqlalchemy import func
     return (func.coalesce(SupplyItem.stock, 0)
             - func.coalesce(SupplyItem.reserved_stock, 0)) * Product.package_size
-
 
 def _base_query(db: Session):
     return (
@@ -46,7 +40,6 @@ def _base_query(db: Session):
         .join(Product, SupplyItem.product_id == Product.id)
         .filter(SupplyItem.is_active.is_(True))
     )
-
 
 def _preorder_query(db: Session):
     return (
@@ -63,7 +56,6 @@ def _preorder_query(db: Session):
         )
     )
 
-
 def _apply_quantity_filter(query, level: str):
     stems = _stems_expr()
     if level == "big":
@@ -77,7 +69,6 @@ def _apply_quantity_filter(query, level: str):
     if level == "out":
         return query.filter(stems < QUANTITY_SMALL_MIN)
     return query.filter(stems >= QUANTITY_SMALL_MIN)
-
 
 def _apply_filters(query, q, country, category, min_price, max_price,
                    min_length, max_length):
@@ -102,7 +93,6 @@ def _apply_filters(query, q, country, category, min_price, max_price,
         query = query.filter(Product.length_cm <= max_length)
     return query
 
-
 def _apply_sort(query, sort: str):
     if sort == "price_asc":
         return query.order_by(SupplyItem.price.asc())
@@ -112,14 +102,12 @@ def _apply_sort(query, sort: str):
         return query.order_by(Product.name.asc())
     return query.order_by(SupplyItem.created_at.desc(), SupplyItem.id.desc())
 
-
 def _make_page_url(request: Request):
     def page_url(page: int) -> str:
         params = {k: v for k, v in request.query_params.items() if v}
         params["page"] = str(page)
         return f"/catalog?{urlencode(params)}"
     return page_url
-
 
 def _count_by_level(db: Session, category: str) -> dict:
     stems = _stems_expr()
@@ -142,7 +130,6 @@ def _count_by_level(db: Session, category: str) -> dict:
         "out": base.filter(stems < QUANTITY_SMALL_MIN).count(),
     }
 
-
 def _category_url(current: dict, new_category: str) -> str:
     params = {}
     if new_category:
@@ -154,7 +141,6 @@ def _category_url(current: dict, new_category: str) -> str:
     if current.get("country"):
         params["country"] = current["country"]
     return "/catalog" + ("?" + urlencode(params) if params else "")
-
 
 def _level_url(current: dict, new_level: str) -> str:
     params = {}
@@ -168,6 +154,8 @@ def _level_url(current: dict, new_level: str) -> str:
         params["country"] = current["country"]
     return "/catalog" + ("?" + urlencode(params) if params else "")
 
+def _back(request: Request, default: str = "/catalog") -> str:
+    return request.headers.get("referer") or default
 
 @router.get("/catalog", response_class=HTMLResponse)
 async def catalog(
@@ -271,7 +259,6 @@ async def catalog(
         level_url=lambda l: _level_url(current_filters, l),
     )
 
-
 @router.get("/api/search-suggest")
 async def search_suggest(
     q: str = "",
@@ -302,7 +289,6 @@ async def search_suggest(
             for r in rows
         ]
     })
-
 
 @router.get("/product/{item_id}", response_class=HTMLResponse)
 async def product_detail(

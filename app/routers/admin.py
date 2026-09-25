@@ -40,8 +40,11 @@ def _parse_date(v: str):
 def _err(request: Request, errors: list[str]) -> None:
     request.session["flash"] = "Ошибки: " + "; ".join(errors)
 
-# ДАШБОРД
+def _back(request: Request, default: str = "/admin") -> str:
+    """Возвращает Referer или default."""
+    return request.headers.get("referer") or default
 
+# ДАШБОРД
 @router.get("", response_class=HTMLResponse)
 async def dashboard(request: Request, db: Session = Depends(get_db), admin=Depends(require_admin), q: str = "", status: str = "", page: int = 1):
     q, status, page = (q or "").strip(), (status or "").strip(), max(1, page)
@@ -81,7 +84,6 @@ async def dashboard(request: Request, db: Session = Depends(get_db), admin=Depen
                   statuses=ORDER_STATUSES, supply_statuses=SUPPLY_STATUSES, categories=PRODUCT_CATEGORIES, stats=stats)
 
 # ДЕТАЛИ ЗАКАЗА
-
 @router.get("/orders/{order_id}", response_class=HTMLResponse)
 async def order_detail(
     order_id: int,
@@ -97,7 +99,7 @@ async def order_detail(
     )
     if not order:
         request.session["flash"] = f"Заказ №{order_id} не найден"
-        return RedirectResponse(url="/admin", status_code=303)
+        return RedirectResponse(url=_back(request), status_code=303)
 
     return render(
         request, "admin_order_detail.html", db,
@@ -106,9 +108,7 @@ async def order_detail(
         statuses=ORDER_STATUSES,
     )
 
-
 # МОДЕРАЦИЯ
-
 @router.post("/users/{user_id}/make_admin")
 async def user_make_admin(user_id: int, request: Request,
                           db: Session = Depends(get_db),
@@ -119,7 +119,7 @@ async def user_make_admin(user_id: int, request: Request,
         raise HTTPException(404, "Пользователь не найден")
     if user.is_admin:
         request.session["flash"] = f"«{user.full_name}» уже админ"
-        return RedirectResponse(url="/admin", status_code=303)
+        return RedirectResponse(url=_back(request), status_code=303)
     user.is_admin = True
     user.is_approved = True
     db.commit()
@@ -128,8 +128,7 @@ async def user_make_admin(user_id: int, request: Request,
     request.session["flash"] = (
         f"👑 «{user.full_name}» ({user.email}) теперь администратор"
     )
-    return RedirectResponse(url="/admin", status_code=303)
-
+    return RedirectResponse(url=_back(request), status_code=303)
 
 @router.post("/users/{user_id}/demote")
 async def user_demote(user_id: int, request: Request,
@@ -141,20 +140,19 @@ async def user_demote(user_id: int, request: Request,
         raise HTTPException(404, "Пользователь не найден")
     if user.id == current_admin.id:
         request.session["flash"] = "❌ Нельзя снять права с самого себя"
-        return RedirectResponse(url="/admin", status_code=303)
+        return RedirectResponse(url=_back(request), status_code=303)
     if not user.is_admin:
         request.session["flash"] = "Пользователь и так не админ"
-        return RedirectResponse(url="/admin", status_code=303)
+        return RedirectResponse(url=_back(request), status_code=303)
     admins_count = (db.query(User)
                     .filter(User.is_admin.is_(True)).count())
     if admins_count <= 1:
         request.session["flash"] = "❌ Нельзя снять последнего администратора"
-        return RedirectResponse(url="/admin", status_code=303)
+        return RedirectResponse(url=_back(request), status_code=303)
     user.is_admin = False
     db.commit()
     request.session["flash"] = f"«{user.full_name}» больше не администратор"
-    return RedirectResponse(url="/admin", status_code=303)
-
+    return RedirectResponse(url=_back(request), status_code=303)
 
 @router.post("/users/{user_id}/approve")
 async def user_approve(user_id: int, request: Request,
@@ -164,17 +162,16 @@ async def user_approve(user_id: int, request: Request,
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         request.session["flash"] = "Пользователь не найден"
-        return RedirectResponse(url="/admin", status_code=303)
+        return RedirectResponse(url=_back(request), status_code=303)
     if user.is_approved:
         request.session["flash"] = f"«{user.full_name}» уже одобрен"
-        return RedirectResponse(url="/admin", status_code=303)
+        return RedirectResponse(url=_back(request), status_code=303)
     user.is_approved = True
     db.commit()
     request.session["flash"] = (
         f"✅ «{user.company_name}» ({user.full_name}) одобрен"
     )
-    return RedirectResponse(url="/admin", status_code=303)
-
+    return RedirectResponse(url=_back(request), status_code=303)
 
 @router.post("/users/{user_id}/reject")
 async def user_reject(user_id: int, request: Request,
@@ -184,15 +181,14 @@ async def user_reject(user_id: int, request: Request,
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         request.session["flash"] = "Пользователь не найден"
-        return RedirectResponse(url="/admin", status_code=303)
+        return RedirectResponse(url=_back(request), status_code=303)
     if user.id == current_admin.id:
         request.session["flash"] = "❌ Нельзя удалить себя"
-        return RedirectResponse(url="/admin", status_code=303)
+        return RedirectResponse(url=_back(request), status_code=303)
     if user.is_admin:
         request.session["flash"] = "❌ Сначала снимите права администратора"
-        return RedirectResponse(url="/admin", status_code=303)
+        return RedirectResponse(url=_back(request), status_code=303)
 
-    # 1. Отвязываем позиции заказов
     order_ids = [
         row[0] for row in
         db.query(Order.id).filter(Order.user_id == user.id).all()
@@ -212,8 +208,7 @@ async def user_reject(user_id: int, request: Request,
     db.delete(user)
     db.commit()
     request.session["flash"] = f"🗑 «{name}» удалён"
-    return RedirectResponse(url="/admin", status_code=303)
-
+    return RedirectResponse(url=_back(request), status_code=303)
 
 @router.post("/users/{user_id}/discount")
 async def user_set_discount(user_id: int, request: Request,
@@ -224,10 +219,10 @@ async def user_set_discount(user_id: int, request: Request,
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         request.session["flash"] = "Пользователь не найден"
-        return RedirectResponse(url="/admin", status_code=303)
+        return RedirectResponse(url=_back(request), status_code=303)
     if discount_percent < 0 or discount_percent > 100:
         request.session["flash"] = "❌ Скидка должна быть в диапазоне 0..100"
-        return RedirectResponse(url="/admin", status_code=303)
+        return RedirectResponse(url=_back(request), status_code=303)
     user.discount_percent = float(discount_percent)
     db.commit()
     logger.info("💸 Скидка %s%% установлена для %s (кем: %s)",
@@ -235,11 +230,9 @@ async def user_set_discount(user_id: int, request: Request,
     request.session["flash"] = (
         f"💸 «{user.company_name}»: скидка {discount_percent:.1f}%"
     )
-    return RedirectResponse(url="/admin", status_code=303)
-
+    return RedirectResponse(url=_back(request), status_code=303)
 
 # ЗАКАЗЫ
-
 @router.post("/update_order_status")
 async def update_order_status(request: Request,
                               order_id: int = Form(...),
@@ -252,7 +245,7 @@ async def update_order_status(request: Request,
     order = db.query(Order).filter(Order.id == order_id).first()
     if not order:
         request.session["flash"] = f"Заказ №{order_id} не найден"
-        return RedirectResponse(url="/admin", status_code=303)
+        return RedirectResponse(url=_back(request), status_code=303)
 
     order.status = status
     db.commit()
@@ -273,7 +266,6 @@ async def update_order_status(request: Request,
         db.add(note)
         db.commit()
 
-        # Email клиенту
         try:
             order_loaded = (
                 db.query(Order)
@@ -286,12 +278,10 @@ async def update_order_status(request: Request,
             logger.warning("Не удалось отправить письмо клиенту: %s", e)
 
     request.session["flash"] = f"Заказ №{order.id}: «{status}»"
-    referer = request.headers.get("referer") or "/admin"
+    referer = _back(request)
     return RedirectResponse(url=referer, status_code=303)
 
-
 # EXCEL
-
 @router.get("/orders/export")
 async def orders_export(db: Session = Depends(get_db),
                         _a=Depends(require_admin)):
@@ -299,7 +289,6 @@ async def orders_export(db: Session = Depends(get_db),
               .options(selectinload(Order.user), selectinload(Order.items))
               .order_by(Order.created_at.desc()).all())
     return _xlsx(export_orders_to_excel(orders), "dianthus_orders.xlsx")
-
 
 @router.get("/customers/export")
 async def customers_export(db: Session = Depends(get_db),
@@ -328,12 +317,10 @@ async def customers_export(db: Session = Depends(get_db),
     return _xlsx(export_customers_to_excel(customers),
                  "dianthus_customers.xlsx")
 
-
 @router.get("/products/import/template")
 async def products_import_template(_a=Depends(require_admin)):
     return _xlsx(build_products_import_template(),
                  "dianthus_products_template.xlsx")
-
 
 @router.post("/products/import")
 async def products_import(request: Request, file: UploadFile = File(...),
@@ -343,7 +330,7 @@ async def products_import(request: Request, file: UploadFile = File(...),
     fn = (file.filename or "").lower()
     if not fn.endswith(".xlsx"):
         request.session["flash"] = "Нужен файл .xlsx"
-        return RedirectResponse(url="/admin", status_code=303)
+        return RedirectResponse(url=_back(request), status_code=303)
 
     content = bytearray()
     try:
@@ -356,13 +343,13 @@ async def products_import(request: Request, file: UploadFile = File(...),
                 raise ValueError("too big")
     except ValueError:
         request.session["flash"] = "Файл слишком большой (>10 МБ)"
-        return RedirectResponse(url="/admin", status_code=303)
+        return RedirectResponse(url=_back(request), status_code=303)
     finally:
         await file.close()
 
     if not content:
         request.session["flash"] = "Файл пустой"
-        return RedirectResponse(url="/admin", status_code=303)
+        return RedirectResponse(url=_back(request), status_code=303)
 
     products, warnings = import_products_from_excel(bytes(content))
     if not products:
@@ -370,7 +357,7 @@ async def products_import(request: Request, file: UploadFile = File(...),
         if warnings:
             msg += " " + "; ".join(warnings[:3])
         request.session["flash"] = msg
-        return RedirectResponse(url="/admin", status_code=303)
+        return RedirectResponse(url=_back(request), status_code=303)
 
     try:
         for data in products:
@@ -380,17 +367,15 @@ async def products_import(request: Request, file: UploadFile = File(...),
         db.rollback()
         logger.exception("Ошибка импорта товаров: %s", e)
         request.session["flash"] = "Импорт не удался, БД откатана."
-        return RedirectResponse(url="/admin", status_code=303)
+        return RedirectResponse(url=_back(request), status_code=303)
 
     msg = f"Импортировано товаров: {len(products)}"
     if warnings:
         msg += f". Предупреждений: {len(warnings)}"
     request.session["flash"] = msg
-    return RedirectResponse(url="/admin", status_code=303)
-
+    return RedirectResponse(url=_back(request), status_code=303)
 
 # СПРАВОЧНИК ТОВАРОВ
-
 def _validate_product(name, length_cm, package_size, min_quantity) -> list[str]:
     errors = []
     if not (name or "").strip():
@@ -421,14 +406,11 @@ def _validate_product(name, length_cm, package_size, min_quantity) -> list[str]:
             )
     return errors
 
-
 @router.get("/products/new", response_class=HTMLResponse)
 async def product_new_page(request: Request, db: Session = Depends(get_db),
                            admin=Depends(require_admin)):
     return render(request, "product_form.html", db,
                   user=admin, product=None, categories=PRODUCT_CATEGORIES)
-
-
 
 @router.get("/products/{product_id}/edit", response_class=HTMLResponse)
 async def product_edit_page(product_id: int, request: Request,
@@ -463,7 +445,7 @@ async def product_new(request: Request, name: str = Form(""), description: str =
                    image_url=photos[0] if photos else "", photos=photos))
     db.commit()
     request.session["flash"] = f"Товар добавлен ({len(photos)} фото)"
-    return RedirectResponse(url="/admin", status_code=303)
+    return RedirectResponse(url=_back(request), status_code=303)
 
 @router.post("/products/{product_id}/edit")
 async def product_edit(product_id: int, request: Request, name: str = Form(""), description: str = Form(""),
@@ -506,8 +488,7 @@ async def product_edit(product_id: int, request: Request, name: str = Form(""), 
     product.image_url = final[0] if final else ""
     db.commit()
     request.session["flash"] = f"Товар обновлён ({len(final)} фото)"
-    return RedirectResponse(url="/admin", status_code=303)
-
+    return RedirectResponse(url=_back(request), status_code=303)
 
 @router.post("/products/{product_id}/delete")
 async def product_delete(product_id: int, request: Request,
@@ -517,7 +498,7 @@ async def product_delete(product_id: int, request: Request,
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         request.session["flash"] = "Товар не найден"
-        return RedirectResponse(url="/admin", status_code=303)
+        return RedirectResponse(url=_back(request), status_code=303)
 
     supply_item_ids = [si.id for si in product.supply_items]
 
@@ -537,11 +518,9 @@ async def product_delete(product_id: int, request: Request,
     db.delete(product)
     db.commit()
     request.session["flash"] = f"«{name}» удалён из справочника"
-    return RedirectResponse(url="/admin", status_code=303)
-
+    return RedirectResponse(url=_back(request), status_code=303)
 
 # ПОСТАВКИ
-
 @router.get("/supplies/new", response_class=HTMLResponse)
 async def supply_new_page(request: Request, db: Session = Depends(get_db),
                           admin=Depends(require_admin)):
@@ -549,7 +528,6 @@ async def supply_new_page(request: Request, db: Session = Depends(get_db),
                   user=admin, supply=None, items=[],
                   supply_statuses=SUPPLY_STATUSES,
                   all_products=db.query(Product).order_by(Product.name).all())
-
 
 @router.post("/supplies/new")
 async def supply_new(
@@ -585,7 +563,6 @@ async def supply_new(
     return RedirectResponse(url=f"/admin/supplies/{supply.id}/edit",
                             status_code=303)
 
-
 @router.get("/supplies/{supply_id}/edit", response_class=HTMLResponse)
 async def supply_edit_page(supply_id: int, request: Request,
                            db: Session = Depends(get_db),
@@ -597,7 +574,6 @@ async def supply_edit_page(supply_id: int, request: Request,
                   user=admin, supply=supply, items=supply.items,
                   supply_statuses=SUPPLY_STATUSES,
                   all_products=db.query(Product).order_by(Product.name).all())
-
 
 @router.post("/supplies/{supply_id}/edit")
 async def supply_edit(
@@ -633,9 +609,7 @@ async def supply_edit(
     supply.notes = notes.strip()
     db.commit()
     request.session["flash"] = "Поставка обновлена"
-    return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit",
-                            status_code=303)
-
+    return RedirectResponse(url=_back(request), status_code=303)
 
 @router.post("/supplies/{supply_id}/delete")
 async def supply_delete(supply_id: int, request: Request,
@@ -653,11 +627,9 @@ async def supply_delete(supply_id: int, request: Request,
         db.delete(supply)
         db.commit()
     request.session["flash"] = "Поставка удалена"
-    return RedirectResponse(url="/admin", status_code=303)
-
+    return RedirectResponse(url=_back(request), status_code=303)
 
 # ИМПОРТ НАКЛАДНОЙ
-
 @router.post("/supplies/{supply_id}/import/invoice")
 async def supply_import_invoice(
     supply_id: int, request: Request,
@@ -790,9 +762,7 @@ async def supply_import_invoice(
     return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit",
                             status_code=303)
 
-
 # ПОЗИЦИИ ПОСТАВКИ
-
 @router.post("/supplies/{supply_id}/items/add")
 async def supply_item_add(
     supply_id: int, request: Request,
@@ -863,7 +833,6 @@ async def supply_item_add(
     return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit",
                             status_code=303)
 
-
 @router.post("/supply_items/{item_id}/update")
 async def supply_item_update(
     item_id: int, request: Request,
@@ -906,7 +875,6 @@ async def supply_item_update(
     return RedirectResponse(url=f"/admin/supplies/{item.supply_id}/edit",
                             status_code=303)
 
-
 @router.post("/supply_items/{item_id}/delete")
 async def supply_item_delete(item_id: int, request: Request,
                              db: Session = Depends(get_db),
@@ -924,11 +892,9 @@ async def supply_item_delete(item_id: int, request: Request,
         request.session["flash"] = "Позиция удалена"
         return RedirectResponse(url=f"/admin/supplies/{sid}/edit",
                                 status_code=303)
-    return RedirectResponse(url="/admin", status_code=303)
-
+    return RedirectResponse(url=_back(request), status_code=303)
 
 # РАЗГРУЗКА ПОСТАВКИ
-
 @router.post("/supplies/{supply_id}/unload")
 async def supply_unload(
     supply_id: int,
@@ -953,8 +919,7 @@ async def supply_unload(
     request.session["flash"] = (
         f"Поставка №{supply_id} разгружена. {count} товаров в каталоге."
     )
-    return RedirectResponse(url="/admin", status_code=303)
-
+    return RedirectResponse(url=_back(request), status_code=303)
 
 @router.post("/supplies/{supply_id}/deactivate")
 async def supply_deactivate(supply_id: int, request: Request,
@@ -968,4 +933,4 @@ async def supply_deactivate(supply_id: int, request: Request,
         item.is_active = False
     db.commit()
     request.session["flash"] = f"Поставка №{supply_id} снята с полок"
-    return RedirectResponse(url="/admin", status_code=303)
+    return RedirectResponse(url=_back(request), status_code=303)

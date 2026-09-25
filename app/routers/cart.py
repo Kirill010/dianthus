@@ -23,7 +23,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 MAX_COMMENT_LENGTH = 1000
 
-
 def _cart_subtotal(cart: list[dict]) -> float:
     total = 0.0
     for it in cart:
@@ -31,14 +30,12 @@ def _cart_subtotal(cart: list[dict]) -> float:
         total += it["price"] * pack * it["quantity"]
     return total
 
-
 def _apply_discount(subtotal: float, discount_percent: float):
     pct = max(0.0, min(100.0, float(discount_percent or 0)))
     if pct <= 0:
         return 0.0, subtotal
     discount = subtotal * pct / 100.0
     return discount, subtotal - discount
-
 
 def _clean_cart(cart: list[dict]) -> list[dict]:
     result = []
@@ -54,13 +51,7 @@ def _clean_cart(cart: list[dict]) -> list[dict]:
         result.append(c)
     return result
 
-
 def _merge_into_cart(cart: list[dict], new_item: dict) -> None:
-    """
-    Добавляет товар в корзину, инкрементируя количество если уже есть.
-    ✅ Если флаг from_preorder совпадает — мерджим, иначе создаём отдельную
-    позицию, чтобы не потерять признак "списано из стока".
-    """
     si_id = new_item["supply_item_id"]
     new_from_preorder = bool(new_item.get("from_preorder"))
 
@@ -69,22 +60,21 @@ def _merge_into_cart(cart: list[dict], new_item: dict) -> None:
             continue
         ci_from_preorder = bool(ci.get("from_preorder"))
         if ci_from_preorder != new_from_preorder:
-            # Разные источники — не мерджим
             continue
         ci["quantity"] += new_item["quantity"]
         ci["package_size"] = new_item.get("package_size") or 1
         ci["price"] = new_item.get("price") or ci["price"]
         return
 
-    # Не нашли подходящую — добавляем новой позицией
     entry = dict(new_item)
     if new_from_preorder:
         entry["from_preorder"] = True
     cart.append(entry)
 
+def _back(request: Request, default: str = "/catalog") -> str:
+    return request.headers.get("referer") or default
 
 # ДОБАВЛЕНИЕ В КОРЗИНУ
-
 @router.post("/add_to_cart")
 async def add_to_cart(
     request: Request,
@@ -134,7 +124,6 @@ async def add_to_cart(
     quantity_packs = quantity_stems // pack
 
     cart = request.session.get("cart", [])
-    # Ищем существующую позицию (не из предзаказа) и увеличиваем её
     merged = False
     for ci in cart:
         if (ci.get("supply_item_id") == supply_item_id
@@ -168,11 +157,9 @@ async def add_to_cart(
         )
 
     request.session["cart"] = cart
-    return RedirectResponse(url="/catalog", status_code=303)
-
+    return RedirectResponse(url=_back(request), status_code=303)
 
 # ДОБАВЛЕНИЕ В ПРЕДЗАКАЗ
-
 @router.post("/add_to_preorder")
 async def add_to_preorder_route(
     request: Request,
@@ -199,7 +186,7 @@ async def add_to_preorder_route(
     )
     if not item:
         request.session["flash"] = "Товар недоступен для предзаказа"
-        return RedirectResponse(url="/catalog", status_code=303)
+        return RedirectResponse(url=_back(request), status_code=303)
 
     product = item.product
     pack = max(1, product.package_size or 1)
@@ -222,11 +209,9 @@ async def add_to_preorder_route(
         )
     else:
         request.session["flash"] = "Не удалось добавить предзаказ"
-    return RedirectResponse(url="/catalog", status_code=303)
-
+    return RedirectResponse(url=_back(request), status_code=303)
 
 # ЗАКАЗАТЬ ПОСТУПИВШИЙ ПРЕДЗАКАЗ
-
 @router.post("/preorders/{preorder_id}/to_cart")
 async def preorder_to_cart(
     preorder_id: int,
@@ -234,7 +219,6 @@ async def preorder_to_cart(
     db: Session = Depends(get_db),
     _csrf: None = Depends(check_csrf),
 ):
-    """Переносит поступивший предзаказ в корзину."""
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
@@ -248,7 +232,6 @@ async def preorder_to_cart(
     _merge_into_cart(cart, result)
     request.session["cart"] = cart
 
-    # Удаляем предзаказ (он уже превратился в позицию корзины)
     remove_fulfilled_preorder_db(db, user.id, preorder_id)
 
     request.session["flash"] = (
@@ -257,9 +240,7 @@ async def preorder_to_cart(
     )
     return RedirectResponse(url="/cart", status_code=303)
 
-
 # СТРАНИЦА ПРЕДЗАКАЗОВ
-
 @router.get("/preorders", response_class=HTMLResponse)
 async def preorders_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
@@ -274,9 +255,7 @@ async def preorders_page(request: Request, db: Session = Depends(get_db)):
         preorders=preorders,
     )
 
-
 # ПРОСМОТР КОРЗИНЫ
-
 @router.get("/cart", response_class=HTMLResponse)
 async def cart_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
@@ -343,8 +322,6 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
             item = alive.get(c["supply_item_id"])
             migrated = False
 
-            # Позиции из предзаказа нельзя мигрировать на новую партию —
-            # их сток уже списан и закреплён за этой партией.
             if item is None and not c.get("from_preorder"):
                 old = all_items.get(c["supply_item_id"])
                 if old:
@@ -371,7 +348,6 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
 
             c["price"] = item.price
             c["package_size"] = max(1, item.product.package_size or 1)
-            # Не урезаем позиции из предзаказа — они уже оплачены резервом
             if not c.get("from_preorder"):
                 c["quantity"] = min(c["quantity"], item.available_stock)
 
@@ -415,7 +391,6 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
         total=total,
     )
 
-
 @router.post("/remove_from_cart")
 async def remove_from_cart(
     request: Request,
@@ -426,8 +401,7 @@ async def remove_from_cart(
     if 0 <= item_index < len(cart):
         cart.pop(item_index)
     request.session["cart"] = cart
-    return RedirectResponse(url="/cart", status_code=303)
-
+    return RedirectResponse(url=_back(request, "/cart"), status_code=303)
 
 @router.post("/remove_from_preorder")
 async def remove_from_preorder(
@@ -441,18 +415,15 @@ async def remove_from_preorder(
         return RedirectResponse(url="/login", status_code=303)
     if remove_preorder_db(db, user.id, preorder_id):
         request.session["flash"] = "Предзаказ удалён"
-    referer = request.headers.get("referer") or "/cart"
+    referer = _back(request, "/cart")
     return RedirectResponse(url=referer, status_code=303)
-
 
 @router.post("/clear_cart")
 async def clear_cart(request: Request, _csrf: None = Depends(check_csrf)):
     request.session["cart"] = []
-    return RedirectResponse(url="/cart", status_code=303)
-
+    return RedirectResponse(url=_back(request, "/cart"), status_code=303)
 
 # ОФОРМЛЕНИЕ
-
 @router.get("/checkout", response_class=HTMLResponse)
 async def checkout_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
@@ -475,7 +446,6 @@ async def checkout_page(request: Request, db: Session = Depends(get_db)):
         discount_amount=discount_amount,
         total=total,
     )
-
 
 @router.post("/place_order")
 async def place_order(
@@ -514,7 +484,6 @@ async def place_order(
         request.session["flash"] = "Ошибка БД. Попробуйте ещё раз."
         return RedirectResponse(url="/cart", status_code=303)
 
-    # Валидация
     for c in cart:
         item = items_map.get(c["supply_item_id"])
         if item is None:
@@ -529,7 +498,6 @@ async def place_order(
                 f"Удалите его из корзины."
             )
             return RedirectResponse(url="/cart", status_code=303)
-        # Для позиций из предзаказа сток уже списан — просто доверяем
         if not c.get("from_preorder"):
             if item.available_stock < c["quantity"]:
                 request.session["flash"] = (
@@ -542,9 +510,6 @@ async def place_order(
     discount_percent = float(user.discount_percent or 0)
     _, total = _apply_discount(subtotal, discount_percent)
 
-    # ✅ Списываем сток ТОЛЬКО для позиций, добавленных обычным способом.
-    # Для позиций из предзаказа сток уже был списан в
-    # move_fulfilled_preorder_to_cart — иначе получим двойное списание.
     for c in cart:
         item = items_map[c["supply_item_id"]]
         if c.get("from_preorder"):
@@ -603,7 +568,6 @@ async def place_order(
     request.session["flash"] = f"Заказ №{order.id} оформлен!"
     return RedirectResponse(url="/orders", status_code=303)
 
-
 @router.get("/orders", response_class=HTMLResponse)
 async def order_history(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
@@ -616,7 +580,6 @@ async def order_history(request: Request, db: Session = Depends(get_db)):
         .all()
     )
     return render(request, "orders.html", db, user=user, orders=orders)
-
 
 @router.post("/orders/{order_id}/repeat")
 async def repeat_order(
@@ -689,7 +652,6 @@ async def repeat_order(
     if added:
         return RedirectResponse(url="/cart", status_code=303)
     return RedirectResponse(url="/catalog", status_code=303)
-
 
 @router.get("/orders/{order_id}/invoice")
 async def download_invoice(

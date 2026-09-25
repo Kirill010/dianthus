@@ -19,9 +19,10 @@ from .. import models
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+def _back(request: Request, default: str = "/profile") -> str:
+    return request.headers.get("referer") or default
 
 # ПРОФИЛЬ
-
 @router.get("/profile", response_class=HTMLResponse)
 async def profile_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
@@ -49,7 +50,6 @@ async def profile_page(request: Request, db: Session = Depends(get_db)):
                   password_errors=request.session.pop("password_errors", None),
                   password_ok=request.session.pop("password_ok", None))
 
-
 @router.post("/profile")
 async def profile_update(
     request: Request,
@@ -72,7 +72,6 @@ async def profile_update(
     city = city.strip()
 
     errors: list[str] = []
-    # ИНН и город в профиле — НЕ обязательны
     checks = [
         (validate_full_name, full_name),
         (validate_phone, phone),
@@ -87,7 +86,7 @@ async def profile_update(
 
     if errors:
         request.session["profile_errors"] = errors
-        return RedirectResponse(url="/profile", status_code=303)
+        return RedirectResponse(url=_back(request), status_code=303)
 
     user.full_name = full_name
     user.phone = phone
@@ -97,8 +96,7 @@ async def profile_update(
     db.commit()
     logger.info("Профиль обновлён: %s", user.email)
     request.session["profile_ok"] = "Данные профиля сохранены"
-    return RedirectResponse(url="/profile", status_code=303)
-
+    return RedirectResponse(url=_back(request), status_code=303)
 
 @router.post("/profile/password")
 async def profile_change_password(
@@ -127,17 +125,15 @@ async def profile_change_password(
 
     if errors:
         request.session["password_errors"] = errors
-        return RedirectResponse(url="/profile", status_code=303)
+        return RedirectResponse(url=_back(request), status_code=303)
 
     user.hashed_password = hash_password(new_password)
     db.commit()
     logger.info("Пароль изменён: %s", user.email)
     request.session["password_ok"] = "Пароль успешно изменён"
-    return RedirectResponse(url="/profile", status_code=303)
-
+    return RedirectResponse(url=_back(request), status_code=303)
 
 # УВЕДОМЛЕНИЯ
-
 @router.get("/notifications", response_class=HTMLResponse)
 async def notifications_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
@@ -157,7 +153,6 @@ async def notifications_page(request: Request, db: Session = Depends(get_db)):
     return render(request, "notifications.html", db,
                   user=user, notes=notes)
 
-
 @router.post("/notifications/{note_id}/delete")
 async def notification_delete(note_id: int, request: Request,
                               db: Session = Depends(get_db),
@@ -172,11 +167,9 @@ async def notification_delete(note_id: int, request: Request,
     if note:
         db.delete(note)
         db.commit()
-    return RedirectResponse(url="/notifications", status_code=303)
-
+    return RedirectResponse(url=_back(request, "/notifications"), status_code=303)
 
 # КОНТАКТЫ
-
 @router.get("/contacts", response_class=HTMLResponse)
 async def contacts_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
