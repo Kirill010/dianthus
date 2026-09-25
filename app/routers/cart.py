@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from ..config import config
 from ..database import get_db
 from ..deps import get_current_user
-from ..models import Order, OrderItem, SupplyItem, Supply
+from ..models import Order, OrderItem, Product, SupplyItem, Supply
 from ..security import check_csrf
 from ..services.notifier import notify_admin_new_order
 from ..services.preorder_service import (
@@ -500,17 +500,32 @@ async def place_order(
 
     cart_ids = [c["supply_item_id"] for c in cart]
 
-    # ✅ АТОМАРНАЯ БЛОКИРОВКА: SELECT ... FOR UPDATE
     try:
         rows = (
             db.query(SupplyItem)
-            .options(joinedload(SupplyItem.product))
             .filter(SupplyItem.id.in_(cart_ids))
-            .with_for_update()          # ← блокировка строк на уровне БД
+            .with_for_update()          # ← блокировка строк supply_items
             .all()
         )
+
+        product_ids = [r.product_id for r in rows if r.product_id]
+        products_by_id: dict[int, Product] = {}
+        if product_ids:
+            products = (
+                db.query(Product)
+                .filter(Product.id.in_(product_ids))
+                .all()
+            )
+            products_by_id = {p.id: p for p in products}
+
+        # Прогреваем relationship — дальше чтение item.product
+        # не сходит в БД и не снимет блокировку.
+        for r in rows:
+            r.product = products_by_id.get(r.product_id)
+
         items_map = {i.id: i for i in rows}
     except Exception as e:
+        db.rollback()
         logger.exception("Ошибка загрузки товаров корзины: %s", e)
         request.session["flash"] = "Ошибка БД. Попробуйте ещё раз."
         return RedirectResponse(url="/cart", status_code=303)
