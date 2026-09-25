@@ -122,7 +122,7 @@ def import_products_from_excel(content: bytes) -> tuple[list[dict], list[str]]:
         if not row or all(c is None for c in row):
             continue
         try:
-            name = str(row[0]).strip() if row[0] else ""
+            name = _to_str_preserve(row[0])
             if not name:
                 warnings.append(f"Строка {i}: пустое название")
                 continue
@@ -132,13 +132,13 @@ def import_products_from_excel(content: bytes) -> tuple[list[dict], list[str]]:
 
             products.append({
                 "name": name,
-                "country": str(safe(1) or "").strip(),
-                "length_cm": int(safe(2) or 0),
-                "unit": str(safe(3) or "упаковка").strip(),
-                "package_size": int(safe(4) or 1),
-                "min_quantity": int(safe(5) or 1),
-                "category": str(safe(6) or "Прочее").strip(),
-                "description": str(safe(7) or "").strip(),
+                "country": _to_str_preserve(safe(1)),
+                "length_cm": _to_int(safe(2)),
+                "unit": _to_str_preserve(safe(3)) or "упаковка",
+                "package_size": _to_int(safe(4)) or 1,
+                "min_quantity": _to_int(safe(5)) or 1,
+                "category": _to_str_preserve(safe(6)) or "Прочее",
+                "description": _to_str_preserve(safe(7)),
                 "image_url": "",
             })
         except (ValueError, TypeError) as e:
@@ -238,7 +238,22 @@ def _to_float(v) -> float:
 
 
 def _to_int(v) -> int:
+    """Безопасное преобразование в int (не теряет leading zeros для строк)."""
     return int(_to_float(v))
+
+
+def _to_str_preserve(v) -> str:
+    """
+    Сохраняет строку как есть, НЕ приводя к int.
+    Нужно для ИНН, где ведущие нули важны.
+    """
+    if v is None:
+        return ""
+    s = str(v).strip()
+    # Если Excel вернул float (12.0) — убираем .0
+    if s.endswith(".0") and s[:-2].isdigit():
+        s = s[:-2]
+    return s
 
 
 def _clean_name(raw) -> str:

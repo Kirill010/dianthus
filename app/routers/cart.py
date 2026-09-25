@@ -1,7 +1,9 @@
-# Корзина и оформление заказа.
+# app/routers/cart.py
+"""Корзина и оформление заказа с атомарной блокировкой стока."""
 import logging
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import (APIRouter, BackgroundTasks, Depends, Form,
+                     HTTPException, Request)
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -23,6 +25,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 MAX_COMMENT_LENGTH = 1000
 
+
 def _cart_subtotal(cart: list[dict]) -> float:
     total = 0.0
     for it in cart:
@@ -30,12 +33,14 @@ def _cart_subtotal(cart: list[dict]) -> float:
         total += it["price"] * pack * it["quantity"]
     return total
 
+
 def _apply_discount(subtotal: float, discount_percent: float):
     pct = max(0.0, min(100.0, float(discount_percent or 0)))
     if pct <= 0:
         return 0.0, subtotal
     discount = subtotal * pct / 100.0
     return discount, subtotal - discount
+
 
 def _clean_cart(cart: list[dict]) -> list[dict]:
     result = []
@@ -50,6 +55,7 @@ def _clean_cart(cart: list[dict]) -> list[dict]:
             continue
         result.append(c)
     return result
+
 
 def _merge_into_cart(cart: list[dict], new_item: dict) -> None:
     si_id = new_item["supply_item_id"]
@@ -71,10 +77,13 @@ def _merge_into_cart(cart: list[dict], new_item: dict) -> None:
         entry["from_preorder"] = True
     cart.append(entry)
 
+
 def _back(request: Request, default: str = "/catalog") -> str:
     return request.headers.get("referer") or default
 
-# ДОБАВЛЕНИЕ В КОРЗИНУ
+
+# ───────────────────────── ДОБАВЛЕНИЕ В КОРЗИНУ ─────────────────────────
+
 @router.post("/add_to_cart")
 async def add_to_cart(
     request: Request,
@@ -159,7 +168,9 @@ async def add_to_cart(
     request.session["cart"] = cart
     return RedirectResponse(url=_back(request), status_code=303)
 
-# ДОБАВЛЕНИЕ В ПРЕДЗАКАЗ
+
+# ───────────────────────── ДОБАВЛЕНИЕ В ПРЕДЗАКАЗ ─────────────────────────
+
 @router.post("/add_to_preorder")
 async def add_to_preorder_route(
     request: Request,
@@ -211,7 +222,9 @@ async def add_to_preorder_route(
         request.session["flash"] = "Не удалось добавить предзаказ"
     return RedirectResponse(url=_back(request), status_code=303)
 
-# ЗАКАЗАТЬ ПОСТУПИВШИЙ ПРЕДЗАКАЗ
+
+# ───────────────────────── ЗАКАЗАТЬ ПОСТУПИВШИЙ ПРЕДЗАКАЗ ─────────────────────────
+
 @router.post("/preorders/{preorder_id}/to_cart")
 async def preorder_to_cart(
     preorder_id: int,
@@ -240,7 +253,9 @@ async def preorder_to_cart(
     )
     return RedirectResponse(url="/cart", status_code=303)
 
-# СТРАНИЦА ПРЕДЗАКАЗОВ
+
+# ───────────────────────── СТРАНИЦА ПРЕДЗАКАЗОВ ─────────────────────────
+
 @router.get("/preorders", response_class=HTMLResponse)
 async def preorders_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
@@ -255,7 +270,9 @@ async def preorders_page(request: Request, db: Session = Depends(get_db)):
         preorders=preorders,
     )
 
-# ПРОСМОТР КОРЗИНЫ
+
+# ───────────────────────── ПРОСМОТР КОРЗИНЫ ─────────────────────────
+
 @router.get("/cart", response_class=HTMLResponse)
 async def cart_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
@@ -391,6 +408,7 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
         total=total,
     )
 
+
 @router.post("/remove_from_cart")
 async def remove_from_cart(
     request: Request,
@@ -402,6 +420,7 @@ async def remove_from_cart(
         cart.pop(item_index)
     request.session["cart"] = cart
     return RedirectResponse(url=_back(request, "/cart"), status_code=303)
+
 
 @router.post("/remove_from_preorder")
 async def remove_from_preorder(
@@ -418,12 +437,15 @@ async def remove_from_preorder(
     referer = _back(request, "/cart")
     return RedirectResponse(url=referer, status_code=303)
 
+
 @router.post("/clear_cart")
 async def clear_cart(request: Request, _csrf: None = Depends(check_csrf)):
     request.session["cart"] = []
     return RedirectResponse(url=_back(request, "/cart"), status_code=303)
 
-# ОФОРМЛЕНИЕ
+
+# ───────────────────────── ОФОРМЛЕНИЕ (АТОМАРНОЕ) ─────────────────────────
+
 @router.get("/checkout", response_class=HTMLResponse)
 async def checkout_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
@@ -447,13 +469,21 @@ async def checkout_page(request: Request, db: Session = Depends(get_db)):
         total=total,
     )
 
+
 @router.post("/place_order")
 async def place_order(
     request: Request,
     comment: str = Form(""),
+    background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
     _csrf: None = Depends(check_csrf),
 ):
+    """
+    Оформление заказа с ПЕССИМИСТИЧНОЙ БЛОКИРОВКОЙ строк supply_items.
+
+    with_for_update() гарантирует, что между проверкой available_stock
+    и списанием stock другой запрос не сможет выкупить тот же товар.
+    """
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
@@ -470,12 +500,13 @@ async def place_order(
 
     cart_ids = [c["supply_item_id"] for c in cart]
 
-    items_map = {}
+    # ✅ АТОМАРНАЯ БЛОКИРОВКА: SELECT ... FOR UPDATE
     try:
         rows = (
             db.query(SupplyItem)
             .options(joinedload(SupplyItem.product))
             .filter(SupplyItem.id.in_(cart_ids))
+            .with_for_update()          # ← блокировка строк на уровне БД
             .all()
         )
         items_map = {i.id: i for i in rows}
@@ -484,6 +515,7 @@ async def place_order(
         request.session["flash"] = "Ошибка БД. Попробуйте ещё раз."
         return RedirectResponse(url="/cart", status_code=303)
 
+    # Проверки ПОД блокировкой (уже безопасно от race condition)
     for c in cart:
         item = items_map.get(c["supply_item_id"])
         if item is None:
@@ -510,6 +542,7 @@ async def place_order(
     discount_percent = float(user.discount_percent or 0)
     _, total = _apply_discount(subtotal, discount_percent)
 
+    # Списание ПОД блокировкой — атомарно
     for c in cart:
         item = items_map[c["supply_item_id"]]
         if c.get("from_preorder"):
@@ -556,17 +589,24 @@ async def place_order(
         )
         return RedirectResponse(url="/cart", status_code=303)
 
-    try:
-        notify_admin_new_order(order, user)
-    except Exception as e:
-        logger.error(
-            "Не удалось уведомить админа о заказе №%d: %s",
-            order.id, e, exc_info=True,
-        )
+    # ✅ Не блокируем пользователя отправкой email
+    if background_tasks:
+        background_tasks.add_task(notify_admin_new_order, order, user)
+    else:
+        try:
+            notify_admin_new_order(order, user)
+        except Exception as e:
+            logger.error(
+                "Не удалось уведомить админа о заказе №%d: %s",
+                order.id, e, exc_info=True,
+            )
 
     request.session["cart"] = []
     request.session["flash"] = f"Заказ №{order.id} оформлен!"
     return RedirectResponse(url="/orders", status_code=303)
+
+
+# ───────────────────────── ИСТОРИЯ ЗАКАЗОВ ─────────────────────────
 
 @router.get("/orders", response_class=HTMLResponse)
 async def order_history(request: Request, db: Session = Depends(get_db)):
@@ -575,11 +615,13 @@ async def order_history(request: Request, db: Session = Depends(get_db)):
         return RedirectResponse(url="/login", status_code=303)
     orders = (
         db.query(Order)
+        .options(selectinload(Order.items))          # ← Eager loading!
         .filter(Order.user_id == user.id)
         .order_by(Order.created_at.desc())
         .all()
     )
     return render(request, "orders.html", db, user=user, orders=orders)
+
 
 @router.post("/orders/{order_id}/repeat")
 async def repeat_order(
@@ -653,6 +695,7 @@ async def repeat_order(
         return RedirectResponse(url="/cart", status_code=303)
     return RedirectResponse(url="/catalog", status_code=303)
 
+
 @router.get("/orders/{order_id}/invoice")
 async def download_invoice(
     order_id: int,
@@ -665,6 +708,7 @@ async def download_invoice(
 
     order = (
         db.query(Order)
+        .options(selectinload(Order.items))          # ← Eager loading!
         .filter(Order.id == order_id, Order.user_id == user.id)
         .first()
     )

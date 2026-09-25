@@ -1,7 +1,9 @@
-# Общий рендер шаблонов.
+# app/templating.py (полный код)
+"""Общий рендер шаблонов с кэшированием счётчика предзаказов."""
 import logging
 import os
 import tempfile
+import time
 from pathlib import Path
 
 from fastapi import Request
@@ -20,6 +22,29 @@ logger = logging.getLogger(__name__)
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+
+# ✅ Кэш счётчика предзаказов (TTL 30 сек)
+_preorder_cache: dict[str, dict] = {}
+
+
+def _get_cached_preorder_count(db: Session, user_id: int, ttl: int = 30) -> int:
+    """Кэширует preorder_count_db на TTL секунд."""
+    key = f"preorder_count:{user_id}"
+    now = time.time()
+    if key in _preorder_cache and now - _preorder_cache[key]["ts"] < ttl:
+        return _preorder_cache[key]["value"]
+    value = preorder_count_db(db, user_id)
+    _preorder_cache[key] = {"value": value, "ts": now}
+    return value
+
+
+def _invalidate_preorder_cache(user_id: int | None = None) -> None:
+    """Сбрасывает кэш (при изменении предзаказов)."""
+    if user_id is None:
+        _preorder_cache.clear()
+    else:
+        _preorder_cache.pop(f"preorder_count:{user_id}", None)
 
 
 def _pick_cache_dir() -> str:
@@ -71,7 +96,11 @@ def render(request: Request, template: str, db: Session, **context):
     flash = request.session.pop("flash", None)
     cart = request.session.get("cart", [])
     cart_count = sum(item.get("quantity", 0) for item in cart)
-    preorder_total = preorder_count_db(db, user.id) if user else 0
+
+    # ✅ Кэшированный счётчик предзаказов
+    preorder_total = (
+        _get_cached_preorder_count(db, user.id) if user else 0
+    )
     csrf_token = ensure_csrf_token(request)
 
     active_supply = None

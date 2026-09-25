@@ -1,3 +1,4 @@
+# app/routers/integration_1c.py (полный код)
 """
 Приём данных из 1С. Basic Auth (в prod).
 POST /api/1c/products/sync
@@ -30,20 +31,33 @@ def _verify_basic(
     request: Request,
     creds: HTTPBasicCredentials | None = Depends(_basic),
 ) -> bool:
-    """Проверяет Basic Auth."""
+    """
+    Проверяет Basic Auth.
+
+    ✅ ИСПРАВЛЕНО: в dev-режиме при отсутствии пароля — 503,
+    а не молчаливый пропуск (раньше любой мог вызвать sync).
+    """
     auth_configured = bool(
         config.INTEGRATION_USER and config.INTEGRATION_PASSWORD
     )
 
     if not auth_configured:
+        # В prod — всегда отказ
         if config.ENV == "prod":
             raise HTTPException(
                 503, "Интеграция с 1С не настроена на сервере"
             )
-        logger.warning(
-            "1С: авторизация отключена (dev-режим, "
-            "INTEGRATION_PASSWORD не задан)"
-        )
+        # ✅ В dev — требуем пароль, если интеграция используется
+        if not config.INTEGRATION_PASSWORD:
+            logger.warning(
+                "1С: INTEGRATION_PASSWORD не задан — "
+                "запрос отклонён (503)."
+            )
+            raise HTTPException(
+                503,
+                "Задайте INTEGRATION_PASSWORD для разработки "
+                "или используйте ENV=prod"
+            )
         return True
 
     if creds is None:
@@ -80,21 +94,15 @@ _BAD_SCHEMES = ("javascript:", "data:", "vbscript:", "file:")
 
 
 def _normalize_photos(raw) -> list:
-    """
-    Приводит поле photo/photos из 1С к списку валидных URL-ов.
-    Принимает: None / строку / список строк.
-    Отбрасывает опасные схемы и всё, что не начинается с http(s):// или /static/.
-    """
+    """Приводит поле photo/photos из 1С к списку валидных URL-ов."""
     if raw is None:
         return []
     if isinstance(raw, str):
         parts = [p.strip() for p in raw.split(",")]
     elif isinstance(raw, list):
-        # Поддерживаем вложенные списки и словари
         parts = []
         for item in raw:
             if isinstance(item, dict):
-                # Если это объект, ищем в нем URL
                 for key in ("url", "photo", "image", "link"):
                     if key in item and item[key]:
                         parts.append(str(item[key]))
@@ -181,7 +189,7 @@ async def sync_products(
 
     supply = _ensure_1c_supply(db)
 
-    # ── Batch-load существующих товаров (по sku и name) ──
+    # Batch-load существующих товаров (по sku и name)
     skus, names = [], []
     for it in products_data:
         s = str(it.get("sku", "")).strip()

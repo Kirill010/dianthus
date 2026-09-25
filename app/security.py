@@ -1,3 +1,4 @@
+# app/security.py (полный код)
 """
 Модуль безопасности Диантуса.
 CSRF + rate limiting (Redis или in-memory).
@@ -40,15 +41,11 @@ def ensure_csrf_token(request: Request) -> str:
 
 async def check_csrf(request: Request) -> None:
     """
-    Проверяет CSRF-токен.
+    Проверяет CSRF-токен + Origin/Referer.
 
-    Порядок поиска:
+    Порядок поиска токена:
       1. Заголовок X-CSRF-Token (для fetch/AJAX).
-      2. Поле формы csrf_token (для обычных HTML-форм,
-         включая multipart/form-data — там заголовок недоступен).
-
-    Starlette кэширует разобранную форму, поэтому последующий
-    вызов Form()/File() в роутере получит те же значения.
+      2. Поле формы csrf_token (для HTML-форм, включая multipart).
     """
     session_token = request.session.get(_CSRF_SESSION_KEY)
     if not session_token:
@@ -70,8 +67,20 @@ async def check_csrf(request: Request) -> None:
     if not client_token:
         raise CsrfError("Отсутствует CSRF-токен")
 
+    # Constant-time сравнение
     if not secrets.compare_digest(str(session_token), str(client_token)):
         raise CsrfError("Неверный CSRF-токен")
+
+    # ✅ ДОПОЛНИТЕЛЬНО: проверка Origin/Referer
+    from .config import config
+    origin = (
+        request.headers.get("origin")
+        or request.headers.get("referer", "")
+    )
+    if origin and config.APP_URL not in origin:
+        logger.warning("CSRF: неверный Origin/Referer: %s", origin)
+        raise CsrfError("Неверный источник запроса")
+
 
 # ═══════════════════════════════════════════════════════════
 # RATE LIMITING

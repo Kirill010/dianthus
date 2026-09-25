@@ -137,7 +137,8 @@
 })();
 
 /* ─── Service Worker ─── */
-if ('serviceWorker' in navigator) {
+if ('serviceWorker' in navigator && !window._swRegistered) {
+    window._swRegistered = true;
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('/static/sw.js')
             .then((reg) => console.log('SW:', reg.scope))

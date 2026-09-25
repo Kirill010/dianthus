@@ -1,4 +1,5 @@
-# Лёгкая авто-миграция: добавляет недостающие колонки, индексы и таблицы.
+# app/migrations.py (полный код)
+"""Лёгкая авто-миграция: добавляет недостающие колонки, индексы и таблицы."""
 import logging
 
 from sqlalchemy import inspect, text
@@ -36,7 +37,6 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
     },
     "supply_items": {
         "is_active":      "BOOLEAN DEFAULT FALSE",
-        # ✅ НОВОЕ ПОЛЕ
         "reserved_stock": "INTEGER DEFAULT 0 NOT NULL",
     },
     "orders": {
@@ -56,10 +56,35 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
     },
 }
 
+# ✅ РАСШИРЕННЫЙ набор индексов для критичных полей
 EXPECTED_INDEXES: dict[str, list[tuple[str, str]]] = {
     "products": [
         ("ix_products_category", "category"),
         ("ix_products_sku", "sku"),
+        ("ix_products_country", "country"),
+    ],
+    "orders": [
+        ("ix_orders_created_at", "created_at"),
+        ("ix_orders_status", "status"),
+        ("ix_orders_user_created", "user_id, created_at"),
+    ],
+    "supply_items": [
+        ("ix_supply_items_supply_product", "supply_id, product_id"),
+        ("ix_supply_items_active", "is_active"),
+        ("ix_supply_items_active_stock", "is_active, stock"),
+    ],
+    "users": [
+        ("ix_users_email", "email"),
+        ("ix_users_created_at", "created_at"),
+        ("ix_users_approved", "is_approved"),
+    ],
+    "notifications": [
+        ("ix_notifications_user_unread", "user_id, is_read"),
+        ("ix_notifications_created", "created_at"),
+    ],
+    "preorders": [
+        ("ix_preorders_user_fulfilled", "user_id, is_fulfilled"),
+        ("ix_preorders_product", "product_id"),
     ],
 }
 
@@ -89,10 +114,7 @@ def ensure_notifications_table() -> None:
 # ═══════════════════════════════════════════════════════════
 
 def _backfill_once(flag: str) -> bool:
-    """
-    Проверяет, выполнен ли бэкфилл с данным флагом.
-    Использует таблицу _migrations (создаётся при первом вызове).
-    """
+    """Проверяет, выполнен ли бэкфилл с данным флагом."""
     try:
         with engine.begin() as conn:
             conn.execute(text("""
@@ -105,7 +127,7 @@ def _backfill_once(flag: str) -> bool:
                 "SELECT 1 FROM _migrations WHERE name = :n"
             ), {"n": flag}).first()
             if row:
-                return False  # уже применён
+                return False
             conn.execute(text(
                 "INSERT INTO _migrations (name) VALUES (:n)"
             ), {"n": flag})
@@ -116,7 +138,6 @@ def _backfill_once(flag: str) -> bool:
 
 
 def _backfill_order_item_pack_sizes() -> None:
-    """Одноразовый бэкфилл: восстанавливает package_size у старых заказов."""
     if not _backfill_once("order_item_pack_sizes_v1"):
         return
     try:
@@ -199,6 +220,7 @@ def auto_migrate() -> None:
     logger.info("🔍 Диалект БД: %s", dialect)
 
     with engine.begin() as conn:
+        # Добавление колонок
         for table, columns in EXPECTED_COLUMNS.items():
             if table not in tables:
                 continue
@@ -218,19 +240,21 @@ def auto_migrate() -> None:
                     logger.warning("Не удалось добавить %s.%s: %s",
                                    table, col, e)
 
+        # ✅ Создание индексов
         for table, indexes in EXPECTED_INDEXES.items():
             if table not in tables:
                 continue
             existing_idx = {i["name"] for i in insp.get_indexes(table)}
-            for idx_name, column in indexes:
+            for idx_name, columns in indexes:
                 if idx_name in existing_idx:
                     continue
                 try:
                     conn.execute(text(
                         f"CREATE INDEX IF NOT EXISTS {idx_name} "
-                        f"ON {table} ({column})"
+                        f"ON {table} ({columns})"
                     ))
-                    logger.info("🔧 Создан индекс %s", idx_name)
+                    logger.info("🔧 Создан индекс %s ON %s (%s)",
+                                idx_name, table, columns)
                     added += 1
                 except Exception as e:
                     logger.warning("Индекс %s: %s", idx_name, e)

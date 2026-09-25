@@ -1,12 +1,15 @@
+# app/routers/admin.py
+"""Админ-панель: заказы, клиенты, справочник, поставки."""
 import logging
 from datetime import datetime, timedelta
 from typing import List
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import (APIRouter, BackgroundTasks, Depends, File, Form,
+                     HTTPException, Request, UploadFile)
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import select, or_, func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, selectinload, joinedload
 
 from ..database import get_db
 from ..deps import require_admin
@@ -63,10 +66,6 @@ def _back(request: Request, default: str = "/admin") -> str:
 
 
 def _detach_supply_items(db: Session, item_ids: list[int]) -> None:
-    """
-    Обнуляет все FK-ссылки на supply_items, чтобы их можно было удалить.
-    Вызывать ПЕРЕД db.delete(...) и ПЕРЕД db.commit().
-    """
     if not item_ids:
         return
     db.query(OrderItem).filter(
@@ -79,7 +78,6 @@ def _detach_supply_items(db: Session, item_ids: list[int]) -> None:
 
 
 def _detach_product(db: Session, product_id: int, supply_item_ids: list[int]) -> None:
-    """Обнуляет FK на product и его supply_items."""
     db.query(OrderItem).filter(
         OrderItem.product_id == product_id
     ).update({OrderItem.product_id: None}, synchronize_session=False)
@@ -91,7 +89,7 @@ def _detach_product(db: Session, product_id: int, supply_item_ids: list[int]) ->
     _detach_supply_items(db, supply_item_ids)
 
 
-# ───────────────────────── ДАШБОРД ─────────────────────────
+# ───────────────────────── ДАШБОРД (С N+1 FIX) ─────────────────────────
 
 @router.get("", response_class=HTMLResponse)
 async def dashboard(
@@ -103,8 +101,10 @@ async def dashboard(
     page: int = 1,
 ):
     q, status, page = (q or "").strip(), (status or "").strip(), max(1, page)
+
     orders_query = db.query(Order).options(
-        selectinload(Order.user), selectinload(Order.items)
+        selectinload(Order.user),
+        selectinload(Order.items),
     )
     if q:
         conditions = [Order.id == int(q)] if q.isdigit() else []
@@ -145,17 +145,25 @@ async def dashboard(
         "new_clients_week": db.query(User).filter(User.created_at >= week_ago).count(),
     }
     products = db.query(Product).order_by(Product.name).all()
+
     supplies = (
         db.query(Supply)
-        .options(selectinload(Supply.items))
+        .options(
+            selectinload(Supply.items)
+            .selectinload(SupplyItem.product)
+        )
         .order_by(Supply.arrival_date.asc())
         .all()
     )
     users = db.query(User).order_by(User.created_at.desc()).all()
     pending_count = sum(1 for u in users if not u.is_approved and not u.is_admin)
+
     active_items = (
         db.query(SupplyItem)
-        .options(selectinload(SupplyItem.product), selectinload(SupplyItem.supply))
+        .options(
+            joinedload(SupplyItem.product),
+            joinedload(SupplyItem.supply),
+        )
         .filter(SupplyItem.is_active.is_(True), SupplyItem.stock > 0)
         .all()
     )
@@ -170,31 +178,6 @@ async def dashboard(
         supply_statuses=SUPPLY_STATUSES, categories=PRODUCT_CATEGORIES,
         stats=stats,
     )
-
-
-# ───────────────────────── ДЕТАЛИ ЗАКАЗА ─────────────────────────
-
-@router.get("/orders/{order_id}", response_class=HTMLResponse)
-async def order_detail(
-    order_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    admin=Depends(require_admin),
-):
-    order = (
-        db.query(Order)
-        .options(selectinload(Order.user), selectinload(Order.items))
-        .filter(Order.id == order_id)
-        .first()
-    )
-    if not order:
-        request.session["flash"] = f"Заказ №{order_id} не найден"
-        return RedirectResponse(url="/admin", status_code=303)
-    return render(
-        request, "admin_order_detail.html", db,
-        user=admin, order=order, statuses=ORDER_STATUSES,
-    )
-
 
 # ───────────────────────── МОДЕРАЦИЯ КЛИЕНТОВ ─────────────────────────
 

@@ -1,11 +1,14 @@
-# Сборка приложения и общие маршруты.
+# app/main.py (полный код)
+"""Сборка приложения и общие маршруты."""
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -16,7 +19,8 @@ from .database import Base, engine, get_db
 from .deps import get_current_user
 from .migrations import auto_migrate, ensure_notifications_table
 from .scheduler import start_scheduler, stop_scheduler
-from .security import CsrfError, init_rate_limiter, close_rate_limiter
+from .security import (CsrfError, init_rate_limiter, close_rate_limiter,
+                       _redis_client, _redis_enabled)
 from .templating import render
 from .routers import admin, cart, catalog, profile, integration_1c
 from .middleware import SecurityHeadersMiddleware
@@ -46,13 +50,9 @@ except Exception as e:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ── ЗАПУСК ──
-    await init_rate_limiter()   # Redis (или in-memory, если Redis нет)
-    start_scheduler()           # планировщик с файловым lock
-
+    await init_rate_limiter()
+    start_scheduler()
     yield
-
-    # ── ОСТАНОВКА ──
     stop_scheduler()
     await close_rate_limiter()
 
@@ -62,20 +62,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ═══════════════════════════════════════════════════════════
-# MIDDLEWARE
-# ═══════════════════════════════════════════════════════════
-# ✅ ИСПРАВЛЕНО: порядок middleware!
-# Starlette оборачивает middleware в обратном порядке: тот, что добавлен
-# последним, выполняется первым.
-# Нам нужно, чтобы заголовки безопасности добавлялись к финальному ответу,
-# поэтому SecurityHeaders ставим ПОСЛЕ Session (выполняется раньше на входе
-# и позже на выходе).
-
-# 1. SecurityHeadersMiddleware — заголовки безопасности
+# ── MIDDLEWARE ──
 app.add_middleware(SecurityHeadersMiddleware)
-
-# 2. SessionMiddleware — сессии (нужна для CSRF-токена, пользователя, корзины)
 app.add_middleware(
     SessionMiddleware,
     secret_key=config.SECRET_KEY,
@@ -84,9 +72,7 @@ app.add_middleware(
     https_only=(config.ENV == "prod"),
 )
 
-# ═══════════════════════════════════════════════════════════
-# СТАТИКА
-# ═══════════════════════════════════════════════════════════
+# ── СТАТИКА ──
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 (STATIC_DIR / "uploads").mkdir(parents=True, exist_ok=True)
@@ -111,9 +97,7 @@ def _check_vendor() -> None:
 
 _check_vendor()
 
-# ═══════════════════════════════════════════════════════════
-# РОУТЕРЫ
-# ═══════════════════════════════════════════════════════════
+# ── РОУТЕРЫ ──
 app.include_router(auth_router)
 app.include_router(catalog.router)
 app.include_router(cart.router)
@@ -121,13 +105,13 @@ app.include_router(admin.router)
 app.include_router(profile.router)
 app.include_router(integration_1c.router)
 
-# Создание админа, если его нет
 ensure_default_admin()
 
 
 # ═══════════════════════════════════════════════════════════
 # ОБРАБОТЧИКИ ОШИБОК
 # ═══════════════════════════════════════════════════════════
+
 @app.exception_handler(CsrfError)
 async def csrf_error_handler(request: Request, exc: CsrfError):
     request.session["flash"] = f"⚠️ {exc.message}"
@@ -137,14 +121,12 @@ async def csrf_error_handler(request: Request, exc: CsrfError):
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    # Редиректы (301/302/303/307/308) — просто возвращаем RedirectResponse
     if exc.status_code in (301, 302, 303, 307, 308):
         return RedirectResponse(
             url=exc.headers.get("Location", "/login"),
             status_code=exc.status_code,
         )
 
-    # HTML-страницы ошибок для браузера
     if request.headers.get("accept", "").startswith("text/html"):
         titles = {
             403: "Доступ запрещён",
@@ -156,38 +138,29 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         db = next(get_db())
         try:
             return render(
-                request,
-                "error.html",
-                db,
-                code=exc.status_code,
-                title=title,
+                request, "error.html", db,
+                code=exc.status_code, title=title,
                 message=exc.detail or "",
             )
         finally:
             db.close()
 
-    # JSON для API
     return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
 
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    """Ловим все необработанные исключения — показываем error.html."""
     logger.exception(
         "💥 Необработанная ошибка на %s: %s", request.url.path, exc
     )
 
-    # HTML-страница для браузера
     if request.headers.get("accept", "").startswith("text/html"):
         try:
             db = next(get_db())
             try:
                 return render(
-                    request,
-                    "error.html",
-                    db,
-                    code=500,
-                    title="Ошибка сервера",
+                    request, "error.html", db,
+                    code=500, title="Ошибка сервера",
                     message="Мы уже знаем о проблеме и чиним её.",
                 )
             finally:
@@ -195,7 +168,6 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         except Exception as render_err:
             logger.error("Не удалось отрисовать error.html: %s", render_err)
 
-    # JSON для API
     return JSONResponse(
         {"detail": "Internal server error"},
         status_code=500,
@@ -205,6 +177,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 # ═══════════════════════════════════════════════════════════
 # ОБЩИЕ МАРШРУТЫ
 # ═══════════════════════════════════════════════════════════
+
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request, db: Session = Depends(get_db)):
     if get_current_user(request, db):
@@ -218,9 +191,7 @@ async def login_page(request: Request, db: Session = Depends(get_db)):
     if user:
         return RedirectResponse(url="/catalog", status_code=303)
     return render(
-        request,
-        "login.html",
-        db,
+        request, "login.html", db,
         user=None,
         register_errors=request.session.pop("register_errors", None),
         register_data=request.session.pop("register_data", {}),
@@ -235,17 +206,36 @@ async def registration_pending(request: Request, db: Session = Depends(get_db)):
     return render(request, "registration_pending.html", db)
 
 
-from sqlalchemy import text
-
-
+# ✅ УЛУЧШЕННЫЙ HEALTH-CHECK с проверкой Redis
 @app.get("/health")
 async def health(db: Session = Depends(get_db)):
+    result = {
+        "status": "ok",
+        "env": config.ENV,
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+
+    # Проверка БД
     try:
         db.execute(text("SELECT 1"))
-        return {"status": "ok", "env": config.ENV, "db": "ok"}
+        result["db"] = "ok"
     except Exception as e:
-        logger.error("Health DB failed: %s", e)
-        raise HTTPException(503, "DB unavailable")
+        result["db"] = f"error: {str(e)[:100]}"
+        result["status"] = "degraded"
+
+    # Проверка Redis
+    try:
+        if _redis_enabled and _redis_client:
+            await _redis_client.ping()
+            result["redis"] = "ok"
+        else:
+            result["redis"] = "not_configured"
+    except Exception as e:
+        result["redis"] = f"error: {str(e)[:100]}"
+        result["status"] = "degraded"
+
+    status_code = 200 if result["status"] == "ok" else 503
+    return JSONResponse(result, status_code=status_code)
 
 
 logger.info("🌸 Диантус готов (%s)", config.ENV)

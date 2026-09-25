@@ -236,10 +236,14 @@
                     <div class="product-card-v2__image-wrap">
                         <a href="/product/{{ item.id }}" class="product-card-v2__image-link">
                             {% if photos %}
-                                <img src="{{ photos[0] }}"
-                                     alt="{{ product.name }}"
-                                     class="product-card-v2__photo"
-                                     loading="lazy">
+                                <picture>
+                                    <source srcset="{{ photos[0] }}" type="image/webp">
+                                    <img src="{{ photos[0] }}"
+                                        alt="{{ product.name }}"
+                                        class="product-card-v2__photo"
+                                        loading="lazy"
+                                        width="300" height="300">
+                                </picture>
                             {% else %}
                                 <div class="product-card-v2__placeholder">
                                     <i class="fas fa-seedling"></i>

@@ -1,4 +1,5 @@
-# Регистрация, вход, выход.
+# app/auth.py (полный код)
+"""Регистрация, вход, выход."""
 import logging
 
 import bcrypt
@@ -8,7 +9,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .database import get_db
-from .security import check_csrf, check_rate_limit, reset_rate_limit
+from .security import (check_csrf, check_rate_limit, reset_rate_limit,
+                       ensure_csrf_token)
 from .validators import (validate_company_name, validate_email,
                          validate_full_name, validate_password,
                          validate_phone, validate_inn, validate_city)
@@ -149,5 +151,13 @@ async def login(
 
 @router.get("/logout")
 async def logout(request: Request):
+    """
+    Выход с сохранением CSRF-токена.
+
+    session.clear() удаляет CSRF-токен, из-за чего форма на /login
+    может отправить старый токен (если пользователь нажал «Назад»).
+    Создаём новый токен сразу после очистки.
+    """
     request.session.clear()
+    ensure_csrf_token(request)      # ← создаём новый CSRF-токен
     return RedirectResponse(url="/login", status_code=303)
