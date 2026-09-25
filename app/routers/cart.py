@@ -20,6 +20,7 @@ from ..services.preorder_service import (
     remove_fulfilled_preorder_db,
 )
 from ..templating import render
+from .. import models
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -434,8 +435,12 @@ async def remove_from_preorder(
         return RedirectResponse(url="/login", status_code=303)
     if remove_preorder_db(db, user.id, preorder_id):
         request.session["flash"] = "Предзаказ удалён"
-    referer = _back(request, "/cart")
-    return RedirectResponse(url=referer, status_code=303)
+        try:
+            from ..templating import _invalidate_preorder_cache
+            _invalidate_preorder_cache(user.id)
+        except Exception:
+            pass
+    return RedirectResponse(url=_back(request, "/cart"), status_code=303)
 
 
 @router.post("/clear_cart")
@@ -473,8 +478,8 @@ async def checkout_page(request: Request, db: Session = Depends(get_db)):
 @router.post("/place_order")
 async def place_order(
     request: Request,
+    background_tasks: BackgroundTasks,
     comment: str = Form(""),
-    background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
     _csrf: None = Depends(check_csrf),
 ):
@@ -560,8 +565,6 @@ async def place_order(
     # Списание ПОД блокировкой — атомарно
     for c in cart:
         item = items_map[c["supply_item_id"]]
-        if c.get("from_preorder"):
-            continue
         item.stock -= c["quantity"]
         if item.available_stock <= 0:
             item.is_active = False
@@ -604,17 +607,18 @@ async def place_order(
         )
         return RedirectResponse(url="/cart", status_code=303)
 
-    # ✅ Не блокируем пользователя отправкой email
-    if background_tasks:
-        background_tasks.add_task(notify_admin_new_order, order, user)
-    else:
-        try:
-            notify_admin_new_order(order, user)
-        except Exception as e:
-            logger.error(
-                "Не удалось уведомить админа о заказе №%d: %s",
-                order.id, e, exc_info=True,
-            )
+    order_loaded = (
+        db.query(Order)
+        .options(selectinload(Order.items))
+        .filter(Order.id == order.id)
+        .first()
+    )
+    user_loaded = (
+        db.query(models.User).filter(models.User.id == user.id).first()
+    )
+    background_tasks.add_task(
+        notify_admin_new_order, order_loaded, user_loaded,
+    )
 
     request.session["cart"] = []
     request.session["flash"] = f"Заказ №{order.id} оформлен!"

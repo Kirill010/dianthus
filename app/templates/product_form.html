@@ -80,8 +80,9 @@
                 </div>
                 <div class="mb-3">
                     <label class="form-label small">Или вставить URL картинки</label>
-                    <input type="text" name="image_url" class="form-control" maxlength="500" 
-                           value="{{ product.image_url if product and not product.image_url.startswith('/static/uploads/') else '' }}" placeholder="https://...">
+                    <input type="text" name="image_url" class="form-control" maxlength="500"
+                            value="{{ product.image_url if product and not (product.image_url or '').startswith('/static/uploads/') else '' }}"
+                            placeholder="https://...">
                 </div>
             </div>
         </div>

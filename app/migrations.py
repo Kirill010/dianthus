@@ -33,7 +33,8 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
     },
     "supplies": {
         "status": "VARCHAR(30) DEFAULT 'Ожидается'",
-        "notes":  "TEXT DEFAULT ''",
+        "notes": "TEXT DEFAULT ''",
+        "is_service": "BOOLEAN DEFAULT FALSE NOT NULL",
     },
     "supply_items": {
         "is_active":      "BOOLEAN DEFAULT FALSE",

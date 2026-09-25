@@ -21,6 +21,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+# fix #15: rate limit ВЫПОЛНЯЕТСЯ ДО CSRF — защищает от брутфорса
+async def _rate_register(request: Request) -> None:
+    await check_rate_limit(request, "register", max_hits=5, window=300)
+
+
+async def _rate_login(request: Request) -> None:
+    await check_rate_limit(request, "login", max_hits=10, window=60)
+
+
 def hash_password(password: str) -> str:
     b = password.encode("utf-8")
     if len(b) > 72:
@@ -41,6 +50,8 @@ def verify_password(password: str, hashed: str) -> bool:
 @router.post("/register")
 async def register(
     request: Request,
+    _rate: None = Depends(_rate_register),
+    _csrf: None = Depends(check_csrf),
     email: str = Form(""),
     password: str = Form(""),
     full_name: str = Form(""),
@@ -49,10 +60,7 @@ async def register(
     inn: str = Form(""),
     city: str = Form(""),
     db: Session = Depends(get_db),
-    _csrf: None = Depends(check_csrf),
 ):
-    await check_rate_limit(request, "register", max_hits=5, window=300)
-
     email = email.strip().lower()
     company_name = company_name.strip()
     full_name = full_name.strip()
@@ -87,14 +95,16 @@ async def register(
         }
         return RedirectResponse(url="/login", status_code=303)
 
+    try:
+        pwd_hash = hash_password(password)
+    except ValueError:
+        request.session["register_errors"] = ["Пароль слишком длинный"]
+        return RedirectResponse(url="/login", status_code=303)
+
     user = models.User(
-        email=email,
-        hashed_password=hash_password(password),
-        full_name=full_name,
-        phone=phone,
-        company_name=company_name,
-        inn=inn,
-        city=city,
+        email=email, hashed_password=pwd_hash,
+        full_name=full_name, phone=phone,
+        company_name=company_name, inn=inn, city=city,
         is_approved=False,
     )
     try:
@@ -118,13 +128,12 @@ async def register(
 @router.post("/login")
 async def login(
     request: Request,
+    _rate: None = Depends(_rate_login),
+    _csrf: None = Depends(check_csrf),
     email: str = Form(""),
     password: str = Form(""),
     db: Session = Depends(get_db),
-    _csrf: None = Depends(check_csrf),
 ):
-    await check_rate_limit(request, "login", max_hits=10, window=60)
-
     email = email.strip().lower()
     if not email or not password:
         request.session["login_error"] = "Заполните email и пароль"
@@ -149,15 +158,12 @@ async def login(
     return RedirectResponse(url="/catalog", status_code=303)
 
 
-@router.get("/logout")
-async def logout(request: Request):
-    """
-    Выход с сохранением CSRF-токена.
-
-    session.clear() удаляет CSRF-токен, из-за чего форма на /login
-    может отправить старый токен (если пользователь нажал «Назад»).
-    Создаём новый токен сразу после очистки.
-    """
+# fix #1: logout теперь POST + CSRF
+@router.post("/logout")
+async def logout(
+    request: Request,
+    _csrf: None = Depends(check_csrf),
+):
     request.session.clear()
-    ensure_csrf_token(request)      # ← создаём новый CSRF-токен
+    ensure_csrf_token(request)
     return RedirectResponse(url="/login", status_code=303)

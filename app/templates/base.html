@@ -19,7 +19,7 @@
 </head>
 <body class="{% if user and not hide_bottom_nav %}has-bottom-nav{% endif %}">
 
-{% if active_supply and user %}
+{% if active_supply and user and not active_supply.is_service %}
 <div class="supply-banner">
     <div class="container d-flex align-items-center justify-content-center gap-2 flex-wrap">
         <span class="supply-banner__icon"><i class="fas fa-truck-fast"></i></span>

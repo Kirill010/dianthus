@@ -1,6 +1,5 @@
 # app/security.py
 """
-Модуль безопасности Диантуса.
 CSRF + rate limiting (Redis или in-memory).
 """
 import logging
@@ -16,15 +15,25 @@ from fastapi import HTTPException, Request
 logger = logging.getLogger(__name__)
 
 _CSRF_SESSION_KEY = "csrf_token"
+
+# In-memory rate limit
 _rate_buckets: dict[str, list[float]] = defaultdict(list)
+_RATE_CLEANUP_THRESHOLD = 5000  # после этого числа ключей чистим
 
 _redis_client = None
 _redis_enabled = False
 
+# Lua-скрипт: атомарный INCR + EXPIRE (fix #10 — race между INCR и TTL)
+_LUA_INCR_EXPIRE = """
+local c = redis.call('INCR', KEYS[1])
+if c == 1 then
+    redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return c
+"""
 
-# ═══════════════════════════════════════════════════════════
+
 # CSRF
-# ═══════════════════════════════════════════════════════════
 
 class CsrfError(Exception):
     def __init__(self, message: str = "Ошибка CSRF-токена"):
@@ -41,7 +50,6 @@ def ensure_csrf_token(request: Request) -> str:
 
 
 def _host_of(url: str) -> str:
-    """Возвращает hostname из URL или пустую строку."""
     try:
         return (urlparse(url).hostname or "").lower()
     except Exception:
@@ -49,21 +57,11 @@ def _host_of(url: str) -> str:
 
 
 async def check_csrf(request: Request) -> None:
-    """
-    Проверяет CSRF-токен + Origin/Referer.
-
-    Порядок поиска токена:
-      1. Заголовок X-CSRF-Token (для fetch/AJAX).
-      2. Поле формы csrf_token (для HTML-форм, включая multipart).
-    """
     session_token = request.session.get(_CSRF_SESSION_KEY)
     if not session_token:
         raise CsrfError("Сессия не содержит CSRF-токен")
 
-    # 1. Заголовок (для fetch)
     client_token = request.headers.get("x-csrf-token", "") or ""
-
-    # 2. Тело формы (в т.ч. multipart/form-data)
     if not client_token:
         try:
             form = await request.form()
@@ -79,8 +77,6 @@ async def check_csrf(request: Request) -> None:
     if not secrets.compare_digest(str(session_token), str(client_token)):
         raise CsrfError("Неверный CSRF-токен")
 
-    # ✅ ДОПОЛНИТЕЛЬНО: проверка Origin/Referer по hostname,
-    # а не по полному URL. Работает за Nginx-прокси.
     origin = (
         request.headers.get("origin")
         or request.headers.get("referer", "")
@@ -90,7 +86,6 @@ async def check_csrf(request: Request) -> None:
         req_host = (request.url.hostname or "").lower()
         from .config import config
         app_host = _host_of(config.APP_URL)
-
         allowed = {h for h in (req_host, app_host) if h}
         if origin_host and origin_host not in allowed:
             logger.warning(
@@ -100,19 +95,37 @@ async def check_csrf(request: Request) -> None:
             raise CsrfError("Неверный источник запроса")
 
 
-# ═══════════════════════════════════════════════════════════
 # RATE LIMITING
-# ═══════════════════════════════════════════════════════════
 
 def _client_ip(request: Request) -> str:
+    """
+    fix #5: доверяем только тому, что уже распарсил uvicorn
+    (--proxy-headers + --forwarded-allow-ips=127.0.0.1).
+    XFF-заголовок читаем ТОЛЬКО если uvicorn его не подменил
+    (например, dev-режим без nginx).
+    """
+    if request.client and request.client.host:
+        return request.client.host[:45]
+    # Фоллбэк для нестандартных прокси
     fwd = request.headers.get("x-forwarded-for")
     if fwd:
         parts = [p.strip() for p in fwd.split(",") if p.strip()]
         if parts:
             return parts[0][:45]
-    if request.client:
-        return request.client.host
     return "unknown"
+
+
+def _cleanup_memory_buckets(window: int) -> None:
+    """fix #8: не даём _rate_buckets расти бесконечно."""
+    if len(_rate_buckets) < _RATE_CLEANUP_THRESHOLD:
+        return
+    now = time.time()
+    dead = [k for k, hits in _rate_buckets.items()
+            if not hits or now - hits[-1] > window * 2]
+    for k in dead:
+        _rate_buckets.pop(k, None)
+    logger.info("Rate-limit cleanup: удалено %d ключей, осталось %d",
+                len(dead), len(_rate_buckets))
 
 
 async def _redis_incr(bucket: str, window: int) -> Optional[int]:
@@ -120,16 +133,9 @@ async def _redis_incr(bucket: str, window: int) -> Optional[int]:
         return None
     try:
         key = f"rl:{bucket}"
-        # ✅ INCR + TTL: не сбрасываем TTL на каждом запросе.
-        pipe = _redis_client.pipeline()
-        pipe.incr(key)
-        pipe.ttl(key)
-        results = await pipe.execute()
-        count = int(results[0])
-        ttl = int(results[1])
-        if ttl < 0:  # у ключа не было TTL — ставим один раз
-            await _redis_client.expire(key, window)
-        return count
+        # fix #10: атомарный INCR+EXPIRE через Lua
+        count = await _redis_client.eval(_LUA_INCR_EXPIRE, 1, key, window)
+        return int(count)
     except Exception as e:
         logger.warning("Redis rate limit failed: %s", e)
         return None
@@ -163,6 +169,8 @@ async def check_rate_limit(
             )
         return
 
+    _cleanup_memory_buckets(window)
+
     now = time.time()
     hits = _rate_buckets[bucket]
     hits[:] = [t for t in hits if now - t < window]
@@ -184,9 +192,7 @@ async def reset_rate_limit(request: Request, key: str) -> None:
     await _redis_reset(bucket)
 
 
-# ═══════════════════════════════════════════════════════════
 # REDIS
-# ═══════════════════════════════════════════════════════════
 
 async def init_rate_limiter(redis_url: Optional[str] = None) -> None:
     global _redis_client, _redis_enabled
@@ -202,7 +208,9 @@ async def init_rate_limiter(redis_url: Optional[str] = None) -> None:
         import redis.asyncio as redis
 
         _redis_client = redis.from_url(
-            redis_url, encoding="utf-8", decode_responses=True
+            redis_url, encoding="utf-8", decode_responses=True,
+            socket_timeout=2, socket_connect_timeout=2,
+            health_check_interval=30,
         )
         await _redis_client.ping()
         _redis_enabled = True
@@ -224,7 +232,6 @@ async def close_rate_limiter() -> None:
         _redis_enabled = False
 
 
-# ✅ Публичный доступ для health-check
 def is_redis_enabled() -> bool:
     return _redis_enabled
 

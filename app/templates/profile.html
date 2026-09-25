@@ -130,10 +130,13 @@
         <a href="/orders" class="btn btn-outline-secondary text-start">
             <i class="fas fa-list me-2"></i>Мои заказы
         </a>
-        <a href="/logout" class="btn btn-outline-danger text-start"
-           onclick="return confirm('Выйти из аккаунта?');">
-            <i class="fas fa-sign-out-alt me-2"></i>Выйти из аккаунта
-        </a>
+        <form action="/logout" method="post" class="d-grid"
+              onsubmit="return confirm('Выйти из аккаунта?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-outline-danger text-start">
+                <i class="fas fa-sign-out-alt me-2"></i>Выйти из аккаунта
+            </button>
+        </form>
     </div>
 </div>
 

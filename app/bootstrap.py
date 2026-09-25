@@ -2,31 +2,15 @@
 import logging
 import os
 
-import bcrypt
 from dotenv import load_dotenv
+from sqlalchemy.exc import IntegrityError
 
 from .database import SessionLocal
+from .services.passwords import hash_password, verify_password
 from . import models
 
 load_dotenv()
 logger = logging.getLogger(__name__)
-
-
-def _hash(password: str) -> str:
-    b = password.encode("utf-8")
-    if len(b) > 72:
-        raise ValueError("Пароль > 72 байт")
-    return bcrypt.hashpw(b, bcrypt.gensalt()).decode()
-
-
-def _check(password: str, hashed: str) -> bool:
-    b = password.encode("utf-8")
-    if len(b) > 72:
-        return False
-    try:
-        return bcrypt.checkpw(b, hashed.encode())
-    except ValueError:
-        return False
 
 
 def ensure_default_admin() -> None:
@@ -45,7 +29,7 @@ def ensure_default_admin() -> None:
         if user:
             if user.is_admin and user.is_approved:
                 return
-            if not _check(password, user.hashed_password):
+            if not verify_password(password, user.hashed_password):
                 logger.warning("Email занят, пароль не совпал")
                 return
             user.is_admin = True
@@ -53,9 +37,10 @@ def ensure_default_admin() -> None:
             db.commit()
             logger.info("👑 %s повышен до админа", email)
             return
+
         db.add(models.User(
             email=email,
-            hashed_password=_hash(password),
+            hashed_password=hash_password(password),
             full_name=os.getenv("ADMIN_NAME", "Администратор"),
             phone=os.getenv("ADMIN_PHONE", ""),
             company_name=os.getenv("ADMIN_COMPANY", "Диантус"),
@@ -64,6 +49,12 @@ def ensure_default_admin() -> None:
         ))
         db.commit()
         logger.info("👑 Создан админ: %s", email)
+
+    except IntegrityError:
+        # fix #27: воркер №2 проиграл гонку — это нормально
+        db.rollback()
+        logger.info("Админ уже создан другим воркером: %s", email)
+
     except Exception as e:
         db.rollback()
         logger.exception("Ошибка создания админа: %s", e)

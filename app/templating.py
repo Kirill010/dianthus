@@ -26,10 +26,24 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 # ✅ Кэш счётчика предзаказов (TTL 30 сек)
 _preorder_cache: dict[str, dict] = {}
+_CACHE_CLEANUP_THRESHOLD = 5000
+
+
+def _cleanup_preorder_cache() -> None:
+    """fix #9: не даём словарю расти бесконечно."""
+    if len(_preorder_cache) < _CACHE_CLEANUP_THRESHOLD:
+        return
+    import time as _t
+    now = _t.time()
+    dead = [k for k, v in _preorder_cache.items()
+            if now - v.get("ts", 0) > 120]
+    for k in dead:
+        _preorder_cache.pop(k, None)
+    logger.info("Preorder cache cleanup: удалено %d", len(dead))
 
 
 def _get_cached_preorder_count(db: Session, user_id: int, ttl: int = 30) -> int:
-    """Кэширует preorder_count_db на TTL секунд."""
+    _cleanup_preorder_cache()
     key = f"preorder_count:{user_id}"
     now = time.time()
     if key in _preorder_cache and now - _preorder_cache[key]["ts"] < ttl:
@@ -40,7 +54,6 @@ def _get_cached_preorder_count(db: Session, user_id: int, ttl: int = 30) -> int:
 
 
 def _invalidate_preorder_cache(user_id: int | None = None) -> None:
-    """Сбрасывает кэш (при изменении предзаказов)."""
     if user_id is None:
         _preorder_cache.clear()
     else:
@@ -109,7 +122,10 @@ def render(request: Request, template: str, db: Session, **context):
         active_supply = (
             db.query(models.Supply)
             .options(selectinload(models.Supply.items))
-            .filter(models.Supply.status.in_(["Ожидается", "В пути"]))
+            .filter(
+                models.Supply.status.in_(["Ожидается", "В пути"]),
+                models.Supply.is_service.is_(False),
+            )
             .order_by(nulls_last(models.Supply.arrival_date.asc()))
             .first()
         )

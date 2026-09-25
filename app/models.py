@@ -121,6 +121,7 @@ class Supply(Base):
     arrival_date = Column(DateTime, nullable=True)
     status = Column(String(30), default="Ожидается")
     notes = Column(Text, default="")
+    is_service = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
     items = relationship("SupplyItem", back_populates="supply",
                          cascade="all, delete-orphan")
@@ -159,8 +160,16 @@ class SupplyItem(Base):
 
     @property
     def available_stock(self) -> int:
-        """Свободный сток = всего - зарезервировано."""
-        return max(0, self.stock - (self.reserved_stock or 0))
+        """fix #33: защита от reserved_stock > stock."""
+        reserved = self.reserved_stock or 0
+        if reserved > self.stock:
+            # логируем, но не падаем — БД сама не должна так делать
+            import logging
+            logging.getLogger(__name__).warning(
+                "SupplyItem #%s: reserved_stock=%s > stock=%s",
+                self.id, reserved, self.stock,
+            )
+        return max(0, self.stock - reserved)
 
     @property
     def available_stems(self) -> int:

@@ -125,7 +125,6 @@ def _normalize_photos(raw) -> list:
 
 
 def _ensure_1c_supply(db: Session) -> Supply:
-    """Одна открытая служебная поставка для 1С."""
     supply = (
         db.query(Supply)
         .filter(
@@ -140,6 +139,7 @@ def _ensure_1c_supply(db: Session) -> Supply:
             status="Ожидается",
             arrival_date=datetime.now(timezone.utc).replace(tzinfo=None),
             notes="Авто-синхронизация из 1С",
+            is_service=True,
         )
         db.add(supply)
         db.flush()

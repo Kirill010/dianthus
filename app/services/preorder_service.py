@@ -226,13 +226,6 @@ def remove_fulfilled_preorder_db(db: Session, user_id: int, preorder_id: int) ->
 def move_fulfilled_preorder_to_cart(
     db, user, preorder_id: int
 ) -> tuple[bool, dict | str]:
-    """
-    Готовит данные для переноса поступившего предзаказа в корзину.
-
-    ✅ ИСПРАВЛЕНО: помечаем результат флагом `from_preorder=True`.
-    При оформлении заказа `place_order` не будет вычитать stock повторно,
-    т.к. списание уже произошло здесь.
-    """
     preorder = (
         db.query(Preorder)
         .options(
@@ -256,29 +249,21 @@ def move_fulfilled_preorder_to_cart(
     pack = max(1, product.package_size or 1)
     min_packs = max(1, product.min_quantity or 1)
 
-    # Берём из reserved_stock — оно зарезервировано под нас
     reserved = item.reserved_stock or 0
-    if reserved < preorder.quantity:
-        want_packs = reserved
-    else:
-        want_packs = preorder.quantity
+    want_packs = min(reserved, preorder.quantity) if reserved > 0 else preorder.quantity
     want_packs = max(min_packs, want_packs)
 
     if want_packs <= 0:
         return False, "Товар закончился"
 
-    # Освобождаем резерв
     item.reserved_stock = max(0, reserved - want_packs)
-
-    # ✅ Списываем сток СРАЗУ — чтобы другой клиент не купил.
-    # При оформлении заказа повторно НЕ вычитаем (см. from_preorder).
-    item.stock = max(0, item.stock - want_packs)
-
-    # Если stock стал 0 — деактивируем
-    if item.available_stock <= 0:
-        item.is_active = False
-
     db.commit()
+
+    try:
+        from ..templating import _invalidate_preorder_cache
+        _invalidate_preorder_cache(user.id)
+    except Exception:
+        pass
 
     return True, {
         "supply_item_id": item.id,
@@ -289,6 +274,5 @@ def move_fulfilled_preorder_to_cart(
         "price": item.price,
         "image_url": product.image_url or "",
         "quantity": want_packs,
-        # ✅ ВАЖНО: этот флаг не даст place_order списать сток второй раз
         "from_preorder": True,
     }

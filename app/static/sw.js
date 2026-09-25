@@ -1,9 +1,9 @@
 // Service Worker для Диантуса — офлайн-кэш статики
 // ⚠️ ВЕРСИЯ УВЕЛИЧЕНА ДО v6: при установке новый SW удалит старый кэш
 // и заставит браузер скачать свежие CSS/JS.
-const CACHE_NAME = 'dianthus-v8';
+const CACHE_NAME = 'dianthus-v9-2026-01';
 const STATIC_ASSETS = [
-  '/static/style.css?v=7',
+  '/static/style.css',
   '/static/logo-icon.png',
   '/static/logo-full.png',
   '/static/favicon.ico',
@@ -35,27 +35,25 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   if (!url.pathname.startsWith('/static/')) return;
 
-  // СТРАТЕГИЯ: network-first для CSS/JS в разработке,
-  // cache-first для картинок. Так свежие стили подхватятся сразу.
   const isCssOrJs = /\.(css|js)$/i.test(url.pathname);
 
   if (isCssOrJs) {
-    // network-first — если сеть доступна, берём свежую версию
     event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          if (response && response.status === 200) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          }
-          return response;
-        })
-        .catch(() => caches.match(event.request))
+      fetch(event.request).then((response) => {
+        if (response && response.status === 200) {
+          // fix #23: кладём в кэш без query, чтобы версии не плодились
+          const cacheKey = url.origin + url.pathname;
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(cacheKey, clone));
+        }
+        return response;
+      }).catch(() => caches.match(event.request).then(
+        (c) => c || caches.match(url.origin + url.pathname)
+      ))
     );
     return;
   }
 
-  // cache-first для картинок и шрифтов
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;

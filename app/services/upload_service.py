@@ -21,17 +21,23 @@ def _read_file(file: UploadFile) -> bytes:
         return b""
 
 def save_product_image(file: UploadFile) -> str:
-    if file is None or not file.filename: return ""
+    if file is None or not file.filename:
+        return ""
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_EXT:
         raise HTTPException(400, f"Недопустимый формат: {ext}")
 
     content = _read_file(file)
-    if not content: raise HTTPException(400, "Файл пустой")
-    if len(content) > MAX_SIZE: raise HTTPException(400, "Файл больше 5 МБ")
+    if not content:
+        raise HTTPException(400, "Файл пустой")
+    if len(content) > MAX_SIZE:
+        raise HTTPException(400, "Файл больше 5 МБ")
 
     try:
-        img = Image.open(BytesIO(content)).convert("RGB")
+        img = Image.open(BytesIO(content))
+        # fix #49: применяем ориентацию по EXIF
+        img = ImageOps.exif_transpose(img)
+        img = img.convert("RGB")
     except Exception:
         raise HTTPException(400, "Не изображение")
 

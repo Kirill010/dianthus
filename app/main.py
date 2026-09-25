@@ -19,6 +19,7 @@ from .database import Base, engine, get_db
 from .deps import get_current_user
 from .migrations import auto_migrate, ensure_notifications_table
 from .scheduler import start_scheduler, stop_scheduler
+from .sentry_config import init_sentry
 from . import security
 from .security import CsrfError, init_rate_limiter, close_rate_limiter
 from .templating import render
@@ -30,26 +31,56 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+
 logger = logging.getLogger(__name__)
 
-# ── Инициализация БД при старте модуля ──
-try:
-    Base.metadata.create_all(bind=engine)
-    auto_migrate()
-    ensure_notifications_table()
-    db_name = (
-        config.DATABASE_URL.split("@")[-1]
-        if "@" in config.DATABASE_URL
-        else config.DATABASE_URL
+init_sentry() 
+
+if config.ENV == "prod" and config.DATABASE_URL.startswith("sqlite"):
+    logger.warning(
+        "⚠️ ENV=prod и DATABASE_URL=sqlite — race conditions в "
+        "place_order не защищены. Используйте PostgreSQL."
     )
-    logger.info("✅ Схема БД готова (%s)", db_name)
-except Exception as e:
-    logger.error("❌ Не удалось подключиться к БД: %s", e)
-    raise
+
+
+# ── Инициализация БД при старте модуля ──
+
+def _check_vendor() -> None:
+    from pathlib import Path
+    static_dir = Path(__file__).resolve().parent / "static"
+    vendor = static_dir / "vendor"
+    needed = [
+        "bootstrap.min.css",
+        "bootstrap.bundle.min.js",
+        "fontawesome/css/all.min.css",
+    ]
+    missing = [n for n in needed if not (vendor / n).exists()]
+    if missing:
+        logger.warning(
+            "⚠️  Не найдены vendor-файлы: %s. Запустите: "
+            "python download_vendor.py",
+            ", ".join(missing),
+        )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # fix #28: миграции внутри lifespan (один раз на воркер)
+    try:
+        Base.metadata.create_all(bind=engine)
+        auto_migrate()
+        ensure_notifications_table()
+        db_name = (
+            config.DATABASE_URL.split("@")[-1]
+            if "@" in config.DATABASE_URL
+            else config.DATABASE_URL
+        )
+        logger.info("✅ Схема БД готова (%s)", db_name)
+    except Exception as e:
+        logger.error("❌ Не удалось подготовить БД: %s", e)
+        raise
+
+    _check_vendor()   # fix #26: в lifespan, а не на import
     await init_rate_limiter()
     start_scheduler()
     yield
@@ -77,22 +108,6 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 (STATIC_DIR / "uploads").mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
-
-def _check_vendor() -> None:
-    vendor = STATIC_DIR / "vendor"
-    needed = [
-        "bootstrap.min.css",
-        "bootstrap.bundle.min.js",
-        "fontawesome/css/all.min.css",
-    ]
-    missing = [n for n in needed if not (vendor / n).exists()]
-    if missing:
-        logger.warning(
-            "⚠️  Не найдены vendor-файлы: %s. Запустите: "
-            "python download_vendor.py",
-            ", ".join(missing),
-        )
 
 
 _check_vendor()

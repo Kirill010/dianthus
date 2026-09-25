@@ -62,7 +62,10 @@ def _err(request: Request, errors: list[str]) -> None:
 
 
 def _back(request: Request, default: str = "/admin") -> str:
-    return request.headers.get("referer") or default
+    ref = request.headers.get("referer") or ""
+    if ref and ref.startswith(str(request.base_url)):
+        return ref
+    return default
 
 
 def _detach_supply_items(db: Session, item_ids: list[int]) -> None:
@@ -107,7 +110,9 @@ async def dashboard(
         selectinload(Order.items),
     )
     if q:
-        conditions = [Order.id == int(q)] if q.isdigit() else []
+        conditions = []
+        if q.isdigit() and len(q) < 15:
+            conditions.append(Order.id == int(q))
         conditions.extend([
             User.company_name.ilike(f"%{q}%"),
             User.email.ilike(f"%{q}%"),
@@ -149,9 +154,9 @@ async def dashboard(
     supplies = (
         db.query(Supply)
         .options(
-            selectinload(Supply.items)
-            .selectinload(SupplyItem.product)
+            selectinload(Supply.items).selectinload(SupplyItem.product)
         )
+        .filter(Supply.is_service.is_(False))
         .order_by(Supply.arrival_date.asc())
         .all()
     )
@@ -316,6 +321,7 @@ async def user_set_discount(
 @router.post("/update_order_status")
 async def update_order_status(
     request: Request,
+    background_tasks: BackgroundTasks,
     order_id: int = Form(...),
     status: str = Form(...),
     db: Session = Depends(get_db),
@@ -347,20 +353,21 @@ async def update_order_status(
         ))
         db.commit()
 
-        try:
-            order_loaded = (
-                db.query(Order)
-                .options(selectinload(Order.user), selectinload(Order.items))
-                .filter(Order.id == order.id)
-                .first()
+        # fix #38: email в фоне, не блокируем event loop
+        order_loaded = (
+            db.query(Order)
+            .options(selectinload(Order.user), selectinload(Order.items))
+            .filter(Order.id == order.id)
+            .first()
+        )
+        if order_loaded:
+            background_tasks.add_task(
+                notify_client_status_changed, order_loaded, status,
             )
-            if order_loaded:
-                notify_client_status_changed(order_loaded, status)
-        except Exception as e:
-            logger.warning("Не удалось отправить письмо клиенту: %s", e)
 
     request.session["flash"] = f"Заказ №{order.id}: «{status}»"
     return RedirectResponse(url=_back(request), status_code=303)
+
 
 @router.get("/orders/{order_id}", response_class=HTMLResponse)
 async def order_detail(
@@ -881,12 +888,17 @@ async def supply_import_invoice(
         request.session["flash"] = "Ошибка БД при импорте, откат."
         return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit", status_code=303)
 
+    for w in warnings:
+        logger.warning("Импорт накладной: %s", w)
+    for s in skipped:
+        logger.warning("Импорт накладной (пропущено): %s", s)
+
     msg = (f"Импорт: +{new_items} позиций, ~{updated_items} обновлено. "
            f"Создано товаров: {created_products}.")
     if warnings:
-        msg += f" ⚠️ Предупреждений: {len(warnings)}"
+        msg += f" ⚠️ Предупреждений: {len(warnings)} (см. лог)"
     if skipped:
-        msg += f" Пропущено: {len(skipped)}."
+        msg += f" Пропущено: {len(skipped)} (см. лог)."
     request.session["flash"] = msg
     return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit", status_code=303)
 

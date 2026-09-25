@@ -66,17 +66,21 @@ def _release_scheduler_lock() -> None:
 
 def do_unload(db: Session, supply) -> int:
     """
-    Разгружает поставку:
-      - деактивирует старые партии;
-      - резервирует товар под предзаказы (через reserved_stock);
-      - рассылает уведомления клиентам;
-      - активирует новую партию.
-    Возвращает количество активированных позиций.
+    fix #10: eager-load, batch-email.
     """
     from .models import SupplyItem, Preorder, Notification
-    from .services.notifier import notify_client_preorder_available
+    from .services.notifier import _BASE_STYLE  # переиспользуем стиль
 
-    # Деактивируем старые партии
+    # Eager-load, чтобы не делать N+1
+    from sqlalchemy.orm import joinedload
+    from .models import Product
+    supply_items = (
+        db.query(SupplyItem)
+        .options(joinedload(SupplyItem.product))
+        .filter(SupplyItem.supply_id == supply.id)
+        .all()
+    )
+
     active_count = (
         db.query(SupplyItem)
         .filter(SupplyItem.is_active.is_(True))
@@ -85,88 +89,128 @@ def do_unload(db: Session, supply) -> int:
     if active_count > 0:
         db.query(SupplyItem).filter(
             SupplyItem.is_active.is_(True)
-        ).update({SupplyItem.is_active: False,
-                  SupplyItem.reserved_stock: 0},
-                 synchronize_session=False)
+        ).update(
+            {SupplyItem.is_active: False, SupplyItem.reserved_stock: 0},
+            synchronize_session=False,
+        )
         logger.info("📦 Деактивировано %d старых партий", active_count)
 
     activated = 0
+    batch_emails: list[dict] = []
 
-    for item in supply.items:
-        if item.stock <= 0:
-            continue
-
-        # Ищем предзаказы на этот товар
-        preorders = (
+    # Предзаказы одним запросом
+    product_ids = [i.product_id for i in supply_items if i.stock > 0]
+    preorders_by_product: dict[int, list] = {}
+    if product_ids:
+        all_preorders = (
             db.query(Preorder)
+            .options(joinedload(Preorder.user))
             .filter(
-                Preorder.product_id == item.product_id,
+                Preorder.product_id.in_(product_ids),
                 Preorder.is_fulfilled.is_(False),
             )
             .all()
         )
+        for p in all_preorders:
+            preorders_by_product.setdefault(p.product_id, []).append(p)
 
+    for item in supply_items:
+        if item.stock <= 0:
+            continue
+        preorders = preorders_by_product.get(item.product_id, [])
         reserved = sum(p.quantity for p in preorders)
 
         if reserved > 0:
-            # ✅ Устанавливаем reserved_stock вместо уменьшения stock
             actual_reserve = min(reserved, item.stock)
             item.reserved_stock = actual_reserve
-            logger.info(
-                "📦 '%s': зарезервировано %d упак. под предзаказы "
-                "(всего %d)",
-                item.product.name, actual_reserve, item.stock,
-            )
 
-            # Обновляем все предзаказы: привязываем к актуальной позиции
             for preorder in preorders:
                 preorder.supply_item_id = item.id
                 preorder.is_fulfilled = True
 
-                try:
-                    note = Notification(
-                        user_id=preorder.user_id,
-                        text=(
-                            f"🌸 Предзаказ поступил: "
-                            f"«{item.product.name}» "
-                            f"— {preorder.quantity} упак. "
-                            f"Перейдите в «Мои предзаказы», "
-                            f"чтобы оформить заказ."
-                        ),
-                    )
-                    db.add(note)
-                except Exception as e:
-                    logger.warning("Не удалось создать нотификацию: %s", e)
+                db.add(Notification(
+                    user_id=preorder.user_id,
+                    text=(
+                        f"🌸 Предзаказ поступил: "
+                        f"«{item.product.name}» — {preorder.quantity} упак. "
+                        f"Перейдите в «Мои предзаказы», чтобы оформить заказ."
+                    ),
+                ))
 
-                try:
-                    notify_client_preorder_available(preorder, item)
-                except Exception as e:
-                    logger.warning("Email о предзаказе: %s", e)
+                # fix #10: собираем письма, отправим пачкой
+                if preorder.user and preorder.user.email:
+                    body = _build_preorder_email(preorder, item)
+                    batch_emails.append({
+                        "to": preorder.user.email,
+                        "subject": f"🌸 Предзаказ поступил: {item.product.name}",
+                        "body_html": body,
+                    })
 
-        # Активируем, если остался свободный сток
         if item.available_stock > 0:
             item.is_active = True
             activated += 1
 
     supply.status = "Разгружен"
+
+    # Инвалидируем кэши предзаказов всех клиентов
+    try:
+        from .templating import _invalidate_preorder_cache
+        _invalidate_preorder_cache()
+    except Exception:
+        pass
+
+    # Батч-рассылка
+    if batch_emails:
+        from .services.notifier import send_batch_emails
+        sent = send_batch_emails(batch_emails)
+        logger.info("📧 Batch отправлено: %d/%d", sent, len(batch_emails))
+
     logger.info("📦 Поставка №%d: активировано %d", supply.id, activated)
     return activated
+
+
+def _build_preorder_email(preorder, item) -> str:
+    from .services.notifier import _BASE_STYLE
+    from .config import config
+    user = preorder.user
+    product = item.product
+    return f"""
+    <!DOCTYPE html>
+    <html><head><meta charset="UTF-8">{_BASE_STYLE}</head>
+    <body>
+      <div class="card">
+        <h1>🌸 Ваш предзаказ поступил!</h1>
+        <p style="font-size:16px;">Здравствуйте, <b>{user.full_name}</b>!</p>
+        <p>Товар из вашего предзаказа <b>«{product.name}»</b>
+           уже на складе.</p>
+        <a href="{config.APP_URL}/preorders" class="btn">
+            Открыть мои предзаказы
+        </a>
+        <div class="footer">{config.SHOP_NAME}</div>
+      </div>
+    </body></html>
+    """
 
 
 async def auto_unload_overdue() -> None:
     logger.info("⏰ auto_unload_overdue: старт")
     from .database import SessionLocal
     from .models import Supply
+    from sqlalchemy.orm import selectinload
 
     db = SessionLocal()
     try:
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         overdue = (
             db.query(Supply)
+            .options(selectinload(Supply.items).selectinload(
+                __import__("app.models", fromlist=["SupplyItem"]).SupplyItem.product
+            ))
             .filter(
                 Supply.status.in_(["В пути", "Прибыл"]),
                 Supply.arrival_date.isnot(None),
                 Supply.arrival_date <= now,
+                Supply.is_service.is_(False),   # fix #20
             )
             .all()
         )

@@ -15,7 +15,11 @@ def get_current_user(request: Request, db: Session = Depends(get_db)):
         request.session.clear()
         return None
     if not user.is_approved and not user.is_admin:
-        request.session.clear()
+        # fix #14: не теряем сессию молча — покажем сообщение
+        request.session["user_id"] = None
+        request.session["flash"] = (
+            "Ваш доступ приостановлен. Свяжитесь с менеджером."
+        )
         return None
     return user
 

@@ -202,8 +202,8 @@
         {% if orders_total_pages > 1 %}
         <nav class="d-flex justify-content-center align-items-center gap-2 mt-3">
             {% if orders_page > 1 %}
-                <a href="?q={{ orders_q }}&status={{ orders_status }}&page={{ orders_page - 1 }}"
-                   class="btn btn-sm btn-outline-secondary">
+                <a href="?q={{ orders_q|urlencode }}&status={{ orders_status|urlencode }}&page={{ orders_page - 1 }}"
+                class="btn btn-sm btn-outline-secondary">
                     <i class="fas fa-chevron-left"></i>
                 </a>
             {% endif %}
@@ -212,8 +212,8 @@
                 (всего: {{ total_orders }})
             </span>
             {% if orders_page < orders_total_pages %}
-                <a href="?q={{ orders_q }}&status={{ orders_status }}&page={{ orders_page + 1 }}"
-                   class="btn btn-sm btn-outline-secondary">
+                <a href="?q={{ orders_q|urlencode }}&status={{ orders_status|urlencode }}&page={{ orders_page + 1 }}"
+                class="btn btn-sm btn-outline-secondary">
                     <i class="fas fa-chevron-right"></i>
                 </a>
             {% endif %}

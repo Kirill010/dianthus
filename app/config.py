@@ -4,7 +4,10 @@ import os
 
 from dotenv import load_dotenv
 
-load_dotenv()
+
+if os.getenv("ENV") != "prod":
+    load_dotenv()
+    
 logger = logging.getLogger(__name__)
 
 

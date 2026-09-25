@@ -53,34 +53,31 @@ def get_font_family() -> str:
 
 
 def link_callback(uri: str, rel: str) -> str:
-    # Разрешает относительные URL к файлам.
-
-    # xhtml2pdf вызывает эту функцию для каждого ресурса (CSS, картинки, шрифты).
-    # Мы должны вернуть АБСОЛЮТНЫЙ путь к файлу.
-
-    # :param uri: URI из HTML (например, "fonts/DejaVuSans.ttf")
-    # :param rel: относительный путь HTML-документа
-    # :return: абсолютный путь к файлу
-
-    # Уже абсолютный путь
+    """Разрешает относительные URL. fix #6: защита от path traversal."""
     if uri.startswith("file://"):
         return uri[7:]
 
-    # Убираем ведущий слэш
     relative = uri.lstrip("/")
-
-    # Убираем "static/" если есть
     if relative.startswith("static/"):
         relative = relative[len("static/"):]
 
-    # Строим путь от /app/static/
-    static_dir = Path(__file__).resolve().parent.parent / "static"
-    full_path = static_dir / relative
+    static_dir = (
+        Path(__file__).resolve().parent.parent.parent / "static"
+    ).resolve()
+    full_path = (static_dir / relative).resolve()
+
+    # fix #6: не выпускаем за пределы static/
+    try:
+        full_path.relative_to(static_dir)
+    except ValueError:
+        logger.warning(
+            "link_callback: попытка выйти за пределы static/: %s", uri,
+        )
+        return uri
 
     if full_path.exists():
         logger.debug("link_callback: %s → %s", uri, full_path)
         return str(full_path)
 
-    # Не нашли — возвращаем как есть (для встроенных ресурсов)
-    logger.debug("link_callback: %s не найден, оставляем как есть", uri)
+    logger.debug("link_callback: %s не найден", uri)
     return uri

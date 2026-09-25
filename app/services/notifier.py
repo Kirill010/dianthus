@@ -438,3 +438,51 @@ def notify_client_preorder_available(preorder, supply_item) -> None:
         )
     except Exception as e:
         logger.warning("Ошибка email о предзаказе: %s", e)
+
+def send_batch_emails(messages: list[dict]) -> int:
+    cfg = _get_smtp_config()
+    if not cfg:
+        return 0
+    sent = 0
+    try:
+        if cfg["use_ssl"]:
+            ctx = ssl.create_default_context()
+            with smtplib.SMTP_SSL(cfg["host"], cfg["port"],
+                                  timeout=TIMEOUT, context=ctx) as s:
+                s.login(cfg["user"], cfg["password"])
+                for m in messages:
+                    msg = MIMEMultipart("alternative")
+                    msg["Subject"] = m["subject"]
+                    msg["From"] = cfg["sender"]
+                    msg["To"] = m["to"]
+                    msg.attach(MIMEText("Откройте в HTML-клиенте.",
+                                        "plain", "utf-8"))
+                    msg.attach(MIMEText(m["body_html"], "html", "utf-8"))
+                    try:
+                        s.sendmail(cfg["sender"], [m["to"]], msg.as_string())
+                        sent += 1
+                    except Exception as e:
+                        logger.warning("Batch: %s → %s", m["to"], e)
+        else:
+            with smtplib.SMTP(cfg["host"], cfg["port"],
+                              timeout=TIMEOUT) as s:
+                s.ehlo()
+                s.starttls(context=ssl.create_default_context())
+                s.ehlo()
+                s.login(cfg["user"], cfg["password"])
+                for m in messages:
+                    msg = MIMEMultipart("alternative")
+                    msg["Subject"] = m["subject"]
+                    msg["From"] = cfg["sender"]
+                    msg["To"] = m["to"]
+                    msg.attach(MIMEText("Откройте в HTML-клиенте.",
+                                        "plain", "utf-8"))
+                    msg.attach(MIMEText(m["body_html"], "html", "utf-8"))
+                    try:
+                        s.sendmail(cfg["sender"], [m["to"]], msg.as_string())
+                        sent += 1
+                    except Exception as e:
+                        logger.warning("Batch: %s → %s", m["to"], e)
+    except Exception as e:
+        logger.exception("send_batch_emails: %s", e)
+    return sent
