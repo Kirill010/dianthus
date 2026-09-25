@@ -1545,46 +1545,50 @@ a.contacts-item__value:hover { color: var(--primary); }
     transition: transform .25s ease;
 }
 /* =========================================================
-   СТРЕЛКИ ГАЛЕРЕИ на детальной странице
+   СТРЕЛКИ ГАЛЕРЕИ на детальной странице товара
    ========================================================= */
+.product-detail__image {
+    /* переопределяем на всякий: стрелки должны лежать внутри */
+    position: relative;
+}
+
 .product-gallery__arrow {
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
-    z-index: 3;
-    width: 44px;
-    height: 44px;
+    z-index: 10;
+    width: 48px;
+    height: 48px;
+    padding: 0;
     border-radius: 50%;
-    background: rgba(255, 255, 255, .85);
-    border: 1px solid var(--border);
-    color: var(--primary-dark);
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid #e5dcc9;
+    color: #35492f;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 1rem;
+    font-size: 1.1rem;
     cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, .12);
-    transition: all .2s ease;
-    padding: 0;
-    line-height: 1;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.15);
+    transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
 }
 .product-gallery__arrow:hover {
     background: #fff;
-    color: var(--primary);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, .18);
-    transform: translateY(-50%) scale(1.05);
+    color: #4a6741;
+    box-shadow: 0 5px 18px rgba(0, 0, 0, 0.22);
+    transform: translateY(-50%) scale(1.08);
 }
 .product-gallery__arrow:active {
-    transform: translateY(-50%) scale(.95);
+    transform: translateY(-50%) scale(0.94);
 }
-.product-gallery__arrow--prev { left: 12px; }
-.product-gallery__arrow--next { right: 12px; }
+.product-gallery__arrow--prev { left: 14px; }
+.product-gallery__arrow--next { right: 14px; }
 
 @media (max-width: 576px) {
     .product-gallery__arrow {
-        width: 36px;
-        height: 36px;
-        font-size: .85rem;
+        width: 40px;
+        height: 40px;
+        font-size: 0.95rem;
     }
     .product-gallery__arrow--prev { left: 8px; }
     .product-gallery__arrow--next { right: 8px; }
