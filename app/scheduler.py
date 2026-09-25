@@ -9,7 +9,9 @@ from datetime import datetime, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
+
+from .models import SupplyItem, Preorder, Notification, Product
 
 logger = logging.getLogger(__name__)
 
@@ -65,15 +67,7 @@ def _release_scheduler_lock() -> None:
 
 
 def do_unload(db: Session, supply) -> int:
-    """
-    fix #10: eager-load, batch-email.
-    """
-    from .models import SupplyItem, Preorder, Notification
-    from .services.notifier import _BASE_STYLE  # переиспользуем стиль
-
-    # Eager-load, чтобы не делать N+1
-    from sqlalchemy.orm import joinedload
-    from .models import Product
+    
     supply_items = (
         db.query(SupplyItem)
         .options(joinedload(SupplyItem.product))
@@ -98,7 +92,6 @@ def do_unload(db: Session, supply) -> int:
     activated = 0
     batch_emails: list[dict] = []
 
-    # Предзаказы одним запросом
     product_ids = [i.product_id for i in supply_items if i.stock > 0]
     preorders_by_product: dict[int, list] = {}
     if product_ids:
@@ -137,7 +130,6 @@ def do_unload(db: Session, supply) -> int:
                     ),
                 ))
 
-                # fix #10: собираем письма, отправим пачкой
                 if preorder.user and preorder.user.email:
                     body = _build_preorder_email(preorder, item)
                     batch_emails.append({
@@ -152,14 +144,12 @@ def do_unload(db: Session, supply) -> int:
 
     supply.status = "Разгружен"
 
-    # Инвалидируем кэши предзаказов всех клиентов
     try:
         from .templating import _invalidate_preorder_cache
         _invalidate_preorder_cache()
     except Exception:
         pass
 
-    # Батч-рассылка
     if batch_emails:
         from .services.notifier import send_batch_emails
         sent = send_batch_emails(batch_emails)
@@ -195,17 +185,16 @@ def _build_preorder_email(preorder, item) -> str:
 async def auto_unload_overdue() -> None:
     logger.info("⏰ auto_unload_overdue: старт")
     from .database import SessionLocal
-    from .models import Supply
-    from sqlalchemy.orm import selectinload
+    from .models import Supply, SupplyItem
 
     db = SessionLocal()
     try:
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         overdue = (
             db.query(Supply)
-            .options(selectinload(Supply.items).selectinload(
-                __import__("app.models", fromlist=["SupplyItem"]).SupplyItem.product
-            ))
+            .options(
+                selectinload(Supply.items).selectinload(SupplyItem.product)
+            )
             .filter(
                 Supply.status.in_(["В пути", "Прибыл"]),
                 Supply.arrival_date.isnot(None),

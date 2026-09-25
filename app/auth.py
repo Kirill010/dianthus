@@ -1,8 +1,7 @@
-# app/auth.py (полный код)
+# app/auth.py
 """Регистрация, вход, выход."""
 import logging
 
-import bcrypt
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.exc import IntegrityError
@@ -11,6 +10,7 @@ from sqlalchemy.orm import Session
 from .database import get_db
 from .security import (check_csrf, check_rate_limit, reset_rate_limit,
                        ensure_csrf_token)
+from .services.passwords import hash_password, verify_password
 from .validators import (validate_company_name, validate_email,
                          validate_full_name, validate_password,
                          validate_phone, validate_inn, validate_city)
@@ -28,23 +28,6 @@ async def _rate_register(request: Request) -> None:
 
 async def _rate_login(request: Request) -> None:
     await check_rate_limit(request, "login", max_hits=10, window=60)
-
-
-def hash_password(password: str) -> str:
-    b = password.encode("utf-8")
-    if len(b) > 72:
-        raise ValueError("Пароль > 72 байт")
-    return bcrypt.hashpw(b, bcrypt.gensalt()).decode()
-
-
-def verify_password(password: str, hashed: str) -> bool:
-    b = password.encode("utf-8")
-    if len(b) > 72:
-        b = b[:72]
-    try:
-        return bcrypt.checkpw(b, hashed.encode())
-    except ValueError:
-        return False
 
 
 @router.post("/register")

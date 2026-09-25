@@ -1,8 +1,9 @@
-# app/main.py (полный код)
+# app/main.py
 """Сборка приложения и общие маршруты."""
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
+from importlib import import_module
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request, HTTPException
@@ -23,7 +24,6 @@ from .sentry_config import init_sentry
 from . import security
 from .security import CsrfError, init_rate_limiter, close_rate_limiter
 from .templating import render
-from .routers import admin, cart, catalog, profile, integration_1c
 from .middleware import SecurityHeadersMiddleware
 
 
@@ -34,7 +34,33 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-init_sentry() 
+init_sentry()
+
+
+# fix #67: безопасная загрузка роутеров — если один упал, сервис продолжит
+# работать, а в лог попадёт понятная причина.
+def _safe_load_routers() -> dict:
+    out = {}
+    for name in ("admin", "cart", "catalog", "profile", "integration_1c"):
+        try:
+            mod = import_module(f".routers.{name}", package="app")
+            if not hasattr(mod, "router"):
+                logger.error(
+                    "❌ Роутер %s импортирован, но не содержит 'router'. "
+                    "Проверьте файл app/routers/%s.py",
+                    name, name,
+                )
+                continue
+            out[name] = mod
+        except Exception as e:
+            logger.exception(
+                "❌ Не удалось импортировать роутер %s: %s", name, e,
+            )
+    return out
+
+
+_routers = _safe_load_routers()
+
 
 if config.ENV == "prod" and config.DATABASE_URL.startswith("sqlite"):
     logger.warning(
@@ -43,10 +69,7 @@ if config.ENV == "prod" and config.DATABASE_URL.startswith("sqlite"):
     )
 
 
-# ── Инициализация БД при старте модуля ──
-
 def _check_vendor() -> None:
-    from pathlib import Path
     static_dir = Path(__file__).resolve().parent / "static"
     vendor = static_dir / "vendor"
     needed = [
@@ -62,9 +85,9 @@ def _check_vendor() -> None:
             ", ".join(missing),
         )
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # fix #28: миграции внутри lifespan (один раз на воркер)
     try:
         Base.metadata.create_all(bind=engine)
         auto_migrate()
@@ -79,7 +102,7 @@ async def lifespan(app: FastAPI):
         logger.error("❌ Не удалось подготовить БД: %s", e)
         raise
 
-    _check_vendor()   # fix #26: в lifespan, а не на import
+    _check_vendor()
     await init_rate_limiter()
     start_scheduler()
     yield
@@ -92,7 +115,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ── MIDDLEWARE ──
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     SessionMiddleware,
@@ -102,22 +124,22 @@ app.add_middleware(
     https_only=(config.ENV == "prod"),
 )
 
-# ── СТАТИКА ──
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 (STATIC_DIR / "uploads").mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-
 _check_vendor()
 
 # ── РОУТЕРЫ ──
 app.include_router(auth_router)
-app.include_router(catalog.router)
-app.include_router(cart.router)
-app.include_router(admin.router)
-app.include_router(profile.router)
-app.include_router(integration_1c.router)
+
+for _name, _mod in _routers.items():
+    try:
+        app.include_router(_mod.router)
+        logger.info("✅ Подключён роутер: %s", _name)
+    except Exception as e:
+        logger.exception("❌ Ошибка include_router(%s): %s", _name, e)
 
 ensure_default_admin()
 
@@ -228,7 +250,6 @@ async def health(db: Session = Depends(get_db)):
         "timestamp": datetime.utcnow().isoformat(),
     }
 
-    # Проверка БД
     try:
         db.execute(text("SELECT 1"))
         result["db"] = "ok"
@@ -236,7 +257,6 @@ async def health(db: Session = Depends(get_db)):
         result["db"] = f"error: {str(e)[:100]}"
         result["status"] = "degraded"
 
-    # Проверка Redis — обращаемся к модулю, а не к снимку значений
     try:
         client = security.get_redis_client()
         if security.is_redis_enabled() and client is not None:
