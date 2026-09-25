@@ -3,6 +3,7 @@ import logging
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from ..config import config
@@ -82,6 +83,7 @@ async def add_to_cart(
 
     item = (
         db.query(SupplyItem)
+        .options(joinedload(SupplyItem.product))
         .filter(
             SupplyItem.id == supply_item_id,
             SupplyItem.is_active.is_(True),
@@ -164,7 +166,8 @@ async def add_to_preorder_route(
 
     item = (
         db.query(SupplyItem)
-        .options(selectinload(SupplyItem.supply))
+        .options(selectinload(SupplyItem.supply),
+                 joinedload(SupplyItem.product))
         .join(Supply, SupplyItem.supply_id == Supply.id)
         .filter(
             SupplyItem.id == supply_item_id,
@@ -272,10 +275,11 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
     if cart:
         ids = [c["supply_item_id"] for c in cart]
 
-        # ✅ Ищем активные позиции
+        # ✅ Ищем активные позиции с явно загруженным product
         alive = {
             i.id: i
             for i in db.query(SupplyItem)
+            .options(joinedload(SupplyItem.product))
             .filter(
                 SupplyItem.id.in_(ids),
                 SupplyItem.is_active.is_(True),
@@ -283,26 +287,30 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
             .all()
         }
 
-        # ✅ Определяем product_ids из ВСЕХ корзинных позиций
+        # Определяем product_ids из ВСЕХ корзинных позиций
         all_items = {
             i.id: i
             for i in db.query(SupplyItem)
+            .options(joinedload(SupplyItem.product))
             .filter(SupplyItem.id.in_(ids))
             .all()
         }
         product_ids = [i.product_id for i in all_items.values()]
 
         # ✅ Ищем НОВЫЕ активные позиции для миграции
+        # ⚠️ ВАЖНО: используем SQL-выражение, а не Python-свойство!
         new_by_product = {}
         if product_ids:
-            # ✅ Явно загружаем product, чтобы избежать ошибок при доступе
             new_items = (
                 db.query(SupplyItem)
-                .options(joinedload(SupplyItem.product))  # <-- ИСПРАВЛЕНИЕ
+                .options(joinedload(SupplyItem.product))
                 .filter(
                     SupplyItem.product_id.in_(product_ids),
                     SupplyItem.is_active.is_(True),
-                    SupplyItem.available_stock > 0,
+                    # ✅ Правильная замена: stock > reserved_stock
+                    SupplyItem.stock > func.coalesce(
+                        SupplyItem.reserved_stock, 0
+                    ),
                 )
                 .order_by(SupplyItem.id.desc())
                 .all()
@@ -324,7 +332,6 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
                 old = all_items.get(c["supply_item_id"])
                 if old:
                     new_item = new_by_product.get(old.product_id)
-                    # ✅ Проверяем, что new_item и его product не None
                     if new_item and new_item.product:
                         c["supply_item_id"] = new_item.id
                         c["price"] = new_item.price
@@ -337,7 +344,11 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
                         item = new_item
                         migrated = True
 
-            if item is None or item.available_stock <= 0 or not item.product:
+            if item is None or not item.product:
+                removed_names.append(c.get("name", "?"))
+                continue
+
+            if item.available_stock <= 0:
                 removed_names.append(c.get("name", "?"))
                 continue
 
@@ -384,6 +395,7 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
         discount_amount=discount_amount,
         total=total,
     )
+
 
 @router.post("/remove_from_cart")
 async def remove_from_cart(
@@ -615,7 +627,9 @@ async def repeat_order(
             .filter(
                 SupplyItem.product_id == item.product_id,
                 SupplyItem.is_active.is_(True),
-                SupplyItem.stock > 0,
+                SupplyItem.stock > func.coalesce(
+                    SupplyItem.reserved_stock, 0
+                ),
             )
             .first()
         )
