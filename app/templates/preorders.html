@@ -14,7 +14,11 @@
             <span class="badge
                 {% if p.is_fulfilled %}bg-success
                 {% else %}bg-warning text-dark{% endif %}">
-                {% if p.is_fulfilled %}Поступил{% else %}В пути{% endif %}
+                {% if p.is_fulfilled %}
+                    <i class="fas fa-check me-1"></i>Поступил
+                {% else %}
+                    <i class="fas fa-clock me-1"></i>В пути
+                {% endif %}
             </span>
         </div>
 
@@ -34,15 +38,37 @@
         </div>
         {% endif %}
 
-        <div class="order-card__sum">
-            {{ "%.0f"|format(p.price * p.quantity * p.package_size) }} ₽
+        {# ─── Суммы со скидкой ─── #}
+        <div class="order-card__price-block" style="margin-top:10px;">
+            <div style="font-size:.85rem; color:#8a857a;">
+                Подытог: {{ "%.2f"|format(p.subtotal) }} ₽
+            </div>
+            {% if p.discount_percent and p.discount_percent > 0 %}
+            <div style="font-size:.85rem; color:#c97b4a;">
+                Ваша скидка {{ p.discount_percent }}%:
+                −{{ "%.2f"|format(p.discount_amount) }} ₽
+            </div>
+            {% endif %}
+            <div class="order-card__sum" style="margin-top:4px;">
+                Итого: {{ "%.2f"|format(p.total) }} ₽
+            </div>
         </div>
 
         <div class="order-card__actions">
             {% if p.is_fulfilled %}
+                {# ✅ Новая кнопка — в 1 клик переносит в корзину #}
+                <form action="/preorders/{{ p.id }}/to_cart" method="post"
+                      class="d-inline">
+                    <input type="hidden" name="csrf_token"
+                           value="{{ csrf_token }}">
+                    <button type="submit" class="btn btn-sm btn-success">
+                        <i class="fas fa-shopping-cart me-1"></i>
+                        В корзину ({{ p.quantity }} упак.)
+                    </button>
+                </form>
                 <a href="/product/{{ p.supply_item_id }}"
-                   class="btn btn-sm btn-success">
-                    <i class="fas fa-shopping-cart me-1"></i>Заказать
+                   class="btn btn-sm btn-outline-secondary">
+                    <i class="fas fa-eye me-1"></i>Открыть товар
                 </a>
             {% else %}
                 <form action="/remove_from_preorder" method="post"

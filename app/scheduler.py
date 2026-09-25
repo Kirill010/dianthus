@@ -123,13 +123,18 @@ def do_unload(db: Session, supply) -> int:
 
             # Создаём уведомления и рассылаем email
             for preorder in preorders:
+                # ✅ ФИКС: обновляем supply_item_id на активированную позицию
+                preorder.supply_item_id = item.id
+                preorder.is_fulfilled = True
+
                 try:
                     note = Notification(
                         user_id=preorder.user_id,
                         text=(
                             f"🌸 Предзаказ поступил: "
                             f"«{item.product.name}» "
-                            f"— {preorder.quantity} упак."
+                            f"— {preorder.quantity} упак. "
+                            f"Перейдите в «Мои предзаказы», чтобы оформить."
                         ),
                     )
                     db.add(note)
@@ -140,8 +145,6 @@ def do_unload(db: Session, supply) -> int:
                     notify_client_preorder_available(preorder, item)
                 except Exception as e:
                     logger.warning("Email о предзаказе: %s", e)
-
-                preorder.is_fulfilled = True
 
         # Активируем, если остался stock
         if item.stock > 0:

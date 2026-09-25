@@ -84,6 +84,22 @@
                 <i class="fas fa-clock me-1"></i>
                 Прибытие: <strong>{{ p.arrival_date or "—" }}</strong>
             </div>
+
+            {# ─── Суммы со скидкой ─── #}
+            <div style="margin-top:6px;">
+                <div style="font-size:.82rem; color:#8a857a;">
+                    Подытог: {{ "%.2f"|format(p.subtotal) }} ₽
+                </div>
+                {% if p.discount_percent and p.discount_percent > 0 %}
+                <div style="font-size:.82rem; color:#c97b4a;">
+                    Скидка {{ p.discount_percent }}%:
+                    −{{ "%.2f"|format(p.discount_amount) }} ₽
+                </div>
+                {% endif %}
+                <div class="cart-item__sum" style="margin-top:2px;">
+                    Итого: {{ "%.2f"|format(p.total) }} ₽
+                </div>
+            </div>
         </div>
         <form action="/remove_from_preorder" method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -98,7 +114,7 @@
 <div class="alert alert-info small mb-0">
     <i class="fas fa-info-circle me-1"></i>
     Эти товары перейдут в основную корзину автоматически,
-    когда машина прибудет.
+    когда машина прибудет. Скидка учтена в итоговой сумме.
 </div>
 {% endif %}
 

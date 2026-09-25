@@ -8,12 +8,12 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from ..config import config
 from ..database import get_db
 from ..deps import get_current_user
-from ..models import Order, OrderItem, SupplyItem
+from ..models import Order, OrderItem, SupplyItem, Supply
 from ..security import check_csrf
 from ..services.notifier import notify_admin_new_order
 from ..services.preorder_service import (
     add_preorder_to_db, get_user_preorders, remove_preorder_db,
-    get_all_user_preorders,
+    get_all_user_preorders, move_fulfilled_preorder_to_cart,
 )
 from ..templating import render
 
@@ -149,12 +149,15 @@ async def add_to_preorder_route(
     if not user:
         return RedirectResponse(url="/login", status_code=303)
 
+    # ✅ ФИКС: проверяем и is_active, и статус поставки
     item = (
         db.query(SupplyItem)
         .options(selectinload(SupplyItem.supply))
+        .join(Supply, SupplyItem.supply_id == Supply.id)
         .filter(
             SupplyItem.id == supply_item_id,
             SupplyItem.is_active.is_(False),
+            Supply.status.in_(["Ожидается", "В пути"]),
         )
         .first()
     )
@@ -181,7 +184,57 @@ async def add_to_preorder_route(
             f"🌸 «{product.name}» в предзаказе: {packs} упак. "
             f"Прибытие: {arrival_txt}"
         )
+    else:
+        request.session["flash"] = "Не удалось добавить предзаказ"
     return RedirectResponse(url="/catalog", status_code=303)
+
+
+# ЗАКАЗАТЬ ПОСТУПИВШИЙ ПРЕДЗАКАЗ (в 1 клик)
+
+@router.post("/preorders/{preorder_id}/to_cart")
+async def preorder_to_cart(
+    preorder_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    _csrf: None = Depends(check_csrf),
+):
+    """
+    Переносит поступивший предзаказ в основную корзину.
+    ✅ Новая функция — упрощает оформление.
+    """
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    ok, result = move_fulfilled_preorder_to_cart(db, user, preorder_id)
+    if not ok:
+        request.session["flash"] = result
+        return RedirectResponse(url="/preorders", status_code=303)
+
+    # result — это dict с данными для корзины
+    cart = request.session.get("cart", [])
+    si_id = result["supply_item_id"]
+
+    # Ищем существующую позицию и увеличиваем количество
+    for ci in cart:
+        if ci.get("supply_item_id") == si_id:
+            ci["quantity"] += result["quantity"]
+            ci["package_size"] = result["package_size"]
+            ci["price"] = result["price"]
+            break
+    else:
+        cart.append(result)
+
+    request.session["cart"] = cart
+
+    # Помечаем предзаказ как обработанный (удаляем из списка активных)
+    remove_preorder_db(db, user.id, preorder_id)
+
+    request.session["flash"] = (
+        f"🌸 «{result['name']}» добавлен в корзину "
+        f"({result['quantity']} упак.)"
+    )
+    return RedirectResponse(url="/cart", status_code=303)
 
 
 # СТРАНИЦА ПРЕДЗАКАЗОВ
@@ -359,10 +412,8 @@ async def place_order(
         request.session["flash"] = "Комментарий слишком длинный"
         return RedirectResponse(url="/checkout", status_code=303)
 
-    # ── Собираем ID товаров ──
     cart_ids = [c["supply_item_id"] for c in cart]
 
-    # ── Загружаем товары (БЕЗ with_for_update!) ──
     items_map = {}
     try:
         rows = (
@@ -380,7 +431,6 @@ async def place_order(
         request.session["flash"] = "Ошибка БД. Попробуйте ещё раз."
         return RedirectResponse(url="/cart", status_code=303)
 
-    # ── Проверяем наличие ──
     for c in cart:
         item = items_map.get(c["supply_item_id"])
         if item is None:
@@ -395,16 +445,13 @@ async def place_order(
             )
             return RedirectResponse(url="/cart", status_code=303)
 
-    # ── Считаем суммы ──
     subtotal = _cart_subtotal(cart)
     discount_percent = float(user.discount_percent or 0)
     _, total = _apply_discount(subtotal, discount_percent)
 
-    # ── Списываем остатки ──
     for c in cart:
         items_map[c["supply_item_id"]].stock -= c["quantity"]
 
-    # ── Создаём заказ ──
     try:
         order = Order(
             user_id=user.id,
@@ -443,7 +490,6 @@ async def place_order(
         )
         return RedirectResponse(url="/cart", status_code=303)
 
-    # ── Уведомление админу ──
     try:
         notify_admin_new_order(order, user)
     except Exception as e:
