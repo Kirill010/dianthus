@@ -6,7 +6,6 @@
         <i class="fas fa-truck-fast me-2"></i>Мои предзаказы
     </h1>
     {% if preorders %}
-        {# ✅ Счётчик всех предзаказов #}
         {% set total_preorders = preorders|length %}
         {% set total_packs = preorders|sum(attribute='quantity') %}
         <div class="d-flex gap-2">
@@ -44,6 +43,11 @@
 
         <div class="order-card__meta">
             Цена: {{ "%.2f"|format(p.price) }} ₽/шт
+        </div>
+
+        <div class="order-card__meta">
+            <i class="fas fa-map-marker-alt me-1"></i>
+            Откуда: <strong>{{ p.location or "—" }}</strong>
         </div>
 
         {% if not p.is_fulfilled and p.arrival_date %}

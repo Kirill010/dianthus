@@ -425,7 +425,7 @@
             <table class="table table-hover align-middle">
                 <thead>
                     <tr>
-                        <th>ID</th><th>Страна</th><th>Прибытие</th>
+                        <th>ID</th><th>Откуда</th><th>Прибытие</th>
                         <th>Статус</th><th>Товаров</th><th>Активных</th><th></th>
                     </tr>
                 </thead>
@@ -433,7 +433,10 @@
                 {% for s in supplies %}
                     <tr>
                         <td>{{ s.id }}</td>
-                        <td><strong>{{ s.country }}</strong></td>
+                        <td>
+                            <strong>{{ s.country }}</strong>
+                            {% if s.city %}<br><small class="text-muted">г. {{ s.city }}</small>{% endif %}
+                        </td>
                         <td>
                             {% if s.arrival_date %}
                                 {{ s.arrival_date.strftime('%d.%m.%Y') }}

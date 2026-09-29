@@ -122,6 +122,7 @@ class Supply(Base):
     __tablename__ = "supplies"
     id = Column(Integer, primary_key=True, index=True)
     country = Column(String(100), nullable=False)
+    city = Column(String(100), default="")
     departure_date = Column(DateTime, nullable=True)
     arrival_date = Column(DateTime, nullable=True)
     status = Column(String(30), default="Ожидается")
@@ -138,6 +139,14 @@ class Supply(Base):
     @property
     def active_items_count(self) -> int:
         return sum(1 for i in self.items if i.is_active)
+
+    @property
+    def location(self) -> str:
+        country = (self.country or "").strip()
+        city = (self.city or "").strip()
+        if country and city:
+            return f"{country}, {city}"
+        return country or city or ""
 
 
 class SupplyItem(Base):
@@ -165,10 +174,8 @@ class SupplyItem(Base):
 
     @property
     def available_stock(self) -> int:
-        """fix #33: защита от reserved_stock > stock."""
         reserved = self.reserved_stock or 0
         if reserved > self.stock:
-            # логируем, но не падаем — БД сама не должна так делать
             import logging
             logging.getLogger(__name__).warning(
                 "SupplyItem #%s: reserved_stock=%s > stock=%s",

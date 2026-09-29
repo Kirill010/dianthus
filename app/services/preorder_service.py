@@ -8,7 +8,6 @@ logger = logging.getLogger(__name__)
 
 
 def _calc_preorder_totals(preorder, item, product, user_discount: float):
-    """Считает суммы для одного предзаказа с учётом скидки клиента."""
     pack = max(1, product.package_size or 1)
     subtotal = round(item.price * preorder.quantity * pack, 2)
     pct = max(0.0, min(100.0, float(user_discount or 0)))
@@ -25,7 +24,6 @@ def _calc_preorder_totals(preorder, item, product, user_discount: float):
 def add_preorder_to_db(
     db: Session, user_id: int, supply_item_id: int, quantity_packs: int
 ) -> bool:
-    """Добавляет или увеличивает предзаказ."""
     item = db.query(SupplyItem).filter(SupplyItem.id == supply_item_id).first()
     if not item or item.is_active:
         return False
@@ -122,6 +120,7 @@ def get_user_preorders(db: Session, user_id: int) -> list:
             "price": item.price,
             "image_url": product.image_url or "",
             "quantity": p.quantity,
+            "location": item.supply.location if item.supply else "—",
             "arrival_date": (
                 item.supply.arrival_date.strftime("%d.%m.%Y")
                 if item.supply and item.supply.arrival_date else "—"
@@ -166,6 +165,7 @@ def get_all_user_preorders(db: Session, user_id: int) -> list:
             "quantity": p.quantity,
             "is_fulfilled": p.is_fulfilled,
             "created_at": p.created_at,
+            "location": item.supply.location if item.supply else "—",
             "arrival_date": (
                 item.supply.arrival_date.strftime("%d.%m.%Y")
                 if item.supply and item.supply.arrival_date else "—"
@@ -177,10 +177,6 @@ def get_all_user_preorders(db: Session, user_id: int) -> list:
 
 
 def preorder_count_db(db: Session, user_id: int) -> int:
-    """
-    ✅ ИСПРАВЛЕНО: количество ВСЕХ предзаказов (включая уже поступившие),
-    чтобы бейдж в шапке не пропадал, когда поставка разгрузилась.
-    """
     rows = (
         db.query(Preorder)
         .filter(Preorder.user_id == user_id)
@@ -207,7 +203,6 @@ def remove_preorder_db(db: Session, user_id: int, preorder_id: int) -> bool:
 
 
 def remove_fulfilled_preorder_db(db: Session, user_id: int, preorder_id: int) -> bool:
-    """Удаляет предзаказ независимо от статуса (для конвертации в корзину)."""
     preorder = (
         db.query(Preorder)
         .filter(
@@ -275,4 +270,5 @@ def move_fulfilled_preorder_to_cart(
         "image_url": product.image_url or "",
         "quantity": want_packs,
         "from_preorder": True,
+        "location": item.supply.location if item.supply else "—",
     }

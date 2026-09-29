@@ -89,6 +89,10 @@
                 <span class="cart-item__stems">= {{ p.quantity * p.package_size }} шт</span>
             </div>
             <div class="cart-item__price" style="color:#c97b4a;">
+                <i class="fas fa-truck-fast me-1"></i>
+                Откуда: <strong>{{ p.location or "—" }}</strong>
+            </div>
+            <div class="cart-item__price" style="color:#c97b4a;">
                 <i class="fas fa-clock me-1"></i>
                 Прибытие: <strong>{{ p.arrival_date or "—" }}</strong>
             </div>

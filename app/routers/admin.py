@@ -27,7 +27,7 @@ from ..services.notifier import notify_client_status_changed
 from ..services.upload_service import delete_upload, save_uploads
 from ..templating import render
 from ..validators import (validate_country, validate_positive_int,
-                          validate_price, validate_stock)
+                          validate_price, validate_stock, validate_city)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin")
@@ -92,7 +92,7 @@ def _detach_product(db: Session, product_id: int, supply_item_ids: list[int]) ->
     _detach_supply_items(db, supply_item_ids)
 
 
-# ───────────────────────── ДАШБОРД (С N+1 FIX) ─────────────────────────
+# ───────────────────────── ДАШБОРД ─────────────────────────
 
 @router.get("", response_class=HTMLResponse)
 async def dashboard(
@@ -353,7 +353,6 @@ async def update_order_status(
         ))
         db.commit()
 
-        # fix #38: email в фоне, не блокируем event loop
         order_loaded = (
             db.query(Order)
             .options(selectinload(Order.user), selectinload(Order.items))
@@ -376,7 +375,6 @@ async def order_detail(
     db: Session = Depends(get_db),
     admin=Depends(require_admin),
 ):
-    """Карточка заказа для админа."""
     order = (
         db.query(Order)
         .options(
@@ -677,6 +675,7 @@ async def supply_new_page(
 async def supply_new(
     request: Request,
     country: str = Form(""),
+    city: str = Form(""),
     status: str = Form("Ожидается"),
     arrival_date: str = Form(""),
     notes: str = Form(""),
@@ -686,6 +685,9 @@ async def supply_new(
 ):
     errors = []
     msg = validate_country(country)
+    if msg:
+        errors.append(msg)
+    msg = validate_city(city, required=False)
     if msg:
         errors.append(msg)
     if status not in SUPPLY_STATUSES:
@@ -699,8 +701,11 @@ async def supply_new(
         return RedirectResponse(url="/admin/supplies/new", status_code=303)
 
     supply = Supply(
-        country=country.strip(), status=status,
-        departure_date=None, arrival_date=_parse_date(arrival_date),
+        country=country.strip(),
+        city=city.strip(),
+        status=status,
+        departure_date=None,
+        arrival_date=_parse_date(arrival_date),
         notes=notes.strip(),
     )
     db.add(supply)
@@ -729,6 +734,7 @@ async def supply_edit_page(
 async def supply_edit(
     supply_id: int, request: Request,
     country: str = Form(""),
+    city: str = Form(""),
     status: str = Form("Ожидается"),
     arrival_date: str = Form(""),
     notes: str = Form(""),
@@ -744,6 +750,9 @@ async def supply_edit(
     msg = validate_country(country)
     if msg:
         errors.append(msg)
+    msg = validate_city(city, required=False)
+    if msg:
+        errors.append(msg)
     if status not in SUPPLY_STATUSES:
         errors.append("Неизвестный статус поставки")
     if not arrival_date:
@@ -755,6 +764,7 @@ async def supply_edit(
         return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit", status_code=303)
 
     supply.country = country.strip()
+    supply.city = city.strip()
     supply.status = status
     supply.arrival_date = _parse_date(arrival_date)
     supply.notes = notes.strip()

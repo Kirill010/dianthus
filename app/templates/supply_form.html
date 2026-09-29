@@ -42,11 +42,25 @@
     <div class="card p-4 mb-4">
         <h5 class="mb-3">Данные поставки</h5>
         <div class="row g-3">
-            <div class="col-md-6">
+            <div class="col-md-4">
                 <label class="form-label fw-bold">Страна *</label>
-                <input type="text" name="country" class="form-control" maxlength="100" value="{{ supply.country if supply else '' }}" required>
+                <input type="text" name="country" class="form-control"
+                       maxlength="100"
+                       value="{{ supply.country if supply else '' }}"
+                       placeholder="Эквадор, Россия, Голландия…"
+                       required>
             </div>
-            <div class="col-md-6">
+            <div class="col-md-4">
+                <label class="form-label fw-bold">
+                    Город <span class="text-muted fw-normal">(опционально)</span>
+                </label>
+                <input type="text" name="city" class="form-control"
+                       maxlength="100"
+                       value="{{ supply.city if supply else '' }}"
+                       placeholder="Ступино, Ставрополь, Кито…">
+                <div class="form-text">Город, откуда едет машина</div>
+            </div>
+            <div class="col-md-4">
                 <label class="form-label fw-bold">Статус *</label>
                 <select name="status" class="form-select">
                     {% for s in supply_statuses %}
@@ -143,20 +157,15 @@
                         <form action="/admin/supply_items/{{ item.id }}/update" method="post"
                             class="d-flex gap-1 align-items-center" style="max-width:280px;">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-
-                            <!-- Цена за штуку -->
                             <input type="number" step="0.01" name="price"
                                 class="form-control form-control-sm"
                                 value="{{ item.price }}" required
                                 title="Цена за ШТУКУ" style="width:80px;">
-
-                            <!-- Количество в штуках -->
                             <input type="number" name="quantity_stems"
                                 class="form-control form-control-sm"
                                 value="{{ total_stems }}" required
                                 title="Количество ШТУК" style="width:90px;">
                             <small class="text-muted">шт</small>
-
                             <button type="submit" class="btn btn-sm btn-primary">
                                 <i class="fas fa-check"></i>
                             </button>

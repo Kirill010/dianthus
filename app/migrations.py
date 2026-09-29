@@ -47,6 +47,7 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
         "status":     "VARCHAR(30) DEFAULT 'Ожидается'",
         "notes":      "TEXT DEFAULT ''",
         "is_service": "BOOLEAN DEFAULT FALSE NOT NULL",
+        "city":       "VARCHAR(100) DEFAULT ''",
     },
     "supply_items": {
         "is_active":      "BOOLEAN DEFAULT FALSE",
@@ -112,12 +113,6 @@ def _column_ddl(table: str, column: str, sqlite_ddl: str) -> str:
 
 @contextmanager
 def _migration_lock():
-    """Файловый lock: миграцию выполняет только один воркер.
-
-    Используем БЛОКИРУЮЩИЙ flock — второй воркер просто подождёт,
-    а не выйдет с ошибкой. После освобождения — выйдет с True,
-    но перечитает состояние БД (индексы уже будут созданы первым воркером).
-    """
     d = os.path.dirname(MIGRATION_LOCK)
     if d:
         try:
@@ -155,11 +150,6 @@ def ensure_notifications_table() -> None:
 
 
 def _exec_one(sql: str, label: str) -> bool:
-    """Выполняет ОДИН DDL/DML в отдельной транзакции.
-
-    engine.begin() автоматически откатывает транзакцию при исключении —
-    это фиксит 'InFailedSqlTransaction: current transaction is aborted'.
-    """
     try:
         with engine.begin() as conn:
             conn.execute(text(sql))
@@ -172,10 +162,6 @@ def _exec_one(sql: str, label: str) -> bool:
 
 
 def _backfill_once(flag: str) -> bool:
-    """True, если бэкфилл ещё не выполнялся.
-
-    ON CONFLICT DO NOTHING защищает от гонки воркеров.
-    """
     try:
         with engine.begin() as conn:
             conn.execute(text("""
@@ -278,7 +264,6 @@ def _auto_migrate_inner() -> None:
 
     added = 0
 
-    # ── 1. Колонки ──
     for table, columns in EXPECTED_COLUMNS.items():
         if table not in tables:
             continue
@@ -295,7 +280,6 @@ def _auto_migrate_inner() -> None:
             if _exec_one(sql, f"Добавлена колонка {table}.{col}"):
                 added += 1
 
-    # ── 2. Индексы — перечитываем состояние перед КАЖДЫМ ──
     for table, indexes in EXPECTED_INDEXES.items():
         if table not in tables:
             continue
@@ -316,7 +300,6 @@ def _auto_migrate_inner() -> None:
             if _exec_one(sql, f"Создан индекс {idx_name} ON {table}"):
                 added += 1
 
-    # ── 3. Одноразовые бэкфиллы ──
     _backfill_order_item_pack_sizes()
     _backfill_product_photos()
     _backfill_order_subtotals()
@@ -328,7 +311,6 @@ def _auto_migrate_inner() -> None:
 
 
 def auto_migrate() -> None:
-    """Внешняя обёртка: получает lock, затем делает реальную работу."""
     with _migration_lock():
         _auto_migrate_inner()
 

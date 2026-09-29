@@ -255,10 +255,16 @@
                         <a href="/product/{{ item.id }}" class="product-card-v2__name">
                             {{ product.name }}
                         </a>
-                        <div class="product-card-v2__specs">
+                                                <div class="product-card-v2__specs">
                             <div class="spec-line">
                                 <span class="spec-line__label">Кол-во в уп:</span>
                                 <span class="spec-line__value">{{ pack }}шт</span>
+                            </div>
+                            <div class="spec-line">
+                                <span class="spec-line__label">Откуда:</span>
+                                <span class="spec-line__value">
+                                    {{ item.supply.location if item.supply else '—' }}
+                                </span>
                             </div>
                             <div class="spec-line">
                                 <span class="spec-line__label">Прибытие:</span>
