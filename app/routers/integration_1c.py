@@ -1,11 +1,13 @@
-# app/routers/integration_1c.py
+# app/routers/integration_1c.py — исправленная версия
 """
 Приём данных из 1С. Basic Auth (в prod).
 POST /api/1c/products/sync
 """
+import ipaddress
 import logging
 import secrets
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -24,6 +26,59 @@ _basic = HTTPBasic(auto_error=False)
 
 
 # ═══════════════════════════════════════════════════════════
+# SSRF PROTECTION
+# ═══════════════════════════════════════════════════════════
+
+_PRIVATE_IP_RANGES = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+]
+
+_ALLOWED_IMAGE_DOMAINS = {
+    "dianthus-opt.ru",
+    "www.dianthus-opt.ru",
+}
+
+
+def _is_safe_url(url: str) -> bool:
+    """Проверяет, что URL не ведёт на внутренние ресурсы (SSRF protection)."""
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+
+        # Разрешаем только известные домены или внешние URL
+        if hostname in _ALLOWED_IMAGE_DOMAINS:
+            return True
+
+        # Резолвим IP
+        try:
+            import socket
+            ip = socket.gethostbyname(hostname)
+            addr = ipaddress.ip_address(ip)
+            for private_range in _PRIVATE_IP_RANGES:
+                if addr in private_range:
+                    logger.warning("SSRF: заблокирован URL на внутренний IP: %s", url)
+                    return False
+        except (socket.gaierror, ValueError):
+            return False
+
+        return True
+    except Exception:
+        return False
+
+
+# ═══════════════════════════════════════════════════════════
 # АВТОРИЗАЦИЯ
 # ═══════════════════════════════════════════════════════════
 
@@ -31,7 +86,6 @@ def _verify_basic(
     request: Request,
     creds: HTTPBasicCredentials | None = Depends(_basic),
 ) -> bool:
-    """Проверяет Basic Auth."""
     auth_configured = bool(
         config.INTEGRATION_USER and config.INTEGRATION_PASSWORD
     )
@@ -109,6 +163,9 @@ def _normalize_photos(raw) -> list:
         if any(low.startswith(bad) for bad in _BAD_SCHEMES):
             continue
         if s.startswith(("http://", "https://", "/static/")):
+            # SSRF проверка
+            if s.startswith(("http://", "https://")) and not _is_safe_url(s):
+                continue
             result.append(s)
     return result[:20]
 
@@ -137,7 +194,6 @@ def _ensure_1c_supply(db: Session) -> Supply:
 
 
 def _extract_photos_from_item(item: dict) -> list:
-    """Достаёт фото из item — поддерживает photo, photos, image_url."""
     for key in ("photos", "photo", "image_url"):
         value = item.get(key)
         if value:
@@ -158,7 +214,6 @@ async def sync_products(
     db: Session = Depends(get_db),
     _auth: bool = Depends(_verify_basic),
 ):
-    """Приём товаров из 1С."""
     client_ip = request.client.host if request.client else "?"
 
     products_data = payload.get("products", [])
@@ -178,7 +233,6 @@ async def sync_products(
 
     supply = _ensure_1c_supply(db)
 
-    # Batch-load существующих товаров (по sku и name)
     skus, names = [], []
     for it in products_data:
         s = str(it.get("sku", "")).strip()
@@ -231,9 +285,7 @@ async def sync_products(
                     unit="упаковка",
                     package_size=int(item.get("package_size", 1) or 1),
                     min_quantity=int(item.get("min_quantity", 1) or 1),
-                    category=str(
-                        item.get("category", "Прочее") or "Прочее"
-                    ),
+                    category=str(item.get("category", "Прочее") or "Прочее"),
                     image_url=main_image,
                     photos=photos,
                 )
@@ -331,7 +383,6 @@ async def export_products_to_1c(
     db: Session = Depends(get_db),
     _auth: bool = Depends(_verify_basic),
 ):
-    """Выгрузка товаров для 1С (JSON)."""
     items = (
         db.query(SupplyItem)
         .options(joinedload(SupplyItem.product))

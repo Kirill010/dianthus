@@ -1,10 +1,5 @@
 # app/config.py
-"""Настройки из .env.
-
-ВНИМАНИЕ: конфиг НЕ падает при импорте. Иначе main.py не сможет
-загрузить роутеры, и приложение не стартует вообще.
-В prod генерируется временный SECRET_KEY + пишется CRITICAL в лог.
-"""
+"""Настройки из .env с валидацией безопасности."""
 import logging
 import os
 import secrets
@@ -72,10 +67,15 @@ class Config:
 
     ALLOW_SQLITE_IN_PROD: bool = _bool_env("ALLOW_SQLITE_IN_PROD", False)
 
+    # Безопасность
+    SESSION_MAX_AGE: int = _int_env("SESSION_MAX_AGE", 604800)  # 7 дней
+    LOGIN_LOCK_ENABLED: bool = _bool_env("LOGIN_LOCK_ENABLED", True)
+    CSRF_ENABLED: bool = _bool_env("CSRF_ENABLED", True)
+
 
 config = Config()
 
-# ─── Проверки в prod: НЕ raise, а CRITICAL + генерация временного ключа ───
+# ─── Проверки в prod ───
 if config.ENV == "prod":
     if not config.SECRET_KEY or config.SECRET_KEY == "dev-change-me":
         logger.critical(

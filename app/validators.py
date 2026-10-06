@@ -1,8 +1,23 @@
-# Валидация пользовательских данных.
+# Валидация пользовательских данных (усиленная).
 import re
 
 _EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
 _NAME_RE = re.compile(r"^[А-Яа-яЁёA-Za-z\- .]{2,120}$")
+
+# Запрещённые паттерны для инъекций
+_INJECTION_PATTERNS = re.compile(
+    r"(\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|EXEC|SCRIPT|"
+    r"JAVASCRIPT|ALERT|ONERROR|ONLOAD)\b|<script|</script|"
+    r"javascript:|data:|vbscript:|expression\s*\()",
+    re.IGNORECASE,
+)
+
+
+def _contains_injection(value: str) -> bool:
+    """Проверяет наличие подозрительных паттернов."""
+    if not value:
+        return False
+    return bool(_INJECTION_PATTERNS.search(value))
 
 
 def validate_email(email: str) -> str | None:
@@ -13,6 +28,8 @@ def validate_email(email: str) -> str | None:
         return "Email слишком длинный"
     if not _EMAIL_RE.match(email):
         return "Неверный формат email. Пример: ivan@company.ru"
+    if _contains_injection(email):
+        return "Email содержит недопустимые символы"
     return None
 
 
@@ -40,6 +57,8 @@ def validate_full_name(name: str) -> str | None:
         return "ФИО слишком длинное"
     if not _NAME_RE.match(name):
         return "ФИО: только буквы, пробел, дефис, точка"
+    if _contains_injection(name):
+        return "ФИО содержит недопустимые символы"
     return None
 
 
@@ -63,6 +82,8 @@ def validate_company_name(name: str) -> str | None:
         return "Название слишком короткое"
     if len(name) > 200:
         return "Название слишком длинное"
+    if _contains_injection(name):
+        return "Название содержит недопустимые символы"
     return None
 
 
@@ -79,7 +100,6 @@ def validate_inn(inn: str, required: bool = True) -> str | None:
 
 
 def validate_city(city: str, required: bool = True) -> str | None:
-    """Город."""
     city = (city or "").strip()
     if not city:
         return "Укажите город" if required else None
@@ -87,6 +107,8 @@ def validate_city(city: str, required: bool = True) -> str | None:
         return "Название города слишком короткое"
     if len(city) > 100:
         return "Название города слишком длинное"
+    if _contains_injection(city):
+        return "Город содержит недопустимые символы"
     return None
 
 
@@ -126,4 +148,6 @@ def validate_country(value: str) -> str | None:
         return "Укажите страну"
     if len(value) > 100:
         return "Название страны слишком длинное"
+    if _contains_injection(value):
+        return "Страна содержит недопустимые символы"
     return None

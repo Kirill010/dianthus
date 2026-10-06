@@ -1,4 +1,4 @@
-# app/auth.py
+# app/auth.py — исправленная версия
 """Регистрация, вход, выход."""
 import logging
 
@@ -101,7 +101,6 @@ async def register(
         request.session["register_errors"] = ["Этот email уже зарегистрирован"]
         return RedirectResponse(url="/login", status_code=303)
 
-    # fix: уведомление в фоне ПОСЛЕ успешного commit
     background_tasks.add_task(notify_admin_new_client, user)
 
     logger.info("Заявка: %s (%s)", email, company_name)
@@ -150,6 +149,9 @@ async def login(
             "Менеджер свяжется с вами и откроет доступ."
         )
         return RedirectResponse(url="/login", status_code=303)
+
+    request.session.clear()
+    ensure_csrf_token(request)
 
     await reset_login_failures(email)
     await reset_rate_limit(request, "login")

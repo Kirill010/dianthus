@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .auth import router as auth_router
 from .bootstrap import ensure_default_admin
@@ -37,8 +38,6 @@ logger = logging.getLogger(__name__)
 init_sentry()
 
 
-# fix #67: безопасная загрузка роутеров — если один упал, сервис продолжит
-# работать, а в лог попадёт понятная причина.
 def _safe_load_routers() -> dict:
     out = {}
     for name in ("admin", "cart", "catalog", "profile", "integration_1c"):
@@ -108,7 +107,6 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        # fix: корректное завершение за отведённое systemd время
         logger.info("🛑 Завершение приложения...")
         stop_scheduler()
         await close_rate_limiter()
@@ -123,15 +121,19 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Диантус — оптовый магазин цветов",
     lifespan=lifespan,
+    docs_url=None if config.ENV == "prod" else "/docs",
+    redoc_url=None if config.ENV == "prod" else "/redoc",
+    openapi_url=None if config.ENV == "prod" else "/openapi.json",
 )
 
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     SessionMiddleware,
     secret_key=config.SECRET_KEY,
-    max_age=60 * 60 * 24 * 7,
+    max_age=config.SESSION_MAX_AGE,
     same_site="lax",
     https_only=(config.ENV == "prod"),
+    session_cookie="dianthus_session",
 )
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -162,6 +164,9 @@ ensure_default_admin()
 async def csrf_error_handler(request: Request, exc: CsrfError):
     request.session["flash"] = f"⚠️ {exc.message}"
     referer = request.headers.get("referer") or "/login"
+    # Защита от open redirect
+    if not referer.startswith(str(request.base_url)):
+        referer = "/login"
     return RedirectResponse(url=referer, status_code=303)
 
 
