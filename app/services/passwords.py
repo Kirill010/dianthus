@@ -1,20 +1,12 @@
 # app/services/passwords.py
-"""Общие функции хеширования/проверки паролей. Единственный источник правды.
-
-ВАЖНО: bcrypt обрезает пароли до 72 байт. Мы делаем это ЯВНО и СОГЛАСОВАННО
-при hash и при verify — иначе пароль нельзя будет проверить.
-"""
 import logging
-
 import bcrypt
 
 logger = logging.getLogger(__name__)
-
 MAX_PASSWORD_BYTES = 72
 
 
 def _truncate(password: str) -> bytes:
-    """UTF-8 + обрезка до 72 байт по границе байт (не символов)."""
     b = (password or "").encode("utf-8")
     if len(b) > MAX_PASSWORD_BYTES:
         b = b[:MAX_PASSWORD_BYTES]

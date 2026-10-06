@@ -1,6 +1,7 @@
 # app/security.py
 """
 CSRF + rate limiting (Redis или in-memory).
++ Прогрессивная блокировка входа по email.
 """
 import logging
 import os
@@ -16,14 +17,12 @@ logger = logging.getLogger(__name__)
 
 _CSRF_SESSION_KEY = "csrf_token"
 
-# In-memory rate limit
 _rate_buckets: dict[str, list[float]] = defaultdict(list)
-_RATE_CLEANUP_THRESHOLD = 5000  # после этого числа ключей чистим
+_RATE_CLEANUP_THRESHOLD = 5000
 
 _redis_client = None
 _redis_enabled = False
 
-# Lua-скрипт: атомарный INCR + EXPIRE (fix #10 — race между INCR и TTL)
 _LUA_INCR_EXPIRE = """
 local c = redis.call('INCR', KEYS[1])
 if c == 1 then
@@ -33,7 +32,116 @@ return c
 """
 
 
+# ═══════════════════════════════════════════════════════════
+# ПРОГРЕССИВНАЯ БЛОКИРОВКА ВХОДА
+# ═══════════════════════════════════════════════════════════
+
+LOGIN_FAILS_TTL = 24 * 3600
+LOGIN_LOCK_LEVELS = [
+    (3,  10 * 60),      # >= 3 ошибок  → 10 минут
+    (6,  30 * 60),      # >= 6 ошибок  → 30 минут
+    (9,  60 * 60),      # >= 9 ошибок  → 1 час
+    (12, 120 * 60),     # >= 12 ошибок → 2 часа
+    (15, 360 * 60),     # >= 15 ошибок → 6 часов
+]
+
+_login_fails_mem: dict[str, int] = {}
+_login_locks_mem: dict[str, float] = {}
+
+
+def _fails_key(email: str) -> str:
+    return f"lf:{email}"
+
+
+def _lock_key(email: str) -> str:
+    return f"ll:{email}"
+
+
+def _lock_duration(fails: int) -> int:
+    duration = 0
+    for threshold, sec in LOGIN_LOCK_LEVELS:
+        if fails >= threshold:
+            duration = sec
+    return duration
+
+
+async def check_login_lock(email: str) -> int:
+    email = (email or "").strip().lower()
+    if not email:
+        return 0
+
+    if _redis_enabled and _redis_client is not None:
+        try:
+            ttl = await _redis_client.ttl(_lock_key(email))
+            return max(0, int(ttl)) if ttl and ttl > 0 else 0
+        except Exception as e:
+            logger.warning("check_login_lock redis: %s", e)
+
+    until = _login_locks_mem.get(email, 0.0)
+    remaining = int(until - time.time())
+    if remaining > 0:
+        return remaining
+    _login_locks_mem.pop(email, None)
+    return 0
+
+
+async def record_login_failure(email: str) -> int:
+    email = (email or "").strip().lower()
+    if not email:
+        return 0
+
+    fails = 0
+
+    if _redis_enabled and _redis_client is not None:
+        try:
+            fails = int(await _redis_client.eval(
+                _LUA_INCR_EXPIRE, 1, _fails_key(email), LOGIN_FAILS_TTL
+            ))
+        except Exception as e:
+            logger.warning("record_login_failure redis: %s", e)
+            fails = 0
+
+    if fails == 0:
+        fails = _login_fails_mem.get(email, 0) + 1
+        _login_fails_mem[email] = fails
+
+    duration = _lock_duration(fails)
+    if duration <= 0:
+        return 0
+
+    if _redis_enabled and _redis_client is not None:
+        try:
+            await _redis_client.set(_lock_key(email), "1", ex=duration)
+        except Exception as e:
+            logger.warning("record_login_failure set-lock redis: %s", e)
+
+    _login_locks_mem[email] = time.time() + duration
+    logger.warning(
+        "🔒 Логин %s заблокирован на %d сек (неудач: %d)",
+        email, duration, fails,
+    )
+    return duration
+
+
+async def reset_login_failures(email: str) -> None:
+    email = (email or "").strip().lower()
+    if not email:
+        return
+
+    _login_fails_mem.pop(email, None)
+    _login_locks_mem.pop(email, None)
+
+    if _redis_enabled and _redis_client is not None:
+        try:
+            await _redis_client.delete(_fails_key(email))
+            await _redis_client.delete(_lock_key(email))
+        except Exception as e:
+            logger.warning("reset_login_failures redis: %s", e)
+
+
+# ═══════════════════════════════════════════════════════════
 # CSRF
+# ═══════════════════════════════════════════════════════════
 
 class CsrfError(Exception):
     def __init__(self, message: str = "Ошибка CSRF-токена"):
@@ -95,18 +203,13 @@ async def check_csrf(request: Request) -> None:
             raise CsrfError("Неверный источник запроса")
 
 
+# ═══════════════════════════════════════════════════════════
 # RATE LIMITING
+# ═══════════════════════════════════════════════════════════
 
 def _client_ip(request: Request) -> str:
-    """
-    fix #5: доверяем только тому, что уже распарсил uvicorn
-    (--proxy-headers + --forwarded-allow-ips=127.0.0.1).
-    XFF-заголовок читаем ТОЛЬКО если uvicorn его не подменил
-    (например, dev-режим без nginx).
-    """
     if request.client and request.client.host:
         return request.client.host[:45]
-    # Фоллбэк для нестандартных прокси
     fwd = request.headers.get("x-forwarded-for")
     if fwd:
         parts = [p.strip() for p in fwd.split(",") if p.strip()]
@@ -116,7 +219,6 @@ def _client_ip(request: Request) -> str:
 
 
 def _cleanup_memory_buckets(window: int) -> None:
-    """fix #8: не даём _rate_buckets расти бесконечно."""
     if len(_rate_buckets) < _RATE_CLEANUP_THRESHOLD:
         return
     now = time.time()
@@ -124,8 +226,6 @@ def _cleanup_memory_buckets(window: int) -> None:
             if not hits or now - hits[-1] > window * 2]
     for k in dead:
         _rate_buckets.pop(k, None)
-    logger.info("Rate-limit cleanup: удалено %d ключей, осталось %d",
-                len(dead), len(_rate_buckets))
 
 
 async def _redis_incr(bucket: str, window: int) -> Optional[int]:
@@ -133,7 +233,6 @@ async def _redis_incr(bucket: str, window: int) -> Optional[int]:
         return None
     try:
         key = f"rl:{bucket}"
-        # fix #10: атомарный INCR+EXPIRE через Lua
         count = await _redis_client.eval(_LUA_INCR_EXPIRE, 1, key, window)
         return int(count)
     except Exception as e:
@@ -192,7 +291,9 @@ async def reset_rate_limit(request: Request, key: str) -> None:
     await _redis_reset(bucket)
 
 
+# ═══════════════════════════════════════════════════════════
 # REDIS
+# ═══════════════════════════════════════════════════════════
 
 async def init_rate_limiter(redis_url: Optional[str] = None) -> None:
     global _redis_client, _redis_enabled

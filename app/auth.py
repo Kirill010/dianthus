@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session
 
 from .database import get_db
 from .security import (check_csrf, check_rate_limit, reset_rate_limit,
-                       ensure_csrf_token)
+                       ensure_csrf_token,
+                       check_login_lock, record_login_failure,
+                       reset_login_failures)
 from .services.passwords import hash_password, verify_password
 from .validators import (validate_company_name, validate_email,
                          validate_full_name, validate_password,
@@ -120,9 +122,26 @@ async def login(
         request.session["login_error"] = "Заполните email и пароль"
         return RedirectResponse(url="/login", status_code=303)
 
+    remaining = await check_login_lock(email)
+    if remaining > 0:
+        minutes = max(1, remaining // 60)
+        request.session["login_error"] = (
+            f"Слишком много неудачных попыток. "
+            f"Попробуйте снова через {minutes} мин."
+        )
+        return RedirectResponse(url="/login", status_code=303)
+
     user = db.query(models.User).filter(models.User.email == email).first()
     if not user or not verify_password(password, user.hashed_password):
-        request.session["login_error"] = "Неверный email или пароль"
+        lock_sec = await record_login_failure(email)
+        if lock_sec > 0:
+            minutes = max(1, lock_sec // 60)
+            request.session["login_error"] = (
+                f"Слишком много неудачных попыток. "
+                f"Вход заблокирован на {minutes} мин."
+            )
+        else:
+            request.session["login_error"] = "Неверный email или пароль"
         return RedirectResponse(url="/login", status_code=303)
 
     if not user.is_approved and not user.is_admin:
@@ -132,7 +151,9 @@ async def login(
         )
         return RedirectResponse(url="/login", status_code=303)
 
+    await reset_login_failures(email)
     await reset_rate_limit(request, "login")
+
     request.session["user_id"] = user.id
     request.session["flash"] = f"Добро пожаловать, {user.company_name}!"
     logger.info("Вход: %s", email)
