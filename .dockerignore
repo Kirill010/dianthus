@@ -1,0 +1,43 @@
+# Секреты и локальные данные — НИКОГДА не должны попадать в образ
+.env
+.env.*
+!.env.example
+*.sql
+*.sql.gz
+*.gz
+*.tar
+*.db
+*.sqlite
+*.sqlite3
+backups/
+
+# Git и служебное
+.git
+.gitignore
+.github
+.vscode
+.idea
+.DS_Store
+
+# Python-мусор
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Не нужно в рантайме
+tests/
+pytest.ini
+README.md
+DEPLOY.md
+
+# Деплой-файлы (в образ не нужны)
+nginx/
+Dockerfile
+docker-compose.yml
+
+# Загруженные картинки живут в Docker-томе, а не в образе
+app/static/uploads/*
+!app/static/uploads/.gitkeep

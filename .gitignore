@@ -235,6 +235,6 @@ app/static/vendor/
 
 *.jpg
 # .gitignore
-clear_*.py
-reset_*.py
-cleanup_*.py
+#clear_*.py
+#reset_*.py
+#cleanup_*.py

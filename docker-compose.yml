@@ -1,0 +1,159 @@
+# ───────────────────────────────────────────────────────────────
+# Диантус — production-стек: Postgres + Redis + приложение + Nginx + Certbot
+# Запуск:   docker compose up -d --build
+# ───────────────────────────────────────────────────────────────
+name: dianthus
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  # ── База данных ──────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=1GB
+      - -c
+      - work_mem=8MB
+      - -c
+      - max_connections=100
+      - -c
+      - log_min_duration_statement=1000
+    shm_size: 128mb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [backend]
+    mem_limit: 1g
+    logging: *logging
+
+  # ── Redis (лимиты запросов, блокировки входа) ────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    command:
+      - sh
+      - -c
+      - >-
+        exec redis-server
+        --requirepass "$$REDIS_PASSWORD"
+        --maxmemory 128mb
+        --maxmemory-policy allkeys-lru
+        --save ""
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [backend]
+    mem_limit: 256m
+    logging: *logging
+
+  # ── Приложение ───────────────────────────────────────────────
+  app:
+    build:
+      context: .
+    image: dianthus-app:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      WEB_CONCURRENCY: "2"                       # число воркеров uvicorn
+      # Пользователь внутри контейнера не root, поэтому /run/dianthus недоступен.
+      MIGRATION_LOCK: /tmp/dianthus/migration.lock
+      SCHEDULER_LOCK: /tmp/dianthus/scheduler.lock
+      JINJA_CACHE_DIR: /tmp/dianthus/jinja
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - uploads:/app/app/static/uploads
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).status == 200 else 1)"
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 40s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    networks: [frontend, backend]   # frontend нужен для исходящей почты (SMTP)
+    mem_limit: 1536m
+    logging: *logging
+
+  # ── Nginx: единственный сервис, открытый в интернет ──────────
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/proxy_params.conf:/etc/nginx/proxy_params.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - letsencrypt:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+      - uploads:/srv/uploads:ro
+    # Раз в 6 часов перечитываем конфиг, чтобы подхватить обновлённый сертификат
+    command:
+      - /bin/sh
+      - -c
+      - 'while :; do sleep 6h; nginx -s reload; done & exec nginx -g "daemon off;"'
+    networks: [frontend]
+    mem_limit: 128m
+    logging: *logging
+
+  # ── Certbot: бесплатные сертификаты Let's Encrypt + автопродление ──
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    entrypoint:
+      - /bin/sh
+      - -c
+      - 'trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done'
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    networks: [frontend]
+    mem_limit: 128m
+    logging: *logging
+
+volumes:
+  postgres_data:
+  uploads:
+  letsencrypt:
+  certbot_www:
+
+networks:
+  frontend:
+  backend:
+    internal: true     # БД и Redis не имеют выхода в интернет и не видны снаружи

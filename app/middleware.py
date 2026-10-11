@@ -29,6 +29,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "img-src 'self' data: https:; "
             "font-src 'self'; "
             "connect-src 'self'; "
+            # Карта Яндекса на странице «Контакты» (iframe).
+            # Без frame-src браузер блокирует её из-за default-src 'self'.
+            "frame-src 'self' https://yandex.ru https://*.yandex.ru "
+            "https://yandex.com https://*.yandex.com; "
             "frame-ancestors 'none'; "
             "base-uri 'self'; "
             "form-action 'self'"
