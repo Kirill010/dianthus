@@ -150,6 +150,13 @@ async def login(
         )
         return RedirectResponse(url="/login", status_code=303)
 
+    if user.is_admin and user.totp_secret:
+        code = (await request.form()).get("totp_code", "")
+        if not totp.verify(user.totp_secret, str(code)):
+            request.session["login_error"] = "Неверный код двухфакторной аутентификации"
+            logger.warning("2FA: неверный код для %s, IP=%s", email, _client_ip(request))
+            return RedirectResponse(url="/login", status_code=303)
+        
     request.session.clear()
     request.session["_rotate"] = True      # новый id сессии (защита от фиксации)
     ensure_csrf_token(request)

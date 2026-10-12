@@ -1,7 +1,7 @@
 # app/routers/cart.py
 """Корзина и оформление заказа с атомарной блокировкой стока."""
 import logging
-
+import secrets
 from fastapi import (APIRouter, BackgroundTasks, Depends, Form,
                      HTTPException, Request)
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -460,11 +460,11 @@ def checkout_page(request: Request, db: Session = Depends(get_db)):
     if not cart:
         request.session["flash"] = "Корзина пуста"
         return RedirectResponse(url="/catalog", status_code=303)
-
     subtotal = _cart_subtotal(cart)
     discount_percent = user.discount_percent or 0
     discount_amount, total = _apply_discount(subtotal, discount_percent)
-
+    if not request.session.get("order_token"):
+        request.session["order_token"] = secrets.token_urlsafe(24)
     return render(
         request, "checkout.html", db,
         user=user, cart=cart,
@@ -479,7 +479,7 @@ def checkout_page(request: Request, db: Session = Depends(get_db)):
 def place_order(
     request: Request,
     background_tasks: BackgroundTasks,
-    comment: str = Form(""),
+    order_token: str = Form(""), # или comment
     db: Session = Depends(get_db),
     _csrf: None = Depends(check_csrf),
 ):
@@ -498,6 +498,11 @@ def place_order(
         request.session["flash"] = "Корзина пуста"
         return RedirectResponse(url="/catalog", status_code=303)
 
+    expected = request.session.get("order_token")
+    if not expected or not secrets.compare_digest(order_token, expected):
+        request.session["flash"] = "Заказ уже оформлен (повторная отправка формы)"
+        return RedirectResponse(url="/orders", status_code=303)
+    
     comment = (comment or "").strip()
     if len(comment) > MAX_COMMENT_LENGTH:
         request.session["flash"] = "Комментарий слишком длинный"
@@ -648,6 +653,8 @@ def place_order(
         )
         return RedirectResponse(url="/cart", status_code=303)
 
+    request.session.pop("order_token", None)
+    
     order_loaded = (
         db.query(Order)
         .options(selectinload(Order.items))

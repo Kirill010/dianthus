@@ -32,6 +32,8 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
         "image_url":    "VARCHAR(500) DEFAULT ''",
         "category":     "VARCHAR(100) DEFAULT 'Прочее'",
         "sku":          "VARCHAR(100) DEFAULT ''",
+        "external_id":  "VARCHAR(64) DEFAULT ''",
+        "totp_secret":     "VARCHAR(64) DEFAULT ''",
     },
     "users": {
         "phone":            "VARCHAR(30) DEFAULT ''",
@@ -67,6 +69,10 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
         "is_fulfilled":   "BOOLEAN DEFAULT FALSE",
         "quantity":       "INTEGER DEFAULT 0",
     },
+    "audit_log": [
+        ("ix_audit_log_created", "created_at"),
+        ("ix_audit_log_user_action", "user_id, action"),
+    ],
 }
 
 EXPECTED_INDEXES: dict[str, list[tuple[str, str]]] = {
@@ -74,6 +80,7 @@ EXPECTED_INDEXES: dict[str, list[tuple[str, str]]] = {
         ("ix_products_category", "category"),
         ("ix_products_sku", "sku"),
         ("ix_products_country", "country"),
+        ("ix_products_external_id", "external_id"),
     ],
     "orders": [
         ("ix_orders_created_at", "created_at"),
@@ -208,6 +215,26 @@ def _backfill_product_photos() -> None:
         logger.warning("Backfill products.photos: %s", e)
 
 
+def _backfill_product_external_ids() -> None:
+    """Старым товарам в external_id кладём sku.
+
+    Так у уже загруженного каталога появляется идентификатор для обмена,
+    и первый же обмен с 1С не создаёт дубли по названию.
+    """
+    if not _backfill_once("product_external_id_v1"):
+        return
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "UPDATE products SET external_id = sku "
+                "WHERE (external_id IS NULL OR external_id = '') "
+                "AND sku IS NOT NULL AND sku != ''"
+            ))
+        logger.info("✅ Backfill products.external_id выполнен")
+    except Exception as e:
+        logger.warning("Backfill products.external_id: %s", e)
+
+
 def _backfill_order_subtotals() -> None:
     if not _backfill_once("order_subtotals_v1"):
         return
@@ -278,6 +305,7 @@ def _auto_migrate_inner() -> None:
 
     _backfill_order_item_pack_sizes()
     _backfill_product_photos()
+    _backfill_product_external_ids()
     _backfill_order_subtotals()
 
     if added:

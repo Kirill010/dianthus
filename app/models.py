@@ -72,6 +72,7 @@ class User(Base):
                           cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="user",
                                  cascade="all, delete-orphan")
+    totp_secret = Column(String(64), default="", nullable=False)
 
 
 class Product(Base):
@@ -79,6 +80,10 @@ class Product(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(200), nullable=False, index=True)
     sku = Column(String(100), default="", index=True)
+    # Идентификатор товара В 1С (GUID или код номенклатуры) — то самое поле "id"
+    # в JSON-обмене. По нему товары сопоставляются при синхронизации, поэтому
+    # переименование в 1С больше не создаёт дубль. Пусто = заведён вручную.
+    external_id = Column(String(64), default="", index=True)
     description = Column(Text, default="")
     country = Column(String(100), default="", index=True)
     length_cm = Column(Integer, default=0)
@@ -262,3 +267,16 @@ class Preorder(Base):
     user = relationship("User")
     product = relationship("Product")
     supply_item = relationship("SupplyItem")
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    action = Column(String(64), nullable=False, index=True)   # order_status, user_approve...
+    entity = Column(String(64), default="")                    # order / user / product
+    entity_id = Column(Integer, nullable=True)
+    details = Column(Text, default="")                          # было → стало
+    ip = Column(String(45), default="")
+    created_at = Column(DateTime, default=_utcnow, index=True)
+    user = relationship("User")

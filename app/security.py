@@ -10,6 +10,9 @@ import time
 from collections import defaultdict
 from typing import Optional
 from urllib.parse import urlparse
+import hashlib
+import hmac
+import time
 
 from fastapi import HTTPException, Request
 
@@ -47,6 +50,31 @@ LOGIN_LOCK_LEVELS = [
 
 _login_fails_mem: dict[str, int] = {}
 _login_locks_mem: dict[str, float] = {}
+
+
+def verify_hmac_signature(headers, body: bytes, secret: str,
+                          tolerance: int = 300) -> bool:
+    """Проверка подписи вебхука из 1С: X-1C-Timestamp + X-1C-Signature.
+
+    Подпись = HMAC-SHA256(secret, f"{timestamp}.{body}") в hex.
+    tolerance — окно в секундах (защита от повторного воспроизведения).
+    """
+    ts = headers.get("x-1c-timestamp", "")
+    sig = headers.get("x-1c-signature", "")
+    if not ts or not sig or not secret:
+        return False
+    try:
+        ts_int = int(ts)
+    except ValueError:
+        return False
+    if abs(time.time() - ts_int) > tolerance:
+        return False
+    expected = hmac.new(
+        secret.encode("utf-8"),
+        f"{ts}.".encode("utf-8") + body,
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(expected, sig.lower())
 
 
 def _fails_key(email: str) -> str:

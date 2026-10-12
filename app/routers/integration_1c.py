@@ -1,7 +1,23 @@
-# app/routers/integration_1c.py — исправленная версия
+# app/routers/integration_1c.py
 """
-Приём данных из 1С. Basic Auth (в prod).
-POST /api/1c/products/sync
+Обмен с 1С (Basic Auth + лимит запросов).
+
+  POST /api/1c/products/sync     — приём каталога, цен и остатков из 1С
+  GET  /api/1c/products/export   — выгрузка каталога сайта в 1С
+  GET  /api/1c/orders/export     — выгрузка заказов сайта в 1С
+  GET  /api/1c/ping              — проверка связи
+
+Формат товара (одинаковый в обе стороны):
+
+    {"id": 1, "external_id": "ROSA-FREEDOM-60", "sku": "ROSA-FREEDOM-60",
+     "name": "Роза Freedom 60 см", "description": "Классическая красная роза",
+     "country": "Эквадор", "length_cm": 60, "unit": "упаковка",
+     "package_size": 25, "min_quantity": 1, "category": "Роза Эквадор",
+     "price_per_stem": 42.5, "stock_packs": 120,
+     "photos": ["https://dianthus-opt.ru/static/uploads/abc.webp"]}
+
+ВНИМАНИЕ по единицам: price_per_stem — цена за ШТ (стебель),
+stock_packs — остаток в УПАКОВКАХ, package_size — штук в упаковке.
 """
 import ipaddress
 import logging
@@ -13,11 +29,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy import or_
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from ..config import config
 from ..database import get_db
-from ..models import Product, Supply, SupplyItem
+from ..models import ORDER_STATUSES, Order, Product, Supply, SupplyItem
 from ..security import check_rate_limit
 
 logger = logging.getLogger(__name__)
@@ -213,6 +229,19 @@ def _extract_photos_from_item(item: dict) -> list:
     return []
 
 
+def _ext_id_of(item: dict) -> str:
+    """Идентификатор товара в 1С: поле id / external_id / guid / code.
+
+    Именно по нему товар сопоставляется при обмене (приоритет выше sku и
+    названия), поэтому переименование номенклатуры в 1С не создаёт дубль.
+    """
+    for key in ("id", "external_id", "guid", "code"):
+        value = item.get(key)
+        if value not in (None, ""):
+            return str(value).strip()[:64]
+    return ""
+
+
 # ═══════════════════════════════════════════════════════════
 # SYNC ENDPOINT
 # ═══════════════════════════════════════════════════════════
@@ -250,26 +279,34 @@ def sync_products(
 
     supply = _ensure_1c_supply(db)
 
-    skus, names = [], []
+    skus, names, ext_ids = [], [], []
     for it in products_data:
         s = str(it.get("sku", "")).strip()
         n = str(it.get("name", "")).strip()
+        e = _ext_id_of(it)
         if s:
             skus.append(s)
         if n:
             names.append(n)
+        if e:
+            ext_ids.append(e)
 
     existing_by_sku: dict[str, Product] = {}
     existing_by_name: dict[str, Product] = {}
-    if skus or names:
+    existing_by_ext: dict[str, Product] = {}
+    if skus or names or ext_ids:
         conds = []
         if skus:
             conds.append(Product.sku.in_(skus))
         if names:
             conds.append(Product.name.in_(names))
+        if ext_ids:
+            conds.append(Product.external_id.in_(ext_ids))
         for p in db.query(Product).filter(or_(*conds)).all():
             if p.sku:
                 existing_by_sku[p.sku] = p
+            if p.external_id:
+                existing_by_ext[p.external_id] = p
             existing_by_name[p.name] = p
 
     processed = created = updated = 0
@@ -279,12 +316,16 @@ def sync_products(
         try:
             sku = str(item.get("sku", "")).strip()
             name = str(item.get("name", "")).strip()
+            ext_id = _ext_id_of(item)
             if not name:
                 errors.append(f"#{idx}: нет name")
                 continue
 
+            # Порядок сопоставления: id из 1С → sku → название
             product = None
-            if sku and sku in existing_by_sku:
+            if ext_id and ext_id in existing_by_ext:
+                product = existing_by_ext[ext_id]
+            elif sku and sku in existing_by_sku:
                 product = existing_by_sku[sku]
             elif name in existing_by_name:
                 product = existing_by_name[name]
@@ -305,6 +346,7 @@ def sync_products(
             if not product:
                 product = Product(
                     sku=sku,
+                    external_id=ext_id,
                     name=name,
                     description=str(item.get("description", "") or ""),
                     country=str(item.get("country", "") or ""),
@@ -320,10 +362,14 @@ def sync_products(
                 db.flush()
                 if sku:
                     existing_by_sku[sku] = product
+                if ext_id:
+                    existing_by_ext[ext_id] = product
                 existing_by_name[name] = product
                 created += 1
             else:
                 product.sku = sku or product.sku
+                if ext_id:
+                    product.external_id = ext_id
                 product.name = name
                 if "description" in item:
                     product.description = str(item.get("description") or "")
@@ -402,33 +448,152 @@ def ping(_auth: bool = Depends(_verify_basic)):
     }
 
 
+def _product_payload(product: Product, item: SupplyItem | None) -> dict:
+    """Одна запись каталога в формате обмена с 1С.
+
+    Формат тот же, что принимает POST /api/1c/products/sync: выгрузку можно
+    поправить в 1С и отправить обратно без преобразований.
+    """
+    return {
+        # id — идентификатор товара НА САЙТЕ
+        "id": product.id,
+        # external_id — идентификатор товара В 1С (то, что 1С присылает в "id")
+        "external_id": product.external_id or "",
+        "sku": product.sku or "",
+        "name": product.name,
+        "description": product.description or "",
+        "country": product.country or "",
+        "length_cm": product.length_cm or 0,
+        "unit": product.unit or "упаковка",
+        "package_size": product.package_size or 1,
+        "min_quantity": product.min_quantity or 1,
+        "category": product.category or "Прочее",
+        # Цена за ШТ (стебель), остаток — в УПАКОВКАХ
+        "price_per_stem": float(item.price) if item else 0.0,
+        "stock_packs": int(item.stock) if item else 0,
+        "reserved_packs": int(item.reserved_stock or 0) if item else 0,
+        "available_packs": int(item.available_stock) if item else 0,
+        "photos": product.all_photos,
+        "supply_item_id": item.id if item else None,
+    }
+
+
 @router.get("/products/export")
 def export_products_to_1c(
+    all: int = 0,
     db: Session = Depends(get_db),
     _auth: bool = Depends(_verify_basic),
 ):
+    """Каталог сайта для 1С — одна запись на товар.
+
+        GET /api/1c/products/export          — товары, которые сейчас на полке
+        GET /api/1c/products/export?all=1    — весь справочник (включая отсутствующие)
+
+    Цена и остаток берутся из активной партии поставки.
+    """
+    rows: dict[int, dict] = {}
     items = (
         db.query(SupplyItem)
         .options(joinedload(SupplyItem.product))
         .filter(SupplyItem.is_active.is_(True))
+        .order_by(SupplyItem.id.desc())
         .all()
     )
+    for item in items:
+        product = item.product
+        if product and product.id not in rows:
+            rows[product.id] = _product_payload(product, item)
+
+    if all:
+        for product in db.query(Product).order_by(Product.id).all():
+            rows.setdefault(product.id, _product_payload(product, None))
+
+    products = [rows[pid] for pid in sorted(rows)]
+    return JSONResponse({"count": len(products), "products": products})
+
+
+# ───────────────────────── ЗАКАЗЫ ДЛЯ 1С ─────────────────────────
+
+ORDERS_MAX_PER_CALL = 200
+
+
+@router.get("/orders/export")
+def export_orders_to_1c(
+    since: str = "",
+    status: str = "",
+    limit: int = ORDERS_MAX_PER_CALL,
+    db: Session = Depends(get_db),
+    _auth: bool = Depends(_verify_basic),
+):
+    """Заказы сайта для загрузки в 1С (документ «Заказ клиента»).
+
+    1С вызывает: GET /api/1c/orders/export?since=2026-02-01T00:00:00
+    Повторный вызов безопасен: заказы идут по возрастанию id, 1С отсеивает
+    уже загруженные по номеру «САЙТ-<id>» — идемпотентность на её стороне.
+    """
+    try:
+        limit = max(1, min(int(limit), ORDERS_MAX_PER_CALL))
+    except (TypeError, ValueError):
+        limit = ORDERS_MAX_PER_CALL
+
+    query = (
+        db.query(Order)
+        .options(selectinload(Order.items), selectinload(Order.user))
+        .order_by(Order.id.asc())
+    )
+    if since:
+        try:
+            query = query.filter(Order.created_at >= datetime.fromisoformat(since))
+        except ValueError:
+            raise HTTPException(400, "since — дата в формате ISO 8601")
+    if status:
+        if status not in ORDER_STATUSES:
+            raise HTTPException(400, "Неизвестный статус заказа")
+        query = query.filter(Order.status == status)
+
+    orders = query.limit(limit).all()
+
+    # SKU подтягиваем одним запросом — без N+1
+    product_ids = {i.product_id for o in orders for i in o.items if i.product_id}
+    skus = (
+        dict(db.query(Product.id, Product.sku)
+             .filter(Product.id.in_(product_ids)).all())
+        if product_ids else {}
+    )
+
     return JSONResponse({
-        "products": [
+        "count": len(orders),
+        "orders": [
             {
-                "id": item.id,
-                "sku": item.product.sku or "",
-                "name": item.product.name,
-                "price_per_stem": item.price,
-                "stock_packs": item.stock,
-                "country": item.product.country or "",
-                "length_cm": item.product.length_cm or 0,
-                "package_size": item.product.package_size or 1,
-                "min_quantity": item.product.min_quantity or 1,
-                "category": item.product.category or "Прочее",
-                "description": item.product.description or "",
-                "photo": item.product.all_photos,
+                "id": o.id,
+                "number": f"САЙТ-{o.id}",
+                "created_at": o.created_at.isoformat(),
+                "status": o.status,
+                "comment": o.comment or "",
+                "subtotal": o.subtotal,
+                "discount_percent": o.discount_percent,
+                "total": o.total_price,
+                "buyer": {
+                    "company": o.user.company_name if o.user else "",
+                    "contact": o.user.full_name if o.user else "",
+                    "inn": (o.user.inn if o.user else "") or "",
+                    "phone": (o.user.phone if o.user else "") or "",
+                    "email": (o.user.email if o.user else "") or "",
+                    "city": (o.user.city if o.user else "") or "",
+                },
+                "items": [
+                    {
+                        "sku": skus.get(i.product_id, ""),
+                        "name": i.product_name,
+                        "quantity_packs": i.quantity,
+                        "package_size": i.package_size or 1,
+                        "stems": i.total_stems,
+                        "price_per_stem": i.price,
+                        "sum": i.subtotal,
+                    }
+                    for i in o.items
+                ],
             }
-            for item in items
-        ]
+            for o in orders
+        ],
     })

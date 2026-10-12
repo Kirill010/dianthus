@@ -19,6 +19,12 @@ os.environ["ADMIN_PASSWORD"] = ""
 os.environ["REDIS_URL"] = ""
 os.environ["SENTRY_DSN"] = ""
 
+# ── 1С-обмен ─────────────────────────────────────────────
+# Логин/пароль для эндпоинтов /api/1c/*. Без них приложение отдаёт 503
+# («интеграция не настроена»), и тесты обмена не смогли бы работать.
+os.environ["INTEGRATION_USER"] = "1c_dianthus"
+os.environ["INTEGRATION_PASSWORD"] = "test-1c-pass"
+
 import pytest
 from fastapi.testclient import TestClient
 
