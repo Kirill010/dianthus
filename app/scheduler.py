@@ -2,7 +2,6 @@
 Планировщик фоновых задач.
 Lock-файл — в /run/dianthus (systemd RuntimeDirectory).
 """
-import fcntl
 import logging
 import os
 from datetime import datetime, timezone
@@ -12,6 +11,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy.orm import Session, joinedload, selectinload
 
+from .locks import acquire_file_lock, release_file_lock
 from .models import SupplyItem, Preorder, Notification, Product
 
 logger = logging.getLogger(__name__)
@@ -22,60 +22,41 @@ _scheduler: AsyncIOScheduler | None = None
 _lock_fd: int | None = None
 
 
-def _ensure_lock_dir() -> None:
-    d = os.path.dirname(LOCK_FILE)
-    if d:
-        try:
-            os.makedirs(d, exist_ok=True)
-        except Exception as e:
-            logger.warning("Не создал %s: %s", d, e)
-
-
 def _acquire_scheduler_lock() -> bool:
+    """True — планировщик наш. False — он уже работает в другом воркере.
+
+    Сама блокировка — в app/locks.py: fcntl на Linux, msvcrt на Windows.
+    Если механизм блокировки недоступен, работаем без неё (лучше дубль
+    задачи раз в час, чем отсутствие планировщика).
+    """
     global _lock_fd
-    _ensure_lock_dir()
-    try:
-        _lock_fd = os.open(LOCK_FILE, os.O_CREAT | os.O_RDWR, 0o644)
-        fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        try:
-            os.ftruncate(_lock_fd, 0)
-            os.write(_lock_fd, f"pid={os.getpid()}\n".encode())
-        except OSError:
-            pass
-        logger.info(
-            "🔒 Lock планировщика получен: %s (pid=%d)",
-            LOCK_FILE, os.getpid(),
-        )
-        return True
-    except BlockingIOError:
+    _lock_fd = acquire_file_lock(LOCK_FILE, blocking=False)
+    if _lock_fd is None:
         logger.info("ℹ️ Планировщик уже запущен в другом воркере")
-        if _lock_fd is not None:
-            os.close(_lock_fd)
-            _lock_fd = None
         return False
-    except OSError as e:
-        logger.warning(
-            "Lock недоступен (%s) — запускаю без блокировки. "
-            "Проверьте RuntimeDirectory=dianthus в systemd.",
-            e,
-        )
-        return True
+    logger.info(
+        "🔒 Lock планировщика получен: %s (pid=%d)", LOCK_FILE, os.getpid()
+    )
+    return True
 
 
 def _release_scheduler_lock() -> None:
     global _lock_fd
-    if _lock_fd is not None:
-        try:
-            fcntl.flock(_lock_fd, fcntl.LOCK_UN)
-            os.close(_lock_fd)
-        except OSError:
-            pass
-        finally:
-            _lock_fd = None
+    release_file_lock(_lock_fd)
+    _lock_fd = None
 
 
 def do_unload(db: Session, supply) -> int:
-    
+    # Служебная поставка 1С — это фактически «живой» каталог: её разгрузка
+    # сняла бы с полок остатки всего сайта. Такие поставки обновляются
+    # только синхронизацией с 1С.
+    if getattr(supply, "is_service", False):
+        logger.warning(
+            "do_unload: поставка №%s служебная (1С) — пропускаю",
+            getattr(supply, "id", "?"),
+        )
+        return 0
+
     supply_items = (
         db.query(SupplyItem)
         .options(joinedload(SupplyItem.product))

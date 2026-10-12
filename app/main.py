@@ -2,7 +2,7 @@
 """Сборка приложения и общие маршруты."""
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from importlib import import_module
 from pathlib import Path
 
@@ -263,7 +263,7 @@ async def health(db: Session = Depends(get_db)):
     result = {
         "status": "ok",
         "env": config.ENV,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
     try:

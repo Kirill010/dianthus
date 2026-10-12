@@ -129,6 +129,9 @@ def profile_change_password(
 
     user.hashed_password = hash_password(new_password)
     db.commit()
+    # Смена пароля = новое удостоверение: выдаём новый идентификатор сессии.
+    # Если старый идентификатор был перехвачен, после смены пароля он мёртв.
+    request.session["_rotate"] = True
     logger.info("Пароль изменён: %s", user.email)
     request.session["password_ok"] = "Пароль успешно изменён"
     return RedirectResponse(url=_back(request), status_code=303)

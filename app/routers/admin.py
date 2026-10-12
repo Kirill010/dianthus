@@ -1,7 +1,7 @@
 # app/routers/admin.py
 """Админ-панель: заказы, клиенты, справочник, поставки."""
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List
 
 from starlette.concurrency import run_in_threadpool
@@ -136,7 +136,11 @@ def dashboard(
         .all()
     )
 
-    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    # datetime.utcnow() устарел (DeprecationWarning с Python 3.12) —
+    # берём текущее UTC-время без tzinfo, как хранится в БД.
+    today = datetime.now(timezone.utc).replace(
+        tzinfo=None, hour=0, minute=0, second=0, microsecond=0
+    )
     week_ago = today - timedelta(days=7)
     stats = {
         "orders_today": db.query(Order).filter(Order.created_at >= today).count(),
@@ -788,6 +792,12 @@ def supply_delete(
     if not supply:
         request.session["flash"] = "Поставка не найдена"
         return RedirectResponse(url=_back(request), status_code=303)
+    if supply.is_service:
+        request.session["flash"] = (
+            "❌ Это служебная поставка 1С (в ней текущие остатки каталога). "
+            "Удалять её нельзя — она обновляется обменом с 1С."
+        )
+        return RedirectResponse(url=_back(request), status_code=303)
 
     try:
         item_ids = [item.id for item in supply.items]
@@ -1050,6 +1060,13 @@ def supply_unload(
     supply = db.query(Supply).filter(Supply.id == supply_id).first()
     if not supply:
         raise HTTPException(404, "Поставка не найдена")
+    if supply.is_service:
+        request.session["flash"] = (
+            "❌ Служебную поставку 1С нельзя разгружать вручную: "
+            "она обновляется обменом с 1С, а разгрузка сняла бы с полок "
+            "остатки всего каталога."
+        )
+        return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit", status_code=303)
     if not supply.items:
         request.session["flash"] = "В поставке нет товаров"
         return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit", status_code=303)
@@ -1078,6 +1095,12 @@ def supply_deactivate(
     supply = db.query(Supply).filter(Supply.id == supply_id).first()
     if not supply:
         raise HTTPException(404, "Поставка не найдена")
+    if supply.is_service:
+        request.session["flash"] = (
+            "❌ Служебную поставку 1С нельзя снять с полок: "
+            "её остатки управляются обменом с 1С."
+        )
+        return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit", status_code=303)
     for item in supply.items:
         item.is_active = False
     db.commit()

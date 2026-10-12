@@ -7,14 +7,13 @@
   * ON CONFLICT DO NOTHING в _backfill_once (защита от гонки)
   * перед созданием каждого индекса — перечитываем состояние БД
 """
-import fcntl
 import logging
 import os
-from contextlib import contextmanager
 
 from sqlalchemy import inspect, text
 
 from .database import engine
+from .locks import file_lock
 
 logger = logging.getLogger(__name__)
 
@@ -111,31 +110,8 @@ def _column_ddl(table: str, column: str, sqlite_ddl: str) -> str:
     return sqlite_ddl
 
 
-@contextmanager
-def _migration_lock():
-    d = os.path.dirname(MIGRATION_LOCK)
-    if d:
-        try:
-            os.makedirs(d, exist_ok=True)
-        except Exception as e:
-            logger.warning("Не создал %s: %s", d, e)
-
-    fd = None
-    try:
-        fd = os.open(MIGRATION_LOCK, os.O_CREAT | os.O_RDWR, 0o644)
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        logger.info("🔒 Lock миграции получен: %s", MIGRATION_LOCK)
-        yield True
-    except OSError as e:
-        logger.warning("Lock миграции недоступен (%s) — без блокировки", e)
-        yield True
-    finally:
-        if fd is not None:
-            try:
-                fcntl.flock(fd, fcntl.LOCK_UN)
-                os.close(fd)
-            except OSError:
-                pass
+# Блокировка миграции — в app/locks.py (работает и на Linux, и на Windows).
+# Миграцию выполняет один воркер, остальные ждут освобождения файла.
 
 
 def ensure_notifications_table() -> None:
@@ -311,7 +287,9 @@ def _auto_migrate_inner() -> None:
 
 
 def auto_migrate() -> None:
-    with _migration_lock():
+    with file_lock(MIGRATION_LOCK) as got_lock:
+        if got_lock:
+            logger.info("🔒 Lock миграции получен: %s", MIGRATION_LOCK)
         _auto_migrate_inner()
 
 

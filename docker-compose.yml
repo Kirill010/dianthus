@@ -75,7 +75,10 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      WEB_CONCURRENCY: "2"                       # число воркеров uvicorn
+      # Число воркеров uvicorn. Ориентир: ядра − 2.
+      # На тарифе 4 ядра/4 ГБ оставьте 2; на 6 ядрах/6 ГБ можно 4:
+      #   WEB_CONCURRENCY=4 docker compose up -d
+      WEB_CONCURRENCY: "${WEB_CONCURRENCY:-2}"
       # Пользователь внутри контейнера не root, поэтому /run/dianthus недоступен.
       MIGRATION_LOCK: /tmp/dianthus/migration.lock
       SCHEDULER_LOCK: /tmp/dianthus/scheduler.lock

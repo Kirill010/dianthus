@@ -179,6 +179,9 @@ def catalog(
     page = max(1, page)
     sort = sort if any(sort == k for k, _ in SORT_OPTIONS) else "newest"
     q, country, category = q.strip(), country.strip(), category.strip()
+    # Поисковая строка не должна быть бесконечно длинной: длинный запрос
+    # тормозит ILIKE-поиск и бесполезен для пользователя.
+    q, country, category = q[:100], country[:100], category[:100]
 
     valid_levels = {k for k, _ in QUANTITY_LEVELS}
     if level not in valid_levels:

@@ -1,3 +1,4 @@
+import logging
 import uuid
 from io import BytesIO
 from pathlib import Path
@@ -5,6 +6,8 @@ from typing import List
 
 from fastapi import HTTPException, UploadFile
 from PIL import Image, ImageOps
+
+logger = logging.getLogger(__name__)
 
 UPLOAD_DIR = Path(__file__).resolve().parent.parent / "static" / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -47,14 +50,17 @@ def save_product_image(file: UploadFile) -> str:
     return f"/static/uploads/{name}.webp"
 
 def save_uploads(files: List[UploadFile] | None) -> List[str]:
-    if not files: return []
+    if not files:
+        return []
     urls = []
     for f in files:
         if f and f.filename:
             try:
                 urls.append(save_product_image(f))
             except HTTPException as e:
-                print(f"[upload] skip {f.filename}: {e.detail}")
+                # Раньше здесь был print() — в проде он уходил в никуда,
+                # и причина «фото не загрузилось» терялась.
+                logger.warning("Загрузка %s пропущена: %s", f.filename, e.detail)
     return urls
 
 def delete_upload(url: str) -> bool:
