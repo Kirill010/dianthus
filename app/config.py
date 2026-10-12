@@ -77,17 +77,18 @@ config = Config()
 
 # ─── Проверки в prod ───
 if config.ENV == "prod":
+    # Раньше при плохом ключе генерировался случайный — но у каждого воркера
+    # он получался СВОЙ, и подпись cookie сессии не проходила между воркерами
+    # (клиентов случайно «выкидывало» из аккаунта). Теперь — остановка с понятной ошибкой.
     if not config.SECRET_KEY or config.SECRET_KEY == "dev-change-me":
-        logger.critical(
-            "❌ SECRET_KEY не задан! Сгенерирован временный. "
-            "Сессии будут сбрасываться при рестарте. ЗАДАЙТЕ SECRET_KEY в .env!"
+        raise RuntimeError(
+            "SECRET_KEY не задан. Создайте .env командой scripts/prepare.sh "
+            "или задайте SECRET_KEY (openssl rand -hex 32)."
         )
-        config.SECRET_KEY = secrets.token_hex(32)
-    elif len(config.SECRET_KEY) < 32:
-        logger.critical(
-            "❌ SECRET_KEY короче 32 символов! Сгенерирован временный."
+    if len(config.SECRET_KEY) < 32:
+        raise RuntimeError(
+            "SECRET_KEY короче 32 символов. Сгенерируйте новый: openssl rand -hex 32"
         )
-        config.SECRET_KEY = secrets.token_hex(32)
 
     if not config.INTEGRATION_PASSWORD:
         logger.warning(

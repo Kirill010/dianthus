@@ -158,7 +158,7 @@ def _back(request: Request, default: str = "/catalog") -> str:
     return request.headers.get("referer") or default
 
 @router.get("/catalog", response_class=HTMLResponse)
-async def catalog(
+def catalog(
     request: Request,
     q: str = "",
     country: str = "",
@@ -260,7 +260,7 @@ async def catalog(
     )
 
 @router.get("/api/search-suggest")
-async def search_suggest(
+def search_suggest(
     request: Request,
     q: str = "",
     db: Session = Depends(get_db),
@@ -291,7 +291,7 @@ async def search_suggest(
     })
 
 @router.get("/product/{item_id}", response_class=HTMLResponse)
-async def product_detail(
+def product_detail(
     item_id: int, request: Request, db: Session = Depends(get_db)
 ):
     user = get_current_user(request, db)

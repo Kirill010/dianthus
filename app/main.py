@@ -11,7 +11,6 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .auth import router as auth_router
@@ -26,6 +25,7 @@ from . import security
 from .security import CsrfError, init_rate_limiter, close_rate_limiter
 from .templating import render
 from .middleware import SecurityHeadersMiddleware
+from .session import ServerSessionMiddleware
 
 
 logging.basicConfig(
@@ -128,12 +128,13 @@ app = FastAPI(
 
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
-    SessionMiddleware,
+    ServerSessionMiddleware,
     secret_key=config.SECRET_KEY,
     max_age=config.SESSION_MAX_AGE,
     same_site="lax",
     https_only=(config.ENV == "prod"),
-    session_cookie="dianthus_session",
+    cookie_name="dianthus_sid",
+    redis_getter=security.get_redis_client,
 )
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -230,14 +231,14 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 # ═══════════════════════════════════════════════════════════
 
 @app.get("/", response_class=HTMLResponse)
-async def root(request: Request, db: Session = Depends(get_db)):
+def root(request: Request, db: Session = Depends(get_db)):
     if get_current_user(request, db):
         return RedirectResponse(url="/catalog", status_code=303)
     return RedirectResponse(url="/login", status_code=303)
 
 
 @app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request, db: Session = Depends(get_db)):
+def login_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if user:
         return RedirectResponse(url="/catalog", status_code=303)
@@ -251,7 +252,7 @@ async def login_page(request: Request, db: Session = Depends(get_db)):
 
 
 @app.get("/registration_pending", response_class=HTMLResponse)
-async def registration_pending(request: Request, db: Session = Depends(get_db)):
+def registration_pending(request: Request, db: Session = Depends(get_db)):
     if get_current_user(request, db):
         return RedirectResponse(url="/catalog", status_code=303)
     return render(request, "registration_pending.html", db)

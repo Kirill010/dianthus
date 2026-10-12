@@ -1,6 +1,7 @@
 # Генерация PDF-счёта через xhtml2pdf (с поддержкой кириллицы).
 import logging
 from datetime import datetime
+from html import escape as _e
 from io import BytesIO
 
 from .pdf_fonts import get_font_css, get_font_family, link_callback
@@ -22,11 +23,13 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
     logger.info("PDF: используем шрифт %s", font_family)
 
     # Данные клиента
-    buyer_company = user.company_name if user else "Гость"
-    buyer_name = user.full_name if user else "—"
-    buyer_inn = (user.inn if user else "") or "—"
-    buyer_phone = (user.phone if user else "") or "—"
-    buyer_email = (user.email if user else "") or "—"
+    # Всё, что ввёл пользователь, экранируем: xhtml2pdf умеет подгружать
+    # картинки по ссылкам из HTML, а значит, без этого — SSRF/чтение файлов.
+    buyer_company = _e(user.company_name if user else "Гость")
+    buyer_name = _e(user.full_name if user else "—")
+    buyer_inn = _e((user.inn if user else "") or "—")
+    buyer_phone = _e((user.phone if user else "") or "—")
+    buyer_email = _e((user.email if user else "") or "—")
 
     # Позиции заказа
     rows = []
@@ -36,7 +39,7 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
         rows.append(f"""
             <tr>
                 <td align="center">{i}</td>
-                <td>{item.product_name}</td>
+                <td>{_e(item.product_name)}</td>
                 <td align="center">{item.quantity}</td>
                 <td align="center">{pack}</td>
                 <td align="center">{stems}</td>
@@ -63,7 +66,7 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
         comment_block = f"""
             <p style="background:#ecf1e8; padding:8px;
                 border-left:3px solid #4a6741;">
-                <b>Комментарий:</b> {order.comment}
+                <b>Комментарий:</b> {_e(order.comment)}
             </p>
         """
 
@@ -71,9 +74,9 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
     shop_phone = shop_info.get('phone') or ''
     supplier_extra = ''
     if shop_address:
-        supplier_extra += f"<p>Адрес: {shop_address}</p>"
+        supplier_extra += f"<p>Адрес: {_e(shop_address)}</p>"
     if shop_phone:
-        supplier_extra += f"<p>Тел: {shop_phone}</p>"
+        supplier_extra += f"<p>Тел: {_e(shop_phone)}</p>"
 
     html = f"""
     <!DOCTYPE html>
@@ -162,7 +165,7 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
             <tr>
                 <td width="50%">
                     <h3>Поставщик</h3>
-                    <p><b>{shop_info.get('name', 'ООО «Диантус»')}</b></p>
+                    <p><b>{_e(shop_info.get('name', 'ООО «Диантус»'))}</b></p>
                     {supplier_extra}
                 </td>
                 <td width="50%">
@@ -208,7 +211,7 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
 
         <div class="footer">
             Счёт сгенерирован автоматически · {datetime.now().strftime('%d.%m.%Y %H:%M')}<br>
-            {shop_info.get('name', 'ООО «Диантус»')}
+            {_e(shop_info.get('name', 'ООО «Диантус»'))}
         </div>
     </body>
     </html>

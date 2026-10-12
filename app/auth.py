@@ -151,6 +151,7 @@ async def login(
         return RedirectResponse(url="/login", status_code=303)
 
     request.session.clear()
+    request.session["_rotate"] = True      # новый id сессии (защита от фиксации)
     ensure_csrf_token(request)
 
     await reset_login_failures(email)
@@ -168,5 +169,6 @@ async def logout(
     _csrf: None = Depends(check_csrf),
 ):
     request.session.clear()
+    request.session["_rotate"] = True
     ensure_csrf_token(request)
     return RedirectResponse(url="/login", status_code=303)

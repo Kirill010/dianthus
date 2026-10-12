@@ -18,9 +18,18 @@ from sqlalchemy.orm import Session, joinedload
 from ..config import config
 from ..database import get_db
 from ..models import Product, Supply, SupplyItem
+from ..security import check_rate_limit
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/1c", tags=["1C Integration"])
+async def _rate_1c(request: Request) -> None:
+    """Защита Basic Auth от перебора пароля: не более 120 запросов/мин с IP."""
+    await check_rate_limit(request, "onec", max_hits=120, window=60)
+
+
+router = APIRouter(
+    prefix="/api/1c", tags=["1C Integration"],
+    dependencies=[Depends(_rate_1c)],
+)
 
 _basic = HTTPBasic(auto_error=False)
 
@@ -133,6 +142,7 @@ def _verify_basic(
 # УТИЛИТЫ
 # ═══════════════════════════════════════════════════════════
 
+MAX_PRODUCTS_PER_SYNC = 20_000
 _BAD_SCHEMES = ("javascript:", "data:", "vbscript:", "file:")
 
 
@@ -208,7 +218,7 @@ def _extract_photos_from_item(item: dict) -> list:
 # ═══════════════════════════════════════════════════════════
 
 @router.post("/products/sync")
-async def sync_products(
+def sync_products(
     payload: dict,
     request: Request,
     db: Session = Depends(get_db),
@@ -219,6 +229,13 @@ async def sync_products(
     products_data = payload.get("products", [])
     if not isinstance(products_data, list):
         raise HTTPException(400, "Поле 'products' должно быть массивом")
+    if len(products_data) > MAX_PRODUCTS_PER_SYNC:
+        raise HTTPException(
+            413, f"Слишком много товаров за раз (максимум "
+                 f"{MAX_PRODUCTS_PER_SYNC}). Разбейте выгрузку на части."
+        )
+    # Элементы не-объекты (null, числа, строки) пропускаем, а не валим весь обмен
+    products_data = [it for it in products_data if isinstance(it, dict)]
 
     logger.info(
         "1С sync: ip=%s, товаров в запросе: %d",
@@ -272,6 +289,16 @@ async def sync_products(
             elif name in existing_by_name:
                 product = existing_by_name[name]
 
+            # Проверяем числа ДО создания товара: мусор из 1С не должен попасть в БД
+            price = float(item.get("price_per_stem", 0) or 0)
+            stock = int(item.get("stock_packs", 0) or 0)
+            if not (0 <= price <= 10_000_000):
+                errors.append(f"#{idx} ({name}): недопустимая цена {price}")
+                continue
+            if not (0 <= stock <= 1_000_000):
+                errors.append(f"#{idx} ({name}): недопустимый остаток {stock}")
+                continue
+
             photos = _extract_photos_from_item(item)
             main_image = photos[0] if photos else ""
 
@@ -316,9 +343,6 @@ async def sync_products(
                     product.photos = photos
                     product.image_url = main_image
                 updated += 1
-
-            price = float(item.get("price_per_stem", 0) or 0)
-            stock = int(item.get("stock_packs", 0) or 0)
 
             si = (
                 db.query(SupplyItem)
@@ -369,7 +393,7 @@ async def sync_products(
 
 
 @router.get("/ping")
-async def ping(_auth: bool = Depends(_verify_basic)):
+def ping(_auth: bool = Depends(_verify_basic)):
     return {
         "status": "ok",
         "service": "dianthus-1c",
@@ -379,7 +403,7 @@ async def ping(_auth: bool = Depends(_verify_basic)):
 
 
 @router.get("/products/export")
-async def export_products_to_1c(
+def export_products_to_1c(
     db: Session = Depends(get_db),
     _auth: bool = Depends(_verify_basic),
 ):

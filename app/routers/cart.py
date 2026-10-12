@@ -86,7 +86,7 @@ def _back(request: Request, default: str = "/catalog") -> str:
 # ───────────────────────── ДОБАВЛЕНИЕ В КОРЗИНУ ─────────────────────────
 
 @router.post("/add_to_cart")
-async def add_to_cart(
+def add_to_cart(
     request: Request,
     supply_item_id: int = Form(...),
     quantity_stems: int = Form(0),
@@ -173,7 +173,7 @@ async def add_to_cart(
 # ───────────────────────── ДОБАВЛЕНИЕ В ПРЕДЗАКАЗ ─────────────────────────
 
 @router.post("/add_to_preorder")
-async def add_to_preorder_route(
+def add_to_preorder_route(
     request: Request,
     supply_item_id: int = Form(...),
     quantity_stems: int = Form(0),
@@ -227,7 +227,7 @@ async def add_to_preorder_route(
 # ───────────────────────── ЗАКАЗАТЬ ПОСТУПИВШИЙ ПРЕДЗАКАЗ ─────────────────────────
 
 @router.post("/preorders/{preorder_id}/to_cart")
-async def preorder_to_cart(
+def preorder_to_cart(
     preorder_id: int,
     request: Request,
     db: Session = Depends(get_db),
@@ -258,7 +258,7 @@ async def preorder_to_cart(
 # ───────────────────────── СТРАНИЦА ПРЕДЗАКАЗОВ ─────────────────────────
 
 @router.get("/preorders", response_class=HTMLResponse)
-async def preorders_page(request: Request, db: Session = Depends(get_db)):
+def preorders_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
@@ -275,7 +275,7 @@ async def preorders_page(request: Request, db: Session = Depends(get_db)):
 # ───────────────────────── ПРОСМОТР КОРЗИНЫ ─────────────────────────
 
 @router.get("/cart", response_class=HTMLResponse)
-async def cart_page(request: Request, db: Session = Depends(get_db)):
+def cart_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
@@ -411,7 +411,7 @@ async def cart_page(request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/remove_from_cart")
-async def remove_from_cart(
+def remove_from_cart(
     request: Request,
     item_index: int = Form(...),
     _csrf: None = Depends(check_csrf),
@@ -424,7 +424,7 @@ async def remove_from_cart(
 
 
 @router.post("/remove_from_preorder")
-async def remove_from_preorder(
+def remove_from_preorder(
     request: Request,
     preorder_id: int = Form(...),
     db: Session = Depends(get_db),
@@ -444,7 +444,7 @@ async def remove_from_preorder(
 
 
 @router.post("/clear_cart")
-async def clear_cart(request: Request, _csrf: None = Depends(check_csrf)):
+def clear_cart(request: Request, _csrf: None = Depends(check_csrf)):
     request.session["cart"] = []
     return RedirectResponse(url=_back(request, "/cart"), status_code=303)
 
@@ -452,7 +452,7 @@ async def clear_cart(request: Request, _csrf: None = Depends(check_csrf)):
 # ───────────────────────── ОФОРМЛЕНИЕ (АТОМАРНОЕ) ─────────────────────────
 
 @router.get("/checkout", response_class=HTMLResponse)
-async def checkout_page(request: Request, db: Session = Depends(get_db)):
+def checkout_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
@@ -476,7 +476,7 @@ async def checkout_page(request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/place_order")
-async def place_order(
+def place_order(
     request: Request,
     background_tasks: BackgroundTasks,
     comment: str = Form(""),
@@ -509,6 +509,9 @@ async def place_order(
         rows = (
             db.query(SupplyItem)
             .filter(SupplyItem.id.in_(cart_ids))
+            # Единый порядок блокировки: два одновременных заказа с
+            # пересекающимися товарами не создают взаимную блокировку (deadlock).
+            .order_by(SupplyItem.id)
             .with_for_update()          # ← блокировка строк supply_items
             .all()
         )
@@ -557,6 +560,44 @@ async def place_order(
                     f"только {item.available_stock} упак. на складе"
                 )
                 return RedirectResponse(url="/cart", status_code=303)
+        elif (item.stock or 0) < c["quantity"]:
+            # Резерв под предзаказ уже снят при переносе в корзину,
+            # поэтому физический остаток тоже нужно проверить.
+            request.session["flash"] = (
+                f"«{c.get('name', '?')}»: "
+                f"на складе осталось только {item.stock} упак."
+            )
+            return RedirectResponse(url="/cart", status_code=303)
+
+    # Цены берём из БД, а не из корзины: за время «жизни» корзины цена могла
+    # измениться (правка админом или обмен с 1С). Если изменилась — не
+    # оформляем молча по старой цене, а показываем клиенту актуальную.
+    changed = []
+    for c in cart:
+        item = items_map[c["supply_item_id"]]
+        prod = item.product
+        cur_pack = max(1, (prod.package_size if prod else 0) or 1)
+        cur_price = float(item.price or 0)
+        if (abs(cur_price - float(c.get("price") or 0)) > 0.004
+                or cur_pack != int(c.get("package_size") or 1)):
+            changed.append(c.get("name", "?"))
+            c["price"] = cur_price
+            c["package_size"] = cur_pack
+    if changed:
+        db.rollback()                    # снимаем блокировки
+        full = request.session.get("cart", [])
+        by_id = {x["supply_item_id"]: x for x in cart}
+        for row in full:
+            upd = by_id.get(row.get("supply_item_id"))
+            if upd:
+                row["price"] = upd["price"]
+                row["package_size"] = upd["package_size"]
+        request.session["cart"] = full
+        request.session["flash"] = (
+            "Цена изменилась: " + ", ".join(f"«{n}»" for n in changed[:5])
+            + ". Проверьте корзину и оформите заказ ещё раз."
+        )
+        return RedirectResponse(url="/cart", status_code=303)
 
     subtotal = _cart_subtotal(cart)
     discount_percent = float(user.discount_percent or 0)
@@ -628,7 +669,7 @@ async def place_order(
 # ───────────────────────── ИСТОРИЯ ЗАКАЗОВ ─────────────────────────
 
 @router.get("/orders", response_class=HTMLResponse)
-async def order_history(request: Request, db: Session = Depends(get_db)):
+def order_history(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
@@ -643,7 +684,7 @@ async def order_history(request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/orders/{order_id}/repeat")
-async def repeat_order(
+def repeat_order(
     order_id: int,
     request: Request,
     db: Session = Depends(get_db),
@@ -716,7 +757,7 @@ async def repeat_order(
 
 
 @router.get("/orders/{order_id}/invoice")
-async def download_invoice(
+def download_invoice(
     order_id: int,
     request: Request,
     db: Session = Depends(get_db),

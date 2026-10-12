@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import List
 
+from starlette.concurrency import run_in_threadpool
 from fastapi import (APIRouter, BackgroundTasks, Depends, File, Form,
                      HTTPException, Request, UploadFile)
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
@@ -95,7 +96,7 @@ def _detach_product(db: Session, product_id: int, supply_item_ids: list[int]) ->
 # ───────────────────────── ДАШБОРД ─────────────────────────
 
 @router.get("", response_class=HTMLResponse)
-async def dashboard(
+def dashboard(
     request: Request,
     db: Session = Depends(get_db),
     admin=Depends(require_admin),
@@ -187,7 +188,7 @@ async def dashboard(
 # ───────────────────────── МОДЕРАЦИЯ КЛИЕНТОВ ─────────────────────────
 
 @router.post("/users/{user_id}/make_admin")
-async def user_make_admin(
+def user_make_admin(
     user_id: int, request: Request,
     db: Session = Depends(get_db),
     current_admin=Depends(require_admin),
@@ -207,7 +208,7 @@ async def user_make_admin(
 
 
 @router.post("/users/{user_id}/demote")
-async def user_demote(
+def user_demote(
     user_id: int, request: Request,
     db: Session = Depends(get_db),
     current_admin=Depends(require_admin),
@@ -232,7 +233,7 @@ async def user_demote(
 
 
 @router.post("/users/{user_id}/approve")
-async def user_approve(
+def user_approve(
     user_id: int, request: Request,
     db: Session = Depends(get_db),
     current_admin=Depends(require_admin),
@@ -252,7 +253,7 @@ async def user_approve(
 
 
 @router.post("/users/{user_id}/reject")
-async def user_reject(
+def user_reject(
     user_id: int, request: Request,
     db: Session = Depends(get_db),
     current_admin=Depends(require_admin),
@@ -296,7 +297,7 @@ async def user_reject(
 
 
 @router.post("/users/{user_id}/discount")
-async def user_set_discount(
+def user_set_discount(
     user_id: int, request: Request,
     discount_percent: float = Form(0),
     db: Session = Depends(get_db),
@@ -319,7 +320,7 @@ async def user_set_discount(
 # ───────────────────────── ЗАКАЗЫ ─────────────────────────
 
 @router.post("/update_order_status")
-async def update_order_status(
+def update_order_status(
     request: Request,
     background_tasks: BackgroundTasks,
     order_id: int = Form(...),
@@ -369,7 +370,7 @@ async def update_order_status(
 
 
 @router.get("/orders/{order_id}", response_class=HTMLResponse)
-async def order_detail(
+def order_detail(
     order_id: int,
     request: Request,
     db: Session = Depends(get_db),
@@ -397,7 +398,7 @@ async def order_detail(
 # ───────────────────────── EXCEL ─────────────────────────
 
 @router.get("/orders/export")
-async def orders_export(db: Session = Depends(get_db), _a=Depends(require_admin)):
+def orders_export(db: Session = Depends(get_db), _a=Depends(require_admin)):
     orders = (
         db.query(Order)
         .options(selectinload(Order.user), selectinload(Order.items))
@@ -408,7 +409,7 @@ async def orders_export(db: Session = Depends(get_db), _a=Depends(require_admin)
 
 
 @router.get("/customers/export")
-async def customers_export(db: Session = Depends(get_db), _a=Depends(require_admin)):
+def customers_export(db: Session = Depends(get_db), _a=Depends(require_admin)):
     stmt = select(Order.user_id).where(Order.user_id.isnot(None)).distinct()
     users = db.query(User).options(selectinload(User.orders)).filter(User.id.in_(stmt)).all()
     customers = []
@@ -430,7 +431,7 @@ async def customers_export(db: Session = Depends(get_db), _a=Depends(require_adm
 
 
 @router.get("/products/import/template")
-async def products_import_template(_a=Depends(require_admin)):
+def products_import_template(_a=Depends(require_admin)):
     return _xlsx(build_products_import_template(), "dianthus_products_template.xlsx")
 
 
@@ -466,7 +467,10 @@ async def products_import(
         request.session["flash"] = "Файл пустой"
         return RedirectResponse(url=_back(request), status_code=303)
 
-    products, warnings = import_products_from_excel(bytes(content))
+    # Разбор Excel — тяжёлая работа: не блокируем сервер для остальных клиентов
+    products, warnings = await run_in_threadpool(
+        import_products_from_excel, bytes(content)
+    )
     if not products:
         msg = "Импорт не дал результатов."
         if warnings:
@@ -494,7 +498,7 @@ async def products_import(
 # ───────────────────────── СПРАВОЧНИК ТОВАРОВ ─────────────────────────
 
 @router.get("/products/new", response_class=HTMLResponse)
-async def product_new_page(
+def product_new_page(
     request: Request,
     db: Session = Depends(get_db),
     admin=Depends(require_admin),
@@ -504,7 +508,7 @@ async def product_new_page(
 
 
 @router.get("/products/{product_id}/edit", response_class=HTMLResponse)
-async def product_edit_page(
+def product_edit_page(
     product_id: int, request: Request,
     db: Session = Depends(get_db),
     admin=Depends(require_admin),
@@ -517,7 +521,7 @@ async def product_edit_page(
 
 
 @router.post("/products/new")
-async def product_new(
+def product_new(
     request: Request,
     name: str = Form(""),
     description: str = Form(""),
@@ -563,7 +567,7 @@ async def product_new(
 
 
 @router.post("/products/{product_id}/edit")
-async def product_edit(
+def product_edit(
     product_id: int, request: Request,
     name: str = Form(""),
     description: str = Form(""),
@@ -627,7 +631,7 @@ async def product_edit(
 
 
 @router.post("/products/{product_id}/delete")
-async def product_delete(
+def product_delete(
     product_id: int, request: Request,
     db: Session = Depends(get_db),
     _a=Depends(require_admin),
@@ -660,7 +664,7 @@ async def product_delete(
 # ───────────────────────── ПОСТАВКИ ─────────────────────────
 
 @router.get("/supplies/new", response_class=HTMLResponse)
-async def supply_new_page(
+def supply_new_page(
     request: Request,
     db: Session = Depends(get_db),
     admin=Depends(require_admin),
@@ -672,7 +676,7 @@ async def supply_new_page(
 
 
 @router.post("/supplies/new")
-async def supply_new(
+def supply_new(
     request: Request,
     country: str = Form(""),
     city: str = Form(""),
@@ -716,7 +720,7 @@ async def supply_new(
 
 
 @router.get("/supplies/{supply_id}/edit", response_class=HTMLResponse)
-async def supply_edit_page(
+def supply_edit_page(
     supply_id: int, request: Request,
     db: Session = Depends(get_db),
     admin=Depends(require_admin),
@@ -731,7 +735,7 @@ async def supply_edit_page(
 
 
 @router.post("/supplies/{supply_id}/edit")
-async def supply_edit(
+def supply_edit(
     supply_id: int, request: Request,
     country: str = Form(""),
     city: str = Form(""),
@@ -774,7 +778,7 @@ async def supply_edit(
 
 
 @router.post("/supplies/{supply_id}/delete")
-async def supply_delete(
+def supply_delete(
     supply_id: int, request: Request,
     db: Session = Depends(get_db),
     _a=Depends(require_admin),
@@ -839,7 +843,8 @@ async def supply_import_invoice(
         request.session["flash"] = "Файл пустой"
         return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit", status_code=303)
 
-    items, warnings = parse_invoice(bytes(content), fn)
+    # Разбор накладной (xls/xlsx) тяжёлый — выносим из event loop
+    items, warnings = await run_in_threadpool(parse_invoice, bytes(content), fn)
     if not items:
         msg = "Не нашёл позиций в накладной."
         if warnings:
@@ -916,7 +921,7 @@ async def supply_import_invoice(
 # ───────────────────────── ПОЗИЦИИ ПОСТАВКИ ─────────────────────────
 
 @router.post("/supplies/{supply_id}/items/add")
-async def supply_item_add(
+def supply_item_add(
     supply_id: int, request: Request,
     product_id: int = Form(...),
     quantity_stems: int = Form(0),
@@ -976,7 +981,7 @@ async def supply_item_add(
 
 
 @router.post("/supply_items/{item_id}/update")
-async def supply_item_update(
+def supply_item_update(
     item_id: int, request: Request,
     price: float = Form(...),
     quantity_stems: int = Form(...),
@@ -1011,7 +1016,7 @@ async def supply_item_update(
 
 
 @router.post("/supply_items/{item_id}/delete")
-async def supply_item_delete(
+def supply_item_delete(
     item_id: int, request: Request,
     db: Session = Depends(get_db),
     _a=Depends(require_admin),
@@ -1036,7 +1041,7 @@ async def supply_item_delete(
 # ───────────────────────── РАЗГРУЗКА ─────────────────────────
 
 @router.post("/supplies/{supply_id}/unload")
-async def supply_unload(
+def supply_unload(
     supply_id: int, request: Request,
     db: Session = Depends(get_db),
     _a=Depends(require_admin),
@@ -1064,7 +1069,7 @@ async def supply_unload(
 
 
 @router.post("/supplies/{supply_id}/deactivate")
-async def supply_deactivate(
+def supply_deactivate(
     supply_id: int, request: Request,
     db: Session = Depends(get_db),
     _a=Depends(require_admin),

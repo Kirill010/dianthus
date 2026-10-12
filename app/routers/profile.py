@@ -24,7 +24,7 @@ def _back(request: Request, default: str = "/profile") -> str:
 
 # ПРОФИЛЬ
 @router.get("/profile", response_class=HTMLResponse)
-async def profile_page(request: Request, db: Session = Depends(get_db)):
+def profile_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
@@ -51,7 +51,7 @@ async def profile_page(request: Request, db: Session = Depends(get_db)):
                   password_ok=request.session.pop("password_ok", None))
 
 @router.post("/profile")
-async def profile_update(
+def profile_update(
     request: Request,
     full_name: str = Form(""),
     phone: str = Form(""),
@@ -99,7 +99,7 @@ async def profile_update(
     return RedirectResponse(url=_back(request), status_code=303)
 
 @router.post("/profile/password")
-async def profile_change_password(
+def profile_change_password(
     request: Request,
     old_password: str = Form(""),
     new_password: str = Form(""),
@@ -135,7 +135,7 @@ async def profile_change_password(
 
 # УВЕДОМЛЕНИЯ
 @router.get("/notifications", response_class=HTMLResponse)
-async def notifications_page(request: Request, db: Session = Depends(get_db)):
+def notifications_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
@@ -154,7 +154,7 @@ async def notifications_page(request: Request, db: Session = Depends(get_db)):
                   user=user, notes=notes)
 
 @router.post("/notifications/{note_id}/delete")
-async def notification_delete(note_id: int, request: Request,
+def notification_delete(note_id: int, request: Request,
                               db: Session = Depends(get_db),
                               _csrf: None = Depends(check_csrf)):
     user = get_current_user(request, db)
@@ -171,7 +171,7 @@ async def notification_delete(note_id: int, request: Request,
 
 # КОНТАКТЫ
 @router.get("/contacts", response_class=HTMLResponse)
-async def contacts_page(request: Request, db: Session = Depends(get_db)):
+def contacts_page(request: Request, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/login", status_code=303)

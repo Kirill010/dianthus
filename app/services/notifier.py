@@ -6,12 +6,24 @@ import ssl
 import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from html import escape
 
 from ..config import config
 
 logger = logging.getLogger(__name__)
 
 TIMEOUT = 10
+
+
+def _e(value) -> str:
+    """Экранирует пользовательский текст для вставки в HTML письма."""
+    return escape("" if value is None else str(value))
+
+
+def _s(value) -> str:
+    """Тема письма: без переводов строк (защита от инъекции заголовков)."""
+    return " ".join(("" if value is None else str(value)).split())[:200]
+
 MAX_ATTEMPTS = 3  # fix #63: retry при временных сбоях SMTP
 
 
@@ -257,7 +269,7 @@ def notify_admin_new_order(order, user) -> None:
             <tr>
                 <td colspan="2" style="padding: 8px 0;
                     border-bottom: 1px solid #efe7d5;">
-                    <b>{item.product_name}</b><br>
+                    <b>{_e(item.product_name)}</b><br>
                     <small style="color:#8a857a;">
                         {item.quantity} упак. × {pack} шт = {stems} шт
                         · {item.price:.2f} ₽/шт
@@ -286,7 +298,7 @@ def notify_admin_new_order(order, user) -> None:
             <p style="background:#ecf1e8; padding:12px;
                 border-radius:8px; color:#35492f;
                 border-left:3px solid #4a6741;">
-                <b>Комментарий клиента:</b><br>{order.comment}
+                <b>Комментарий клиента:</b><br>{_e(order.comment)}
             </p>
         """
 
@@ -299,17 +311,17 @@ def notify_admin_new_order(order, user) -> None:
 
         <table>
           <tr><td>Компания:</td>
-              <td><b>{user.company_name}</b></td></tr>
+              <td><b>{_e(user.company_name)}</b></td></tr>
           <tr><td>Контакт:</td>
-              <td>{user.full_name}</td></tr>
+              <td>{_e(user.full_name)}</td></tr>
           <tr><td>Телефон:</td>
-              <td><a href="tel:{user.phone}">{user.phone or '—'}</a></td></tr>
+              <td><a href="tel:{_e(user.phone)}">{_e(user.phone or '—')}</a></td></tr>
           <tr><td>Email:</td>
-              <td><a href="mailto:{user.email}">{user.email}</a></td></tr>
+              <td><a href="mailto:{_e(user.email)}">{_e(user.email)}</a></td></tr>
           <tr><td>ИНН:</td>
-              <td>{user.inn or '—'}</td></tr>
+              <td>{_e(user.inn or '—')}</td></tr>
           <tr><td>Город:</td>
-              <td>{user.city or '—'}</td></tr>
+              <td>{_e(user.city or '—')}</td></tr>
         </table>
 
         <h3 style="color:#4a6741; font-size:15px;
@@ -346,7 +358,7 @@ def notify_admin_new_order(order, user) -> None:
     </body></html>
     """
 
-    send_email(f"🌸 Новый заказ №{order.id} — {user.company_name}", body)
+    send_email(f"🌸 Новый заказ №{order.id} — {_s(user.company_name)}", body)
 
 
 def notify_admin_new_client(user) -> None:
@@ -363,17 +375,17 @@ def notify_admin_new_client(user) -> None:
 
         <table>
           <tr><td>Компания:</td>
-              <td><b>{user.company_name}</b></td></tr>
+              <td><b>{_e(user.company_name)}</b></td></tr>
           <tr><td>Контакт:</td>
-              <td>{user.full_name}</td></tr>
+              <td>{_e(user.full_name)}</td></tr>
           <tr><td>Телефон:</td>
-              <td><a href="tel:{user.phone}">{user.phone or '—'}</a></td></tr>
+              <td><a href="tel:{_e(user.phone)}">{_e(user.phone or '—')}</a></td></tr>
           <tr><td>Email:</td>
-              <td><a href="mailto:{user.email}">{user.email}</a></td></tr>
+              <td><a href="mailto:{_e(user.email)}">{_e(user.email)}</a></td></tr>
           <tr><td>ИНН:</td>
-              <td>{user.inn or '—'}</td></tr>
+              <td>{_e(user.inn or '—')}</td></tr>
           <tr><td>Город:</td>
-              <td>{user.city or '—'}</td></tr>
+              <td>{_e(user.city or '—')}</td></tr>
         </table>
 
         <a href="{config.APP_URL}/admin"
@@ -386,7 +398,7 @@ def notify_admin_new_client(user) -> None:
     </body></html>
     """
 
-    send_email(f"👤 Новая заявка: {user.company_name}", body)
+    send_email(f"👤 Новая заявка: {_s(user.company_name)}", body)
 
 
 def notify_client_status_changed(order, status: str) -> None:
@@ -417,7 +429,7 @@ def notify_client_status_changed(order, status: str) -> None:
     <body>
       <div class="card">
         <h1>{emoji} Заказ №{order.id}: {status}</h1>
-        <p style="font-size:16px;">Здравствуйте, <b>{user.full_name}</b>!</p>
+        <p style="font-size:16px;">Здравствуйте, <b>{_e(user.full_name)}</b>!</p>
         <p>{text}</p>
 
         <table>
@@ -459,7 +471,7 @@ def notify_admin_status_changed(order, status: str) -> None:
           Новый статус: <b style="color:#4a6741;">{status}</b>
         </p>
         <p style="color:#8a857a;">
-          Клиент: {order.user.company_name if order.user else '—'}
+          Клиент: {_e(order.user.company_name if order.user else '—')}
         </p>
 
         <a href="{config.APP_URL}/admin/orders/{order.id}"
@@ -485,8 +497,8 @@ def notify_client_preorder_available(preorder, supply_item) -> None:
     <body>
       <div class="card">
         <h1>🌸 Ваш предзаказ поступил!</h1>
-        <p style="font-size:16px;">Здравствуйте, <b>{user.full_name}</b>!</p>
-        <p>Товар из вашего предзаказа <b>«{product.name}»</b>
+        <p style="font-size:16px;">Здравствуйте, <b>{_e(user.full_name)}</b>!</p>
+        <p>Товар из вашего предзаказа <b>«{_e(product.name)}»</b>
            уже на складе.</p>
 
         <table>
@@ -515,7 +527,7 @@ def notify_client_preorder_available(preorder, supply_item) -> None:
     try:
         send_email_to(
             to=user.email,
-            subject=f"🌸 Предзаказ поступил: {product.name}",
+            subject=f"🌸 Предзаказ поступил: {_s(product.name)}",
             body_html=body,
         )
     except Exception as e:

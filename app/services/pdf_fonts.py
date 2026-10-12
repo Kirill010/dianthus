@@ -68,29 +68,26 @@ def get_font_family() -> str:
 
 
 def link_callback(uri: str, rel: str) -> str:
-    """Разрешает относительные URL. fix #6: защита от path traversal."""
-    if uri.startswith("file://"):
-        return uri[7:]
+    """Разрешает ТОЛЬКО локальные файлы из app/static (шрифты, логотип).
 
-    relative = uri.lstrip("/")
+    Всё остальное (http://, file://, data: и т.п.) блокируется — иначе
+    xhtml2pdf мог бы обращаться к внешним адресам или читать файлы сервера.
+    """
+    static_dir = (Path(__file__).resolve().parent.parent / "static").resolve()
+
+    relative = (uri or "").lstrip("/")
     if relative.startswith("static/"):
         relative = relative[len("static/"):]
 
-    static_dir = (
-        Path(__file__).resolve().parent.parent.parent / "static"
-    ).resolve()
     full_path = (static_dir / relative).resolve()
-
     try:
         full_path.relative_to(static_dir)
     except ValueError:
-        logger.warning(
-            "link_callback: попытка выйти за пределы static/: %s", uri,
-        )
-        return uri
+        logger.warning("link_callback: выход за пределы static/: %s", uri)
+        return ""
 
-    if full_path.exists():
+    if full_path.is_file():
         return str(full_path)
 
     logger.debug("link_callback: %s не найден", uri)
-    return uri
+    return ""

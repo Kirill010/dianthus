@@ -6,6 +6,7 @@ import fcntl
 import logging
 import os
 from datetime import datetime, timezone
+from html import escape
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -177,8 +178,8 @@ def _build_preorder_email(preorder, item) -> str:
     <body>
       <div class="card">
         <h1>🌸 Ваш предзаказ поступил!</h1>
-        <p style="font-size:16px;">Здравствуйте, <b>{user.full_name}</b>!</p>
-        <p>Товар из вашего предзаказа <b>«{product.name}»</b>
+        <p style="font-size:16px;">Здравствуйте, <b>{escape(user.full_name or '')}</b>!</p>
+        <p>Товар из вашего предзаказа <b>«{escape(product.name or '')}»</b>
            уже на складе.</p>
         <a href="{config.APP_URL}/preorders" class="btn">
             Открыть мои предзаказы
