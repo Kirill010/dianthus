@@ -472,6 +472,7 @@ def checkout_page(request: Request, db: Session = Depends(get_db)):
         discount_percent=discount_percent,
         discount_amount=discount_amount,
         total=total,
+        order_token=request.session["order_token"],
     )
 
 
@@ -479,7 +480,8 @@ def checkout_page(request: Request, db: Session = Depends(get_db)):
 def place_order(
     request: Request,
     background_tasks: BackgroundTasks,
-    order_token: str = Form(""), # или comment
+    order_token: str = Form(""),
+    comment: str = Form(""),
     db: Session = Depends(get_db),
     _csrf: None = Depends(check_csrf),
 ):
@@ -502,7 +504,7 @@ def place_order(
     if not expected or not secrets.compare_digest(order_token, expected):
         request.session["flash"] = "Заказ уже оформлен (повторная отправка формы)"
         return RedirectResponse(url="/orders", status_code=303)
-    
+
     comment = (comment or "").strip()
     if len(comment) > MAX_COMMENT_LENGTH:
         request.session["flash"] = "Комментарий слишком длинный"
@@ -654,7 +656,7 @@ def place_order(
         return RedirectResponse(url="/cart", status_code=303)
 
     request.session.pop("order_token", None)
-    
+
     order_loaded = (
         db.query(Order)
         .options(selectinload(Order.items))

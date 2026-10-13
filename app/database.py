@@ -7,8 +7,26 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 from .config import config
 
 if config.DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(config.DATABASE_URL,
-                           connect_args={"check_same_thread": False})
+    def _sqlite_pragmas(dbapi_conn, _conn_record):
+        """WAL + busy_timeout для SQLite.
+
+        WAL позволяет читать во время записи и уменьшает вероятность
+        SQLITE_BUSY при списании остатков; busy_timeout ждёт освобождения
+        блокировки до 5 секунд вместо мгновенной ошибки «database is locked».
+        """
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA busy_timeout=5000")
+        cur.execute("PRAGMA synchronous=NORMAL")
+        cur.close()
+
+    engine = create_engine(
+        config.DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        pool_pre_ping=True,
+    )
+    from sqlalchemy import event as _sa_event
+    _sa_event.listen(engine, "connect", _sqlite_pragmas)
 else:
     # Пул на КАЖДЫЙ воркер: воркеров × (pool_size + max_overflow) должно быть
     # меньше max_connections в PostgreSQL (в compose — 100).
