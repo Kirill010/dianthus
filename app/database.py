@@ -30,6 +30,12 @@ Base = declarative_base()
 
 
 def get_db():
+    """Зависимость FastAPI: отдаёт сессию БД на один запрос.
+
+    Движок берётся из SessionLocal.bind, а не из engine напрямую —
+    так тесты могут подменить БД через SessionLocal.configure(bind=...),
+    не трогая dependency_overrides. В продакшене поведение не меняется.
+    """
     db = SessionLocal()
     try:
         yield db

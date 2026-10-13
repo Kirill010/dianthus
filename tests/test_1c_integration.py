@@ -61,13 +61,24 @@ def test_db():
 
 @pytest.fixture
 def client(test_db):
-    def override_get_db():
-        yield test_db
+    """Клиент с подменённой БД.
 
-    app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as c:
-        yield c
-    app.dependency_overrides.clear()
+    Исправление: раньше делался app.dependency_overrides[get_db], но
+    роутер 1С использует get_db из app.database — FastAPI сравнивает
+    зависимости по объекту функции, и подмена не срабатывала: запросы
+    шли в глобальную SQLite-БД без нужных таблиц. Теперь на время теста
+    перепривязывается сам SessionLocal (его использует get_db), а после
+    теста восстановление через try/finally — даже при исключении.
+    """
+    from app.database import SessionLocal
+
+    original_bind = SessionLocal.kw["bind"]
+    SessionLocal.configure(bind=test_db.get_bind())
+    try:
+        with TestClient(app) as c:
+            yield c
+    finally:
+        SessionLocal.configure(bind=original_bind)
 
 
 def _seed_user(db) -> User:
