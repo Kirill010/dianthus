@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Диантус · Оптовый магазин цветов</title>
+    <meta name="csrf-token" content="8LBgvnqPbDjcYNFAKe00EhdwFrqrl_Sml4dLZ71AxwA">
+    <meta name="description" content="Диантус — оптовые поставки цветов из Эквадора, Колумбии, Голландии. Розы, гвоздики, хризантемы, тюльпаны упаковками. Только для юрлиц и ИП.">
+    <meta name="robots" content="index, follow">
+
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link href="/static/vendor/bootstrap.min.css?v=7" rel="stylesheet">
+    <link href="/static/vendor/fontawesome/css/all.min.css?v=7" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=7">
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#4a6741">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Диантус">
+</head>
+<body class="has-bottom-nav">
+
+
+
+
+<header class="app-header">
+    <div class="app-header__inner">
+        <a class="app-logo" href="/catalog">
+            <img src="/static/logo-icon.png" alt="Диантус" class="app-logo__icon">
+            <span>Диантус</span>
+        </a>
+        <div class="app-header__right">
+            
+                <a href="/admin" class="app-header__icon" title="Админка"><i class="fas fa-cog"></i></a>
+            
+            <a href="/contacts" class="app-header__icon" title="Контакты"><i class="fas fa-phone"></i></a>
+            <a href="/notifications" class="app-header__icon" title="Уведомления">
+                <i class="fas fa-bell"></i>
+                
+            </a>
+            <a href="/cart" class="app-header__icon" title="Корзина">
+                <i class="fas fa-shopping-bag"></i>
+                <span class="app-header__badge">2</span>
+            </a>
+            
+            <a href="/profile" class="app-header__icon" title="Профиль"><i class="fas fa-user"></i></a>
+        </div>
+    </div>
+    
+    <div class="app-header__company">ООО Диантус</div>
+    
+</header>
+
+
+<main class="container my-3 my-md-4">
+    
+    
+<h1 class="catalog-title mb-4">Оформление</h1>
+<div class="card p-4">
+    <p class="text-muted">Менеджер свяжется с вами для подтверждения.</p>
+    <form action="/place_order" method="post">
+        <input type="hidden" name="csrf_token" value="8LBgvnqPbDjcYNFAKe00EhdwFrqrl_Sml4dLZ71AxwA">
+        <div class="mb-3">
+            <label class="form-label fw-bold">Комментарий</label>
+            <textarea name="comment" class="form-control" rows="3" maxlength="1000"
+                      placeholder="Например: нужна досрочная отгрузка"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg w-100">
+            <i class="fas fa-check me-2"></i>Подтвердить заказ
+        </button>
+    </form>
+</div>
+<div class="cart-summary mt-3">
+    
+    
+    
+    <div class="cart-summary__row">
+        <span>
+            Роза Freedom 60 см — 2 упак. × 25 шт
+            = 50 шт
+        </span>
+        <span>2125.00 ₽</span>
+    </div>
+    
+    <div class="cart-summary__row">
+        <span>Подытог:</span><span>2125.00 ₽</span>
+    </div>
+    
+    <div class="cart-summary__row cart-summary__row--total">
+        <span>Итого:</span><strong>2125.00 ₽</strong>
+    </div>
+</div>
+
+</main>
+
+
+<nav class="bottom-nav">
+    <a href="/catalog" class="bottom-nav__item ">
+        <i class="fas fa-home"></i><span>Главная</span>
+    </a>
+    <a href="/orders" class="bottom-nav__item ">
+        <i class="fas fa-list"></i><span>Заказы</span>
+    </a>
+    <a href="/preorders" class="bottom-nav__item ">
+        <i class="fas fa-truck-fast"></i><span>Предзаказы</span>
+        
+    </a>
+    <a href="/cart" class="bottom-nav__item active">
+        <i class="fas fa-shopping-cart"></i><span>Корзина</span>
+        <span class="bottom-nav__badge">2</span>
+    </a>
+    <a href="/profile" class="bottom-nav__item ">
+        <i class="fas fa-user"></i><span>Профиль</span>
+    </a>
+</nav>
+
+
+<footer class="app-footer">
+    <p class="mb-0">
+        © 2026 ООО «Диантус»
+        · <a href="/contacts">Контакты</a>
+        · Оптовые поставки цветов
+    </p>
+</footer>
+
+<script src="/static/vendor/bootstrap.bundle.min.js"></script>
+
+<script>
+/* ─── CSRF для multipart-форм ─── */
+(function() {
+    const token = document.querySelector('meta[name="csrf-token"]')?.content
+                || document.querySelector('input[name="csrf_token"]')?.value
+                || '';
+    if (!token) return;
+    const origFetch = window.fetch;
+    window.fetch = function(input, init) {
+        init = init || {};
+        const headers = new Headers(init.headers || {});
+        if (!headers.has('X-CSRF-Token')) headers.set('X-CSRF-Token', token);
+        init.headers = headers;
+        return origFetch.call(this, input, init);
+    };
+    document.querySelectorAll('form[enctype="multipart/form-data"]').forEach(f => {
+        if (!f.querySelector('input[name="csrf_token"]')) {
+            const i = document.createElement('input');
+            i.type = 'hidden'; i.name = 'csrf_token'; i.value = token;
+            f.appendChild(i);
+        }
+    });
+})();
+
+/* ─── fix #65: fallback для битых картинок ─── */
+(function() {
+    document.addEventListener('error', function(e) {
+        const img = e.target;
+        if (!img || img.tagName !== 'IMG') return;
+        if (img.dataset.fallbackApplied === '1') return;
+        img.dataset.fallbackApplied = '1';
+        img.src = '/static/logo-icon.png';
+        img.style.opacity = '0.35';
+        img.style.objectFit = 'contain';
+        img.style.padding = '22%';
+        img.style.background = '#f4f1ea';
+    }, true);
+})();
+
+/* ─── fix #66: индикатор загрузки на submit-кнопке ─── */
+(function() {
+    document.addEventListener('submit', function(e) {
+        const form = e.target;
+        if (!form || (form.method || '').toLowerCase() !== 'post') return;
+        if (form.dataset.noLoading === '1') return;
+
+        let submitter = e.submitter;
+        if (!submitter) {
+            submitter = form.querySelector(
+                'button[type="submit"]:not([disabled]), ' +
+                'input[type="submit"]:not([disabled])'
+            );
+        }
+        if (!submitter || submitter.disabled) return;
+
+        const orig = submitter.innerHTML;
+        submitter.disabled = true;
+        submitter.dataset._origHtml = orig;
+        if (submitter.tagName === 'BUTTON') {
+            submitter.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        }
+
+        setTimeout(() => {
+            if (submitter.disabled) {
+                submitter.disabled = false;
+                if (submitter.tagName === 'BUTTON' && submitter.dataset._origHtml) {
+                    submitter.innerHTML = submitter.dataset._origHtml;
+                }
+            }
+        }, 20000);
+    }, false);
+})();
+
+/* ─── Service Worker ─── */
+if ('serviceWorker' in navigator && !window._swRegistered) {
+    window._swRegistered = true;
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/static/sw.js')
+            .then((reg) => console.log('SW:', reg.scope))
+            .catch((err) => console.warn('SW:', err));
+    });
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ГАЛЕРЕЯ на ДЕТАЛЬНОЙ странице товара
+   ═══════════════════════════════════════════════════════════ */
+(function() {
+    'use strict';
+
+    const SELECTOR = '.product-detail__image';
+
+    function showPhoto(wrap, idx) {
+        const photos = wrap.querySelectorAll('.product-gallery__photo');
+        if (!photos.length) return;
+        const dots = wrap.parentElement.querySelectorAll('.product-card__dot');
+        idx = (idx + photos.length) % photos.length;
+        photos.forEach((p, n) => p.classList.toggle('active', n === idx));
+        dots.forEach((d, n) => {
+            d.classList.toggle('active', n === idx);
+            d.style.background = (n === idx) ? '#4a6741' : '#ccc';
+        });
+    }
+
+    function currentIndex(wrap) {
+        const photos = wrap.querySelectorAll('.product-gallery__photo');
+        let idx = Array.from(photos).findIndex(p => p.classList.contains('active'));
+        return idx < 0 ? 0 : idx;
+    }
+
+    document.addEventListener('click', function(e) {
+        const arrow = e.target.closest('.product-gallery__arrow');
+        if (arrow) {
+            const wrap = arrow.closest(SELECTOR);
+            if (!wrap) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const photos = wrap.querySelectorAll('.product-gallery__photo');
+            if (photos.length < 2) return;
+            const dir = arrow.classList.contains('product-gallery__arrow--next') ? 1 : -1;
+            showPhoto(wrap, currentIndex(wrap) + dir);
+            return;
+        }
+
+        const dot = e.target.closest('.product-card__dot');
+        if (!dot) return;
+        const wrap = dot.closest(SELECTOR)
+                  || dot.parentElement.closest(SELECTOR)
+                  || dot.parentElement.parentElement.querySelector(SELECTOR);
+        if (!wrap) return;
+        e.preventDefault();
+        e.stopPropagation();
+        showPhoto(wrap, parseInt(dot.dataset.index || '0', 10) || 0);
+    });
+
+    let startX = 0, startY = 0, activeWrap = null, moved = false;
+
+    document.addEventListener('touchstart', function(e) {
+        const wrap = e.target.closest(SELECTOR);
+        if (!wrap) return;
+        const photos = wrap.querySelectorAll('.product-gallery__photo');
+        if (photos.length < 2) return;
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+        activeWrap = wrap;
+        moved = false;
+    }, {passive: true});
+
+    document.addEventListener('touchmove', function(e) {
+        if (!activeWrap) return;
+        const dx = Math.abs(e.touches[0].clientX - startX);
+        const dy = Math.abs(e.touches[0].clientY - startY);
+        if (dx > 10 && dx > dy) moved = true;
+    }, {passive: true});
+
+    document.addEventListener('touchend', function(e) {
+        if (!activeWrap || !moved) { activeWrap = null; return; }
+        const dx = e.changedTouches[0].clientX - startX;
+        const wrap = activeWrap;
+        activeWrap = null;
+        moved = false;
+
+        const photos = wrap.querySelectorAll('.product-gallery__photo');
+        if (photos.length < 2) return;
+
+        e.preventDefault();
+        showPhoto(wrap, currentIndex(wrap) + (dx < 0 ? 1 : -1));
+    });
+})();
+</script>
+</body>
+</html>
