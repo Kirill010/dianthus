@@ -12,7 +12,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.database import Base, get_db
 from app.main import app
-from app.models import Order, OrderItem, Product, SupplyItem, User
+from app.models import Order, OrderItem, Product, Supply, SupplyItem, User
 from app.services.passwords import hash_password
 
 # Логин/пароль заданы в tests/conftest.py (INTEGRATION_USER / INTEGRATION_PASSWORD)
