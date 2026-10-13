@@ -47,6 +47,19 @@ SessionLocal = sessionmaker(
 Base = declarative_base()
 
 
+def current_bind():
+    """Текущий движок/соединение, к которому привязан SessionLocal.
+
+    Тесты (tests/test_1c_integration.py) подменяют БД через
+    SessionLocal.configure(bind=...). Все, кто выполняет DDL или
+    прямые SQL-запросы (lifespan, авто-миграции, health-check),
+    ОБЯЗАНЫ брать движок отсюда, иначе миграция и запросы уходят
+    в разные базы («no such table» в тестах). В продакшене
+    SessionLocal никогда не перепривязывается — возвращается engine.
+    """
+    return SessionLocal.kw["bind"]
+
+
 def get_db():
     """Зависимость FastAPI: отдаёт сессию БД на один запрос.
 

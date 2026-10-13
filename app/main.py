@@ -16,7 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .auth import router as auth_router
 from .bootstrap import ensure_default_admin
 from .config import config
-from .database import Base, engine, get_db
+from .database import Base, current_bind, get_db
 from .deps import get_current_user
 from .migrations import auto_migrate, ensure_notifications_table
 from .scheduler import start_scheduler, stop_scheduler
@@ -88,7 +88,9 @@ def _check_vendor() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
-        Base.metadata.create_all(bind=engine)
+        # bind берём через current_bind(): в тестах SessionLocal
+        # перепривязан к in-memory БД, и таблицы должны создаваться именно там
+        Base.metadata.create_all(bind=current_bind())
         auto_migrate()
         ensure_notifications_table()
         db_name = (

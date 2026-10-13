@@ -3,6 +3,8 @@
 
 ИСПРАВЛЕНИЯ:
   * файловый lock — миграцию выполняет ТОЛЬКО один воркер
+  * движок берётся через current_bind() — актуальный bind SessionLocal
+    (в тестах подменяется через SessionLocal.configure(bind=...))
   * engine.begin() автоматически откатывает транзакцию (фикс InFailedSqlTransaction)
   * ON CONFLICT DO NOTHING в _backfill_once (защита от гонки)
   * перед созданием каждого индекса — перечитываем состояние БД
@@ -12,7 +14,7 @@ import os
 
 from sqlalchemy import inspect, text
 
-from .database import engine
+from .database import current_bind
 from .locks import file_lock
 
 logger = logging.getLogger(__name__)
@@ -109,6 +111,7 @@ EXPECTED_INDEXES: dict[str, list[tuple[str, str]]] = {
 
 
 def _column_ddl(table: str, column: str, sqlite_ddl: str) -> str:
+    engine = current_bind()  # актуальный bind (см. app/database.py)
     dialect = engine.dialect.name
     if table == "products" and column == "photos":
         if dialect == "postgresql":
@@ -123,9 +126,11 @@ def _column_ddl(table: str, column: str, sqlite_ddl: str) -> str:
 
 def ensure_notifications_table() -> None:
     try:
+        engine = current_bind()  # актуальный bind (см. app/database.py)
         insp = inspect(engine)
         if "notifications" not in insp.get_table_names():
             from .models import Notification
+            engine = current_bind()  # актуальный bind (см. app/database.py)
             Notification.__table__.create(bind=engine, checkfirst=True)
             logger.info("🔧 Создана таблица notifications")
     except Exception as e:
@@ -134,6 +139,7 @@ def ensure_notifications_table() -> None:
 
 def _exec_one(sql: str, label: str) -> bool:
     try:
+        engine = current_bind()  # актуальный bind (см. app/database.py)
         with engine.begin() as conn:
             conn.execute(text(sql))
         logger.info("🔧 %s", label)
@@ -146,6 +152,7 @@ def _exec_one(sql: str, label: str) -> bool:
 
 def _backfill_once(flag: str) -> bool:
     try:
+        engine = current_bind()  # актуальный bind (см. app/database.py)
         with engine.begin() as conn:
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS _migrations (
@@ -172,6 +179,7 @@ def _backfill_order_item_pack_sizes() -> None:
     if not _backfill_once("order_item_pack_sizes_v1"):
         return
     try:
+        engine = current_bind()  # актуальный bind (см. app/database.py)
         with engine.begin() as conn:
             conn.execute(text("""
                 UPDATE order_items
@@ -191,6 +199,7 @@ def _backfill_product_photos() -> None:
     if not _backfill_once("product_photos_v1"):
         return
     try:
+        engine = current_bind()  # актуальный bind (см. app/database.py)
         dialect = engine.dialect.name
         with engine.begin() as conn:
             if dialect == "postgresql":
@@ -224,6 +233,7 @@ def _backfill_product_external_ids() -> None:
     if not _backfill_once("product_external_id_v1"):
         return
     try:
+        engine = current_bind()  # актуальный bind (см. app/database.py)
         with engine.begin() as conn:
             conn.execute(text(
                 "UPDATE products SET external_id = sku "
@@ -239,6 +249,7 @@ def _backfill_order_subtotals() -> None:
     if not _backfill_once("order_subtotals_v1"):
         return
     try:
+        engine = current_bind()  # актуальный bind (см. app/database.py)
         with engine.begin() as conn:
             conn.execute(text(
                 "UPDATE orders SET subtotal = total_price "
@@ -256,12 +267,14 @@ def _backfill_order_subtotals() -> None:
 
 def _auto_migrate_inner() -> None:
     try:
+        engine = current_bind()  # актуальный bind (см. app/database.py)
         insp = inspect(engine)
     except Exception as e:
         logger.error("Не удалось получить схему БД: %s", e)
         return
 
     tables = set(insp.get_table_names())
+    engine = current_bind()  # актуальный bind (см. app/database.py)
     dialect = engine.dialect.name
     logger.info("🔍 Диалект БД: %s", dialect)
 
@@ -288,6 +301,7 @@ def _auto_migrate_inner() -> None:
             continue
         for idx_name, columns in indexes:
             try:
+                engine = current_bind()  # актуальный bind (см. app/database.py)
                 insp_local = inspect(engine)
                 existing_idx = {
                     i["name"] for i in insp_local.get_indexes(table)
