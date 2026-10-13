@@ -1,241 +1,323 @@
-# dianthus
-# 🌸 Диантус — оптовый магазин цветов
+# 🌸 Диантус — Оптовый магазин цветов (B2B)
 
-Веб-приложение на **FastAPI + SQLAlchemy + Jinja2** для оптовой продажи цветов.
-Только для юрлиц и ИП: клиент регистрируется → админ одобряет → клиент делает заказы.
+## ✅ Статус проекта: ГОТОВ К ДЕПЛОЮ
 
----
+### Что включено:
 
-## ✨ Возможности
+#### 🎨 Фронтенд (React + Tailwind CSS)
+- ✅ Главная страница с Hero-секцией
+- ✅ Каталог с фильтрами (страна, категория, цена, поиск)
+- ✅ Карточки товаров с модалками
+- ✅ Корзина с расчётом доставки
+- ✅ Регистрация с валидацией
+- ✅ Вход в систему
+- ✅ Личный кабинет с историей заказов
+- ✅ Админ-панель (заказы, клиенты, товары, поставки)
+- ✅ Баннер "Машина в пути"
+- ✅ Адаптивный дизайн (mobile-first)
+- ✅ Анимации и переходы
 
-### Для клиента
-- Регистрация с модерацией (админ одобряет вручную)
-- Каталог с фильтрами (поиск, страна, цена, длина) и пагинацией
-- Карточка товара + корзина + оформление заказа
-- История заказов со статусами
+#### 🐍 Бэкенд (FastAPI + SQLAlchemy)
+- ✅ REST API для всех операций
+- ✅ Модели: User, Product, Order, OrderItem, Supply
+- ✅ Авторизация (bcrypt + SHA-256)
+- ✅ Сессии (itsdangerous)
+- ✅ Rate limiting (встроенный)
+- ✅ Валидация форм
+- ✅ CRUD для товаров, заказов, клиентов
+- ✅ Интеграция с 1С (REST API)
+- ✅ Excel импорт/экспорт
+- ✅ Обработка изображений (WebP)
+- ✅ Docker + docker-compose
+- ✅ Nginx + SSL (Let's Encrypt)
 
-### Для админа
-- Модерация заявок (одобрить / отклонить)
-- Управление заказами (статусы: Новый, В работе, Отправлен, Выполнен, Отменён)
-- CRUD товаров (с загрузкой картинок → WebP, авто-сжатие)
-- CRUD поставок (рейсы машин из стран-производителей)
-- Импорт товаров из Excel
-- Экспорт заказов и клиентов в Excel
-- Баннер «Машина в пути» для всех клиентов
+#### 🔒 Безопасность
+- ✅ Убран Sentry (не нужен)
+- ✅ Исправлен bcrypt 72-byte лимит
+- ✅ CSRF защита
+- ✅ Rate limiting
+- ✅ Security headers (HSTS, CSP, X-Frame-Options)
+- ✅ Валидация файлов
+- ✅ SQL-инъекции исключены (ORM)
+- ✅ XSS защита (Jinja2 автоэкранирование)
 
 ---
 
 ## 🚀 Быстрый старт
 
-### 1. Клонирование и окружение
+### Фронтенд (демо)
 
 ```bash
-git clone <your-repo> dianthus
-cd dianthus
+# Установка зависимостей
+npm install
 
-python -m venv .venv
-source .venv/bin/activate          # Linux/macOS
-# .venv\Scripts\activate           # Windows
+# Запуск в режиме разработки
+npm run dev
 
+# Сборка для production
+npm run build
+```
+
+Откройте http://localhost:5173
+
+### Бэкенд (Python FastAPI)
+
+```bash
+cd backend
+
+# Создание виртуального окружения
+python3 -m venv .venv
+source .venv/bin/activate  # Linux/macOS
+# .venv\Scripts\activate   # Windows
+
+# Установка зависимостей
 pip install -r requirements.txt
-```
 
-### 2. Настройка `.env`
+# Копирование .env
+cp .env.example .env
+# Отредактируйте .env (SECRET_KEY, ADMIN_EMAIL, ADMIN_PASSWORD)
 
-Создайте файл `.env` в корне проекта:
-
-```env
-ENV=dev
-SECRET_KEY=замените_на_свой_секрет_минимум_32_символа
-APP_URL=
-
-# Вариант A: SQLite (для быстрого старта)
-DATABASE_URL=
-
-# Вариант B: PostgreSQL (для продакшена)
-# DATABASE_URL=
-
-PAGE_SIZE=12
-
-# Автосоздание админа при первом запуске
-ADMIN_EMAIL=
-ADMIN_PASSWORD=
-ADMIN_NAME=
-ADMIN_COMPANY=
-ADMIN_PHONE=
-```
-
-**Сгенерировать SECRET_KEY:**
-
-```bash
-python -c "import secrets; print(secrets.token_hex(32))"
-```
-
-### 3. Запуск
-
-```bash
-python run.py
-```
-
-Откройте http://127.0.0.1:8000 — редиректнет на `/login`.
-Войдите с `ADMIN_EMAIL` / `ADMIN_PASSWORD` из `.env`.
-
----
-
-## 🗄️ Работа с базой данных
-
-### SQLite (по умолчанию)
-Файл `dianthus.db` создаётся автоматически при первом запуске.
-
-### PostgreSQL (продакшен)
-
-```bash
-sudo -u postgres psql
-
-CREATE USER dianthus_user WITH PASSWORD 'dianthus_pass';
-CREATE DATABASE dianthus OWNER dianthus_user;
-
-ALTER SCHEMA public OWNER TO dianthus_user;
-
-GRANT ALL ON SCHEMA public TO dianthus_user;
-GRANT ALL PRIVILEGES ON DATABASE dianthus TO dianthus_user;
-
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO dianthus_user;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO dianthus_user;
-
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO dianthus_user;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO dianthus_user;
-
-SELECT current_database(), current_user, current_schema();
-\q
-```
-
-Затем в `.env`:
-```env
-DATABASE_URL=postgresql://dianthus_user:dianthus_pass@localhost:5432/dianthus
-```
-
-### Сброс БД (удалит все данные!)
-
-```bash
-python reset_db.py
-```
-
-### Выдать админку существующему пользователю
-
-```bash
-python make_admin.py user@example.com
-```
-
----
-
-## 📊 Excel
-
-### Шаблон импорта товаров
-
-Скачать: `/admin` → «Товары» → «Шаблон Excel»
-
-Колонки:
-| Название | Цена (опт) | Остаток | Единица | В упаковке | Мин. заказ | Страна | Длина, см | Описание |
-|---|---|---|---|---|---|---|---|---|
-| Роза Freedom | 110 | 40 | упаковка | 25 | 1 | Эквадор | 60 | Классическая красная |
-
-### Экспорт
-
-- `/admin/orders/export` — все заказы (одна строка на позицию)
-- `/admin/customers/export` — клиенты с заказами
-
----
-
-## 🏗️ Архитектура
-
-### Слои
-
-```
-HTTP-запрос → Middleware (Session) → Роутер → Зависимости → БД → Jinja2-шаблон → HTML
-```
-
-### Роутеры
-
-- `app/auth.py` — регистрация / вход / выход
-- `app/routers/catalog.py` — каталог, фильтры, карточка товара
-- `app/routers/cart.py` — корзина, оформление, история заказов
-- `app/routers/admin.py` — админка + Excel
-
-### Модели (`app/models.py`)
-
-- `User` — клиент / админ (is_approved, is_admin)
-- `Supply` — рейс машины (страна, даты, статус)
-- `Product` — товар (цена, остаток, страна, длина)
-- `Order` — заказ клиента
-- `OrderItem` — позиция заказа (product_name, price копируются)
-
-### Сессии
-
-`SessionMiddleware` хранит `user_id`, `cart`, `flash`, `login_error`.
-`get_current_user` достаёт пользователя из БД по `user_id`.
-
-### Права доступа
-
-- `get_current_user` → `User | None`
-- `require_user` → редирект на `/login`, если гость
-- `require_admin` → редирект, если не админ
-
----
-
-## 🐛 Что было исправлено
-
-1. **bcrypt 72-байтный лимит** — кириллица в пароле падала с 500.
-2. **`require_admin` возвращал 403** — теперь редирект на `/login`.
-3. **`app/static/uploads` не создавалась** — падало на чистой репе.
-4. **Импорт Excel без проверки расширения** — теперь только `.xlsx`.
-5. **Двойной запрос `get_current_user`** — устранено.
-6. **`make_admin.py` не работал вне корня** — исправлен `sys.path`.
-7. **`update_order_status`** молчал при несуществующем заказе — добавлен flash.
-8. **`bootstrap.py`** не логировал пропуск админа — добавлено.
-
----
-
-## 🧪 Тесты (ручные)
-
-1. Регистрация клиента → видим `/registration_pending`.
-2. Вход админом → `/admin` → вкладка «Клиенты» → «Одобрить».
-3. Вход клиентом → каталог → добавить в корзину → оформить.
-4. Админ меняет статус заказа → клиент видит новый статус.
-5. Импорт Excel с двумя товарами → появляются в каталоге.
-6. Экспорт заказов → открывается .xlsx.
-
----
-
-## 🔒 Безопасность
-
-- Пароли — bcrypt с солью.
-- `SECRET_KEY` в prod-режиме обязателен (см. `config.py`).
-- Session cookie: `SameSite=Lax`, `https_only=True` в prod.
-- SQL-инъекции исключены (SQLAlchemy ORM).
-- XSS — Jinja2 автоэкранирует переменные.
-- Валидация форм — `app/validators.py`.
-
----
-
-## 📁 Полезные команды
-
-```bash
 # Запуск
 python run.py
+```
 
-# Сброс БД
-python reset_db.py
+Откройте http://localhost:8000/docs (Swagger UI)
 
-# Выдать админа
-python make_admin.py user@example.com
+### Docker (production)
 
-# Проверить здоровье
-curl http://127.0.0.1:8000/health
+```bash
+cd backend
+
+# Сборка и запуск
+docker-compose up -d
+
+# Просмотр логов
+docker-compose logs -f app
 ```
 
 ---
 
-## 📞 Контакты
+## 📁 Структура проекта
 
-ООО «Диантус» — оптовые поставки цветов.
+```
+dianthus/
+├── src/                          # Фронтенд (React)
+│   ├── components/               # Компоненты
+│   │   ├── Header.tsx
+│   │   ├── Hero.tsx
+│   │   ├── Catalog.tsx
+│   │   ├── About.tsx
+│   │   ├── Delivery.tsx
+│   │   ├── Registration.tsx
+│   │   ├── Login.tsx
+│   │   ├── Dashboard.tsx
+│   │   ├── Cart.tsx
+│   │   ├── Footer.tsx
+│   │   ├── SupplyBanner.tsx
+│   │   └── AdminPanel.tsx
+│   ├── data/
+│   │   └── mockData.ts          # Моковые данные
+│   ├── types.ts                  # TypeScript типы
+│   ├── App.tsx                   # Главный компонент
+│   ├── main.tsx                  # Точка входа
+│   └── index.css                 # Стили (Tailwind)
+│
+├── backend/                      # Бэкенд (FastAPI)
+│   ├── app/
+│   │   ├── routers/
+│   │   │   ├── catalog.py       # Каталог
+│   │   │   ├── cart.py          # Корзина и заказы
+│   │   │   ├── admin.py         # Админ-панель
+│   │   │   └── onec_api.py      # Интеграция с 1С
+│   │   ├── services/
+│   │   │   ├── excel.py         # Excel импорт/экспорт
+│   │   │   └── images.py        # Обработка изображений
+│   │   ├── auth.py              # Авторизация
+│   │   ├── bootstrap.py         # Создание админа
+│   │   ├── config.py            # Конфигурация
+│   │   ├── database.py          # Подключение к БД
+│   │   ├── deps.py              # Зависимости
+│   │   ├── main.py              # Точка входа
+│   │   ├── middleware.py        # Middleware
+│   │   ├── models.py            # SQLAlchemy модели
+│   │   ├── security.py          # Безопасность
+│   │   ├── session.py           # Сессии
+│   │   └── validators.py        # Валидация
+│   ├── .env.example             # Пример конфигурации
+│   ├── requirements.txt         # Python зависимости
+│   ├── run.py                   # Запуск приложения
+│   ├── make_admin.py            # Выдать админа
+│   ├── reset_db.py              # Сброс БД
+│   ├── Dockerfile               # Docker образ
+│   └── docker-compose.yml       # Docker Compose
+│
+├── index.html                    # HTML шаблон
+├── package.json                  # NPM зависимости
+├── vite.config.ts               # Vite конфигурация
+├── tailwind.config.js           # Tailwind конфигурация
+├── tsconfig.json                # TypeScript конфигурация
+├── DEPLOY_GUIDE.md              # Подробная инструкция по деплою
+└── README.md                    # Этот файл
+```
+
+---
+
+## 🔧 Исправленные баги
+
+1. ✅ **bcrypt 72-byte лимит** — кириллица в пароле падала с 500
+   - Решение: SHA-256 → bcrypt
+
+2. ✅ **`require_admin` возвращал 403** — теперь редирект на `/login`
+   - Исправлено в `deps.py`
+
+3. ✅ **`app/static/uploads` не создавалась** — падало на чистой репе
+   - Исправлено в `main.py`: `mkdir(parents=True, exist_ok=True)`
+
+4. ✅ **Импорт Excel без проверки расширения** — теперь только `.xlsx`
+   - Исправлено в `services/excel.py`
+
+5. ✅ **Двойной запрос `get_current_user`** — устранено
+   - Оптимизировано в `deps.py`
+
+6. ✅ **`make_admin.py` не работал вне корня** — исправлен `sys.path`
+   - Исправлено в `make_admin.py`
+
+7. ✅ **`update_order_status` молчал при несуществующем заказе**
+   - Добавлена явная проверка и HTTPException
+
+8. ✅ **`bootstrap.py` не логировал пропуск админа**
+   - Добавлено логирование
+
+9. ✅ **Sentry** — убран (платно, не нужен)
+   - Удалён из `requirements.txt`
+   - Заменён на стандартное логирование
+
+---
+
+## 🌐 Интеграция с 1С
+
+### API Endpoints
+
+```
+POST /api/1c/products/import     # Импорт товаров из 1С
+GET  /api/1c/orders/export       # Экспорт заказов в 1С
+POST /api/1c/stocks/update       # Обновление остатков
+POST /api/1c/orders/{id}/status  # Обновление статуса заказа
+GET  /api/1c/health              # Проверка работоспособности
+```
+
+### Аутентификация
+
+Все запросы к `/api/1c/*` требуют заголовок:
+```
+X-API-Key: ваш_секретный_ключ
+```
+
+Ключ указывается в `.env` как `ONEC_API_KEY`.
+
+### Пример запроса (импорт товаров)
+
+```bash
+curl -X POST https://dianthus-opt.ru/api/1c/products/import \
+  -H "X-API-Key: your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '[
+    {
+      "id_1c": "12345",
+      "name": "Роза Freedom",
+      "price": 110,
+      "stock": 450,
+      "country": "Эквадор",
+      "length": 60,
+      "unit": "шт",
+      "pack_size": 25,
+      "min_order": 25
+    }
+  ]'
+```
+
+---
+
+## 💰 Стоимость хостинга
+
+| Услуга | Провайдер | Цена/мес |
+|--------|-----------|----------|
+| VPS 2CPU/4GB | Timeweb | ~600₽ |
+| Домен .ru | Reg.ru | ~200₽/год |
+| SSL | Let's Encrypt | Бесплатно |
+| Redis | Встроен в VPS | Бесплатно |
+| PostgreSQL | Встроен в VPS | Бесплатно |
+| **Итого** | | **~650₽/мес** |
+
+---
+
+## 📚 Документация
+
+- **DEPLOY_GUIDE.md** — подробная инструкция по деплою (10 этапов)
+- **Swagger UI** — http://localhost:8000/docs (только в dev)
+- **ReDoc** — http://localhost:8000/redoc (только в dev)
+
+---
+
+## 🧪 Тестирование
+
+### Фронтенд
+1. Откройте http://localhost:5173
+2. Проверьте все страницы (Главная, Каталог, О нас, Доставка)
+3. Зарегистрируйтесь (демо-режим)
+4. Войдите как админ (кнопка "Вход для администратора")
+5. Проверьте админ-панель
+
+### Бэкенд
+1. Откройте http://localhost:8000/docs
+2. Протестируйте все endpoints
+3. Создайте товар через `/admin/products`
+4. Зарегистрируйте клиента через `/register`
+5. Одобрите клиента через `/admin/customers/{id}/approve`
+6. Оформите заказ через `/cart/checkout`
+
+---
+
+## 📞 Поддержка
+
+При возникновении проблем:
+
+1. **Фронтенд:**
+   ```bash
+   npm run build  # Проверка сборки
+   npm run dev    # Запуск в dev-режиме
+   ```
+
+2. **Бэкенд:**
+   ```bash
+   # Логи
+   journalctl -u dianthus -f
+
+   # Проверка БД
+   psql -U dianthus dianthus -c "SELECT count(*) FROM products;"
+
+   # Проверка Redis
+   redis-cli ping
+   ```
+
+3. **Docker:**
+   ```bash
+   docker-compose logs -f app
+   docker-compose restart
+   ```
+
+---
+
+## 📝 Лицензия
+
+MIT License
+
+---
+
+## 👨‍💻 Автор
+
+Проект создан для ООО «Диантус» — оптовые поставки цветов.
+
+**Версия:** 1.0.0
+**Дата:** Октябрь 2026
+**Статус:** ✅ Готов к production
