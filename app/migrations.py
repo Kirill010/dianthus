@@ -69,10 +69,6 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
         "is_fulfilled":   "BOOLEAN DEFAULT FALSE",
         "quantity":       "INTEGER DEFAULT 0",
     },
-    "audit_log": [
-        ("ix_audit_log_created", "created_at"),
-        ("ix_audit_log_user_action", "user_id, action"),
-    ],
 }
 
 EXPECTED_INDEXES: dict[str, list[tuple[str, str]]] = {
@@ -104,6 +100,10 @@ EXPECTED_INDEXES: dict[str, list[tuple[str, str]]] = {
     "preorders": [
         ("ix_preorders_user_fulfilled", "user_id, is_fulfilled"),
         ("ix_preorders_product", "product_id"),
+    ],
+    "audit_log": [
+        ("ix_audit_log_created", "created_at"),
+        ("ix_audit_log_user_action", "user_id, action"),
     ],
 }
 

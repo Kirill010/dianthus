@@ -29,12 +29,18 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.database import Base, engine
+from app import models  # noqa: F401 — регистрация всех таблиц в Base.metadata
 from app.main import app
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _prepare_database():
-    """Создаёт схему БД один раз на всю сессию тестов."""
+    """Глобальная SQLite-БД для lifespan-задач (планировщик, админ).
+
+    ВАЖНО: lifespan приложения (TestClient(app)) выполняет
+    Base.metadata.create_all() и авто-миграции на НАСТОЯЩЕМ engine,
+    поэтому его тоже нужно подготовить.
+    """
     Base.metadata.create_all(bind=engine)
     yield
     engine.dispose()
