@@ -1,0 +1,5 @@
+{"products": [
+ {"external_id":"R-EC-60","sku":"ROSA-FREEDOM-60","name":"Роза Freedom 60 см","description":"Классическая красная роза","country":"Эквадор","length_cm":60,"unit":"упаковка","package_size":25,"min_quantity":1,"category":"Роза Эквадор","price_per_stem":42.5,"stock_packs":120},
+ {"external_id":"CHR-ND-80","sku":"CHRIZ-NDT-80","name":"Хризантема нанайская 80 см","description":"Белая","country":"Нидерланды","length_cm":80,"unit":"упаковка","package_size":10,"min_quantity":1,"category":"Хризантема","price_per_stem":95.0,"stock_packs":40},
+ {"external_id":"TUL-NL-45","sku":"TULIP-NL-45","name":"Тюльпан 45 см","country":"Нидерланды","length_cm":45,"unit":"упаковка","package_size":50,"min_quantity":1,"category":"Тюльпан","price_per_stem":18.75,"stock_packs":200}
+]}
