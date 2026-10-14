@@ -35,7 +35,6 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
         "category":     "VARCHAR(100) DEFAULT 'Прочее'",
         "sku":          "VARCHAR(100) DEFAULT ''",
         "external_id":  "VARCHAR(64) DEFAULT ''",
-        "totp_secret":     "VARCHAR(64) DEFAULT ''",
     },
     "users": {
         "phone":            "VARCHAR(30) DEFAULT ''",
@@ -45,6 +44,7 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
         "is_admin":         "BOOLEAN DEFAULT FALSE",
         "is_approved":      "BOOLEAN DEFAULT FALSE",
         "discount_percent": "FLOAT DEFAULT 0",
+        "totp_secret":      "VARCHAR(64) DEFAULT ''",
     },
     "supplies": {
         "status":     "VARCHAR(30) DEFAULT 'Ожидается'",

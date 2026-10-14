@@ -133,6 +133,12 @@ services:
       - 'while :; do sleep 6h; nginx -s reload; done & exec nginx -g "daemon off;"'
     networks: [frontend]
     mem_limit: 128m
+    # worker_connections (2048) в nginx.conf требует более высокого
+    # лимита открытых файлов, иначе nginx алертит при каждом старте/reload
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     logging: *logging
 
   # ── Certbot: бесплатные сертификаты Let's Encrypt + автопродление ──
