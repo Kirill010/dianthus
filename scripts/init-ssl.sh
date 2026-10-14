@@ -46,13 +46,15 @@ docker compose run --rm --entrypoint certbot certbot certonly \
 
 echo "==> Включаю HTTPS-конфиг"
 cp nginx/conf.d/site.conf nginx/conf.d/site.conf.bak
-sed "s/__DOMAIN__/${DOMAIN}/g" nginx/site-https.conf > nginx/conf.d/site.conf
+# В репозитории файл называется site_https.conf (подчёркивание)
+HTTPS_SRC=nginx/site_https.conf
+[[ -f "$HTTPS_SRC" ]] || HTTPS_SRC=nginx/site-https.conf   # на случай переименования
+sed "s/__DOMAIN__/${DOMAIN}/g" "$HTTPS_SRC" > nginx/conf.d/site.conf
 
 if docker compose exec -T nginx nginx -t; then
     docker compose exec -T nginx nginx -s reload
     rm -f nginx/conf.d/site.conf.bak
     echo "✅ HTTPS включён: https://${DOMAIN}"
-    echo "   Продление сертификата идёт автоматически (контейнер certbot)."
 else
     echo "❌ Ошибка в конфиге nginx — возвращаю HTTP-вариант." >&2
     mv nginx/conf.d/site.conf.bak nginx/conf.d/site.conf

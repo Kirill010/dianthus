@@ -103,7 +103,10 @@ umask 022
 # HTTP-конфиг nginx на первый этап (до получения сертификата)
 mkdir -p nginx/conf.d backups
 if [[ ! -f nginx/conf.d/site.conf ]]; then
-    sed "s/__DOMAIN__/${DOMAIN}/g" nginx/site-http.conf > nginx/conf.d/site.conf
+    # В репозитории файл называется site_http.conf (подчёркивание)
+    HTTP_SRC=nginx/site_http.conf
+    [[ -f "$HTTP_SRC" ]] || HTTP_SRC=nginx/site-http.conf   # на случай переименования
+    sed "s/__DOMAIN__/${DOMAIN}/g" "$HTTP_SRC" > nginx/conf.d/site.conf
     echo "✅ Создан nginx/conf.d/site.conf (HTTP)."
 fi
 
