@@ -21,15 +21,17 @@ def test_login_page_renders(client):
 
 
 def test_root_redirects_to_login_for_anonymous(client):
+    """Главная для анонима — публичный лендинг (SEO-витрина)."""
     r = client.get("/", follow_redirects=False)
-    assert r.status_code == 303
-    assert r.headers["location"] == "/login"
+    assert r.status_code == 200
+    assert "Диантус" in r.text
 
 
 def test_catalog_requires_auth(client):
+    """Каталог публичный: аноним видит витрину без цен."""
     r = client.get("/catalog", follow_redirects=False)
-    assert r.status_code == 303
-    assert r.headers["location"] == "/login"
+    assert r.status_code == 200
+    assert "Каталог" in r.text
 
 
 def test_cart_requires_auth(client):

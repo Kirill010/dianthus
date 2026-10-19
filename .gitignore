@@ -223,6 +223,9 @@ __marimo__/
 .streamlit/secrets.toml
 
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
 app/static/uploads/*

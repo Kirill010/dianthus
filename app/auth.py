@@ -9,9 +9,10 @@ from sqlalchemy.orm import Session
 
 from .database import get_db
 from .security import (check_csrf, check_rate_limit, reset_rate_limit,
-                       ensure_csrf_token,
+                       ensure_csrf_token, _client_ip,
                        check_login_lock, record_login_failure,
                        reset_login_failures)
+from .services import totp
 from .services.passwords import hash_password, verify_password
 from .validators import (validate_company_name, validate_email,
                          validate_full_name, validate_password,
@@ -78,13 +79,13 @@ async def register(
             "phone": phone, "company_name": company_name,
             "inn": inn, "city": city,
         }
-        return RedirectResponse(url="/login", status_code=303)
+        return RedirectResponse(url="/register", status_code=303)
 
     try:
         pwd_hash = hash_password(password)
     except ValueError:
         request.session["register_errors"] = ["Пароль слишком длинный"]
-        return RedirectResponse(url="/login", status_code=303)
+        return RedirectResponse(url="/register", status_code=303)
 
     user = models.User(
         email=email, hashed_password=pwd_hash,
@@ -99,7 +100,7 @@ async def register(
     except IntegrityError:
         db.rollback()
         request.session["register_errors"] = ["Этот email уже зарегистрирован"]
-        return RedirectResponse(url="/login", status_code=303)
+        return RedirectResponse(url="/register", status_code=303)
 
     background_tasks.add_task(notify_admin_new_client, user)
 
@@ -153,7 +154,9 @@ async def login(
     if user.is_admin and user.totp_secret:
         code = (await request.form()).get("totp_code", "")
         if not totp.verify(user.totp_secret, str(code)):
+            # Не сообщаем, что пароль верный: просим код заново.
             request.session["login_error"] = "Неверный код двухфакторной аутентификации"
+            request.session["show_totp"] = True
             logger.warning("2FA: неверный код для %s, IP=%s", email, _client_ip(request))
             return RedirectResponse(url="/login", status_code=303)
         

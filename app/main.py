@@ -7,10 +7,10 @@ from importlib import import_module
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .auth import router as auth_router
@@ -21,7 +21,7 @@ from .deps import get_current_user
 from .migrations import auto_migrate, ensure_notifications_table
 from .scheduler import start_scheduler, stop_scheduler
 from .sentry_config import init_sentry
-from . import security
+from . import models, security
 from .security import CsrfError, init_rate_limiter, close_rate_limiter
 from .templating import render
 from .middleware import SecurityHeadersMiddleware
@@ -234,9 +234,79 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 @app.get("/", response_class=HTMLResponse)
 def root(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    if user:
+        return RedirectResponse(url="/catalog", status_code=303)
+
+    preview = (
+        db.query(models.SupplyItem)
+        .options(joinedload(models.SupplyItem.product))
+        .join(models.Product, models.SupplyItem.product_id == models.Product.id)
+        .filter(models.SupplyItem.is_active.is_(True))
+        .order_by(models.SupplyItem.created_at.desc())
+        .limit(24)
+        .all()
+    )
+    preview = [it for it in preview if it.product.all_photos][:8]
+    in_stock = (
+        db.query(models.SupplyItem)
+        .filter(models.SupplyItem.is_active.is_(True))
+        .count()
+    )
+    return render(
+        request, "landing.html", db,
+        preview_items=preview, in_stock_count=in_stock,
+    )
+
+
+@app.get("/sitemap.xml")
+def sitemap(db: Session = Depends(get_db)):
+    base = config.APP_URL.rstrip("/")
+    today = datetime.now(timezone.utc).date().isoformat()
+
+    urls = [
+        ("/", today, "weekly", "1.0"),
+        ("/catalog", today, "daily", "0.9"),
+        ("/contacts", today, "monthly", "0.6"),
+        ("/register", today, "monthly", "0.5"),
+    ]
+    rows = (
+        db.query(models.SupplyItem.id, models.SupplyItem.created_at)
+        .filter(models.SupplyItem.is_active.is_(True))
+        .all()
+    )
+    for item_id, created_at in rows:
+        lastmod = (created_at.date().isoformat()
+                   if created_at else today)
+        urls.append((f"/product/{item_id}", lastmod, "weekly", "0.8"))
+
+    body = "\n".join(
+        f"  <url>\n"
+        f"    <loc>{base}{path}</loc>\n"
+        f"    <lastmod>{lastmod}</lastmod>\n"
+        f"    <changefreq>{freq}</changefreq>\n"
+        f"    <priority>{priority}</priority>\n"
+        f"  </url>"
+        for path, lastmod, freq, priority in urls
+    )
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        f"{body}\n"
+        "</urlset>"
+    )
+    return Response(content=xml, media_type="application/xml")
+
+
+@app.get("/register", response_class=HTMLResponse)
+def register_page(request: Request, db: Session = Depends(get_db)):
     if get_current_user(request, db):
         return RedirectResponse(url="/catalog", status_code=303)
-    return RedirectResponse(url="/login", status_code=303)
+    return render(
+        request, "register.html", db,
+        register_errors=request.session.pop("register_errors", None),
+        register_data=request.session.pop("register_data", {}),
+    )
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -250,6 +320,7 @@ def login_page(request: Request, db: Session = Depends(get_db)):
         register_errors=request.session.pop("register_errors", None),
         register_data=request.session.pop("register_data", {}),
         login_error=request.session.pop("login_error", None),
+        show_totp=request.session.pop("show_totp", False),
     )
 
 

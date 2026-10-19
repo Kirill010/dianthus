@@ -175,9 +175,9 @@ def notification_delete(note_id: int, request: Request,
 # КОНТАКТЫ
 @router.get("/contacts", response_class=HTMLResponse)
 def contacts_page(request: Request, db: Session = Depends(get_db)):
+    # Страница публичная: контакты индексируются поисковиками и помогают
+    # новым оптовикам связаться с нами до регистрации.
     user = get_current_user(request, db)
-    if not user:
-        return RedirectResponse(url="/login", status_code=303)
 
     shop = {
         "name": config.SHOP_NAME,

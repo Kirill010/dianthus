@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}Регистрация оптового клиента — Диантус{% endblock %}
+{% block description %}Регистрация оптового покупателя Диантус: для юрлиц и ИП. После проверки менеджером открываются оптовые цены и онлайн-заказы.{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="text-center mb-4">
+            <h1 class="h4 mb-2">Регистрация оптового клиента</h1>
+            <p class="text-muted mb-2">Юрлица и ИП: магазины, салоны, флористы.</p>
+            <div class="alert alert-info py-2 px-3 small">
+                <i class="fas fa-info-circle me-1"></i>
+                После регистрации профиль проверяет менеджер — обычно в течение рабочего дня.
+            </div>
+        </div>
+
+        <div class="card p-4">
+            {% if register_errors %}
+            <div class="alert alert-danger py-2 px-3 small">
+                <ul class="mb-0 ps-3">
+                    {% for err in register_errors %}<li>{{ err }}</li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            <form action="/register" method="post" novalidate>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <div class="mb-3">
+                    <label class="form-label small fw-bold" for="reg-company">Компания *</label>
+                    <input type="text" name="company_name" id="reg-company" class="form-control" maxlength="200" value="{{ register_data.company_name or '' }}" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold" for="reg-name">ФИО *</label>
+                    <input type="text" name="full_name" id="reg-name" class="form-control" pattern="[А-Яа-яЁёA-Za-z\- ]{2,120}" maxlength="120" value="{{ register_data.full_name or '' }}" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold" for="reg-phone">Телефон *</label>
+                    <input type="tel" name="phone" id="reg-phone" class="form-control" maxlength="20" value="{{ register_data.phone or '' }}" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold" for="reg-email">Email *</label>
+                    <input type="email" name="email" id="reg-email" class="form-control" maxlength="120" value="{{ register_data.email or '' }}" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold" for="reg-inn">ИНН *</label>
+                    <input type="text" name="inn" id="reg-inn" class="form-control"
+                           maxlength="12" value="{{ register_data.inn or '' }}"
+                           placeholder="10 или 12 цифр" required>
+                    <div class="form-text">Для юрлиц — 10 цифр, для ИП — 12</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold" for="reg-city">Город *</label>
+                    <input type="text" name="city" id="reg-city" class="form-control"
+                           maxlength="100" value="{{ register_data.city or '' }}"
+                           placeholder="Москва" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold" for="reg-password">Пароль *</label>
+                    <input type="password" name="password" id="reg-password" class="form-control" minlength="8" maxlength="72" required>
+                    <div class="form-text">Минимум 8 символов, буква и цифра</div>
+                </div>
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="fas fa-user-plus me-2"></i>Зарегистрироваться
+                </button>
+            </form>
+            <hr class="my-4">
+            <p class="text-center text-muted small mb-0">
+                Уже зарегистрированы? <a href="/login">Войти</a>
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}

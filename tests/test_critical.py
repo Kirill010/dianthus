@@ -18,10 +18,18 @@ from app.auth import hash_password
 
 @pytest.fixture(scope="function")
 def test_db():
-    """SQLite in-memory для каждого теста."""
+    """SQLite in-memory для каждого теста.
+
+    StaticPool ОБЯЗАТЕЛЕН: TestClient выполняет приложение в другом потоке,
+    а у :memory:-SQLite каждое соединение — отдельная пустая БД. Без
+    StaticPool рендер страниц в приложении падает с «no such table».
+    """
+    from sqlalchemy.pool import StaticPool
+
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
     )
     Base.metadata.create_all(bind=engine)
     TestSession = sessionmaker(bind=engine, autocommit=False, autoflush=False)
@@ -123,3 +131,70 @@ def test_password_hashing():
     h = hash_password("Test1234")
     assert verify_password("Test1234", h)
     assert not verify_password("Wrong", h)
+
+
+# ── Регрессионные тесты: 2FA вход админа ──
+
+def _csrf_from_login_page(client) -> str:
+    """GET /login и извлечение CSRF-токена из HTML формы."""
+    import re
+    resp = client.get("/login")
+    assert resp.status_code == 200
+    m = re.search(r'name="csrf_token" value="([^"]+)"', resp.text)
+    assert m, "CSRF-токен не найден на странице входа"
+    return m.group(1)
+
+
+def _make_admin(test_db, totp_secret: str = "") -> User:
+    admin = User(
+        email="admin@test.ru",
+        hashed_password=hash_password("Admin1234"),
+        full_name="Админ",
+        company_name="Диантус",
+        is_admin=True,
+        is_approved=True,
+        totp_secret=totp_secret,
+    )
+    test_db.add(admin)
+    test_db.commit()
+    return admin
+
+
+def test_admin_2fa_wrong_code_no_crash(client, test_db):
+    """Регрессия: неверный код 2FA НЕ должен давать 500 (NameError).
+
+    Раньше в app/auth.py использовались totp/_client_ip без импорта —
+    вход админа с включённой 2FA падал с 500.
+    """
+    import pyotp
+    _make_admin(test_db, totp_secret=pyotp.random_base32())
+
+    csrf = _csrf_from_login_page(client)
+    resp = client.post("/login", data={
+        "email": "admin@test.ru", "password": "Admin1234",
+        "totp_code": "000000", "csrf_token": csrf,
+    }, follow_redirects=False)
+
+    assert resp.status_code == 303          # а не 500
+    assert resp.headers["location"] == "/login"
+
+    # После ошибки 2FA поле кода должно ПОКАЗАТЬСЯ (раньше было скрыто навсегда)
+    page = client.get("/login")
+    assert 'id="totp-row"' in page.text
+    assert 'id="totp-row" hidden' not in page.text
+
+
+def test_admin_2fa_correct_code_logs_in(client, test_db):
+    """Админ с верным кодом 2FA успешно входит."""
+    import pyotp
+    secret = pyotp.random_base32()
+    _make_admin(test_db, totp_secret=secret)
+
+    csrf = _csrf_from_login_page(client)
+    resp = client.post("/login", data={
+        "email": "admin@test.ru", "password": "Admin1234",
+        "totp_code": pyotp.TOTP(secret).now(), "csrf_token": csrf,
+    }, follow_redirects=False)
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/catalog"

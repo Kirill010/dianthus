@@ -45,9 +45,19 @@ PRODUCTS_PAYLOAD = {
 
 @pytest.fixture(scope="function")
 def test_db():
-    """SQLite in-memory для каждого теста."""
+    """SQLite in-memory для каждого теста.
+
+    StaticPool ОБЯЗАТЕЛЕН: без него пул выдаёт каждому потоку своё
+    соединение, а у :memory:-SQLite каждое соединение — отдельная пустая
+    БД. TestClient выполняет приложение в другом потоке, и без StaticPool
+    запросы падали бы с «no such table: supplies».
+    """
+    from sqlalchemy.pool import StaticPool
+
     engine = create_engine(
-        "sqlite:///:memory:", connect_args={"check_same_thread": False}
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
     )
     Base.metadata.create_all(bind=engine)
     TestSession = sessionmaker(bind=engine, autocommit=False, autoflush=False)

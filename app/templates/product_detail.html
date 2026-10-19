@@ -1,4 +1,8 @@
 {% extends "base.html" %}
+
+{% block title %}{{ product.name }} — оптом · Диантус{% endblock %}
+{% block description %}{{ product.name }}{% if product.country %} из {{ product.country }}{% endif %} — оптовые поставки упаковками от {{ pack }} шт. Цены — после регистрации. Диантус, оптовый магазин цветов.{% endblock %}
+
 {% block content %}
 <a href="/catalog" class="btn btn-outline-secondary btn-sm mb-3">
     <i class="fas fa-arrow-left me-1"></i> Вернуться в каталог
@@ -77,9 +81,29 @@
                     {{ item.available_stock }} упак. ({{ stems }} шт)
                 </span>
             </div>
+            {% if not public %}
+            <div class="spec-row d-flex justify-content-between py-2 border-bottom">
+                <span class="spec-label text-muted">Цена:</span>
+                <span class="spec-value fw-bold fs-5">{{ item.price|price }} ₽ / шт</span>
+            </div>
+            {% endif %}
         </div>
 
-        {% if not is_out %}
+        {% if public %}
+            <div class="product-card-v2__price-locked mb-3">
+                <i class="fas fa-lock me-1"></i>Оптовые цены — после регистрации
+            </div>
+            <a href="/register" class="btn btn-primary btn-lg w-100 mb-2">
+                <i class="fas fa-user-plus me-2"></i>Стать оптовиком
+            </a>
+            <a href="/login" class="btn btn-outline-primary w-100">
+                Уже есть аккаунт? Войти
+            </a>
+            <p class="qty-hint text-muted small mt-2">
+                Минимум к заказу: <strong>{{ min_stems }} шт</strong>
+                ({{ min_packs }} упак.)
+            </p>
+        {% elif not is_out %}
             <form action="/add_to_cart" method="post" class="product-detail__form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="supply_item_id" value="{{ item.id }}">

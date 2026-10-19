@@ -1,4 +1,4 @@
-# Каталог: только для авторизованных.
+# Каталог: публичная витрина (без цен) + полный режим для авторизованных.
 from typing import Optional
 from urllib.parse import urlencode
 
@@ -14,6 +14,7 @@ from ..models import (
     PRODUCT_CATEGORIES, QUANTITY_BIG_MIN, QUANTITY_LEVELS,
     QUANTITY_MEDIUM_MIN, QUANTITY_SMALL_MIN, Product, Supply, SupplyItem,
 )
+from ..security import check_rate_limit
 from ..templating import render
 
 router = APIRouter()
@@ -173,8 +174,9 @@ def catalog(
     db: Session = Depends(get_db),
 ):
     user = get_current_user(request, db)
-    if not user:
-        return RedirectResponse(url="/login", status_code=303)
+    # Публичный режим: аноним видит каталог без цен и без кнопок заказа —
+    # это SEO-витрина и приглашение к регистрации.
+    public = user is None
 
     page = max(1, page)
     sort = sort if any(sort == k for k, _ in SORT_OPTIONS) else "newest"
@@ -203,7 +205,7 @@ def catalog(
     items = query.offset((page - 1) * page_size).limit(page_size).all()
 
     preorder_items = []
-    if page == 1 and not q and not category and level == "available":
+    if user and page == 1 and not q and not category and level == "available":
         preorder_items = (
             _preorder_query(db)
             .order_by(Supply.arrival_date.asc(), Product.name.asc())
@@ -241,6 +243,7 @@ def catalog(
     return render(
         request, "catalog.html", db,
         user=user,
+        public=public,
         items=items,
         preorder_items=preorder_items,
         countries=countries,
@@ -263,14 +266,14 @@ def catalog(
     )
 
 @router.get("/api/search-suggest")
-def search_suggest(
+async def search_suggest(
     request: Request,
     q: str = "",
     db: Session = Depends(get_db),
 ):
-    user = get_current_user(request, db)
-    if not user:
-        return JSONResponse({"items": []})
+    # Подсказки доступны и анонимам (публичный каталог), но с лимитом —
+    # ILIKE-поиск по всем товарам не должен стать вектором абьюза.
+    await check_rate_limit(request, "search-suggest", max_hits=60, window=60)
 
     q = (q or "").strip()
     if len(q) < 2:
@@ -298,8 +301,8 @@ def product_detail(
     item_id: int, request: Request, db: Session = Depends(get_db)
 ):
     user = get_current_user(request, db)
-    if not user:
-        return RedirectResponse(url="/login", status_code=303)
+    # Публичный режим: аноним видит карточку товара без цены и без заказа.
+    public = user is None
 
     item = (
         db.query(SupplyItem)
@@ -313,6 +316,6 @@ def product_detail(
 
     return render(
         request, "product_detail.html", db,
-        user=user, item=item, product=item.product,
+        user=user, public=public, item=item, product=item.product,
         quantity_levels=QUANTITY_LEVELS,
     )

@@ -1,10 +1,21 @@
 {% extends "base.html" %}
+
+{% block title %}Каталог цветов оптом — Диантус{% endblock %}
+{% block description %}Каталог оптовых цветов: розы, гвоздики, хризантемы из Эквадора, Колумбии и Голландии. {{ total_items }} позиций в наличии. Оптовые цены — после регистрации.{% endblock %}
+
 {% block content %}
 
 <div class="catalog-top-bar d-flex justify-content-between align-items-center mb-4">
     <h1 class="h3 mb-0">Каталог</h1>
     <span class="badge bg-secondary">{{ total_items }} товаров</span>
 </div>
+
+{% if public %}
+<div class="alert alert-info d-flex align-items-center justify-content-between flex-wrap gap-2 py-2 px-3 mb-4">
+    <span class="small"><i class="fas fa-lock me-1"></i>Вы смотрите открытую витрину. Оптовые цены и заказ — после регистрации.</span>
+    <a href="/register" class="btn btn-primary btn-sm">Стать оптовиком</a>
+</div>
+{% endif %}
 
 {# ═══════ ФОРМА ПОИСКА ═══════ #}
 <form class="catalog-search mb-4" method="get" action="/catalog">
@@ -115,7 +126,7 @@
                         {% endif %}
                     </a>
 
-                    {% if not is_out %}
+                    {% if not is_out and not public %}
                         <form action="/add_to_cart" method="post"
                               class="product-card-v2__plus-form">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -155,8 +166,16 @@
                         </div>
                     </div>
 
+                    {% if public %}
+                        <div class="product-card-v2__price-locked">
+                            <i class="fas fa-lock me-1"></i>Цена после регистрации
+                        </div>
+                        <a href="/register" class="product-card-v2__out-btn product-card-v2__out-btn--cta text-decoration-none">
+                            Стать оптовиком
+                        </a>
+                    {% else %}
                     <div class="product-card-v2__price">
-                        {{ "%.2f"|format(item.price) }} ₽
+                        {{ item.price|price }} ₽
                     </div>
 
                     {# ─── ФОРМА ─── #}
@@ -197,6 +216,7 @@
                         <button class="product-card-v2__out-btn" disabled>
                             Нет в наличии
                         </button>
+                    {% endif %}
                     {% endif %}
                 </div>
             </div>

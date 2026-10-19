@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+
+{% block title %}Диантус — оптовые поставки цветов напрямую из Эквадора, Колумбии и Голландии{% endblock %}
+{% block description %}Оптовый магазин цветов Диантус: розы, гвоздики, хризантемы, тюльпаны упаковками по ценам импортёра. Прямые поставки, холодовая цепь. Работаем только с юрлицами и ИП.{% endblock %}
+
+{% block content %}
+{# ═══════════ HERO ═══════════ #}
+<section class="landing-hero">
+    <div class="landing-hero__inner">
+        <span class="landing-hero__badge">
+            <i class="fas fa-briefcase me-1"></i>Оптовая торговля · только юрлица и ИП
+        </span>
+        <h1 class="landing-hero__title">Свежие цветы оптом — напрямую от производителя</h1>
+        <p class="landing-hero__lead">
+            Розы, гвоздики, хризантемы и тюльпаны из Эквадора, Колумбии и Голландии.
+            Цены импортёра, стабильное качество и поставки каждую неделю — для цветочных
+            магазинов, салонов и флористов.
+        </p>
+        <div class="landing-hero__actions">
+            <a href="/register" class="btn btn-primary btn-lg landing-hero__cta">
+                <i class="fas fa-user-plus me-2"></i>Стать оптовиком
+            </a>
+            <a href="/catalog" class="btn btn-outline-primary btn-lg landing-hero__cta2">
+                Смотреть ассортимент
+            </a>
+        </div>
+        <ul class="landing-stats">
+            <li class="landing-stats__item">
+                <span class="landing-stats__value">3</span>
+                <span class="landing-stats__label">страны-поставщика</span>
+            </li>
+            <li class="landing-stats__item">
+                <span class="landing-stats__value">{{ in_stock_count }}</span>
+                <span class="landing-stats__label">позиций в наличии</span>
+            </li>
+            <li class="landing-stats__item">
+                <span class="landing-stats__value">24/7</span>
+                <span class="landing-stats__label">приём заказов онлайн</span>
+            </li>
+        </ul>
+    </div>
+</section>
+
+{# ═══════════ ПРЕИМУЩЕСТВА ═══════════ #}
+<section class="landing-section container">
+    <h2 class="landing-section__title">Почему закупаются у нас</h2>
+    <div class="landing-features">
+        <div class="feature-card">
+            <span class="feature-card__icon"><i class="fas fa-plane-departure"></i></span>
+            <h3 class="feature-card__title">Прямой импорт</h3>
+            <p class="feature-card__text">
+                Закупаем на плантациях Эквадора, Колумбии и Голландии без посредников —
+                поэтому цены ниже, а свежесть выше.
+            </p>
+        </div>
+        <div class="feature-card">
+            <span class="feature-card__icon"><i class="fas fa-snowflake"></i></span>
+            <h3 class="feature-card__title">Холодовая цепь</h3>
+            <p class="feature-card__text">
+                От срезки на плантации до вашей полки цветы находятся в холоде.
+                Стабильное качество каждой упаковки.
+            </p>
+        </div>
+        <div class="feature-card">
+            <span class="feature-card__icon"><i class="fas fa-tags"></i></span>
+            <h3 class="feature-card__title">Цены импортёра</h3>
+            <p class="feature-card__text">
+                Оптовые цены без наценок. Персональные скидки постоянным клиентам
+                и прозрачные условия для всех.
+            </p>
+        </div>
+        <div class="feature-card">
+            <span class="feature-card__icon"><i class="fas fa-headset"></i></span>
+            <h3 class="feature-card__title">Персональный менеджер</h3>
+            <p class="feature-card__text">
+                Поможет с заказом, подберёт сорта под ваш ассортимент и согласует
+                доставку. На связи в рабочие часы.
+            </p>
+        </div>
+    </div>
+</section>
+
+{# ═══════════ КАК НАЧАТЬ ═══════════ #}
+<section class="landing-section container">
+    <h2 class="landing-section__title">Как начать закупаться</h2>
+    <ol class="landing-steps">
+        <li class="step-card">
+            <span class="step-card__num">1</span>
+            <h3 class="step-card__title">Оставьте заявку</h3>
+            <p class="step-card__text">Регистрация занимает две минуты: компания, ИНН, контакты.</p>
+        </li>
+        <li class="step-card">
+            <span class="step-card__num">2</span>
+            <h3 class="step-card__title">Менеджер подтвердит доступ</h3>
+            <p class="step-card__text">Проверим данные и откроем оптовые цены — обычно в течение рабочего дня.</p>
+        </li>
+        <li class="step-card">
+            <span class="step-card__num">3</span>
+            <h3 class="step-card__title">Заказывайте онлайн</h3>
+            <p class="step-card__text">Живой каталог с остатками в реальном времени, корзина и история заказов.</p>
+        </li>
+    </ol>
+</section>
+
+{# ═══════════ АССОРТИМЕНТ ═══════════ #}
+{% if preview_items %}
+<section class="landing-section container">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h2 class="landing-section__title mb-0">Ассортимент</h2>
+        <a href="/catalog" class="btn btn-outline-primary btn-sm">Весь каталог
+            <i class="fas fa-arrow-right ms-1"></i>
+        </a>
+    </div>
+    <div class="landing-grid">
+        {% for item in preview_items %}
+            {% set product = item.product %}
+            <a href="/product/{{ item.id }}" class="landing-grid__card">
+                <img src="{{ product.all_photos[0] }}" alt="{{ product.name }} — оптом" class="landing-grid__photo" loading="lazy">
+                <span class="landing-grid__name">{{ product.name }}</span>
+            </a>
+        {% endfor %}
+    </div>
+    <p class="landing-note text-center mt-3 mb-0">
+        <i class="fas fa-lock me-1"></i>Оптовые цены доступны после регистрации
+    </p>
+</section>
+{% endif %}
+
+{# ═══════════ КОНТАКТЫ ═══════════ #}
+<section class="landing-section container">
+    <h2 class="landing-section__title">Контакты</h2>
+    <div class="landing-contacts">
+        {% if config.SHOP_PHONE %}
+        <div class="landing-contacts__item">
+            <i class="fas fa-phone"></i>
+            <div>
+                <div class="landing-contacts__label">Телефон</div>
+                <a class="landing-contacts__value"
+                   href="tel:{{ config.SHOP_PHONE|replace(' ', '')|replace('(', '')|replace(')', '')|replace('-', '') }}">{{ config.SHOP_PHONE }}</a>
+            </div>
+        </div>
+        {% endif %}
+        {% if config.SHOP_ADDRESS %}
+        <div class="landing-contacts__item">
+            <i class="fas fa-map-marker-alt"></i>
+            <div>
+                <div class="landing-contacts__label">Адрес</div>
+                <span class="landing-contacts__value">{{ config.SHOP_ADDRESS }}</span>
+            </div>
+        </div>
+        {% endif %}
+        {% if config.SHOP_WORKING_HOURS %}
+        <div class="landing-contacts__item">
+            <i class="fas fa-clock"></i>
+            <div>
+                <div class="landing-contacts__label">Часы работы</div>
+                <span class="landing-contacts__value">{{ config.SHOP_WORKING_HOURS }}</span>
+            </div>
+        </div>
+        {% endif %}
+        <div class="landing-contacts__item">
+            <i class="fas fa-truck-fast"></i>
+            <div>
+                <div class="landing-contacts__label">Доставка</div>
+                <span class="landing-contacts__value">По городу и регионам — согласуем с менеджером</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+{# ═══════════ ФИНАЛЬНЫЙ CTA ═══════════ #}
+<section class="landing-cta">
+    <div class="landing-cta__inner">
+        <h2 class="landing-cta__title">Готовы закупаться на оптовых условиях?</h2>
+        <p class="landing-cta__text">Оставьте заявку — менеджер свяжется с вами и откроет доступ к ценам.</p>
+        <a href="/register" class="btn btn-light btn-lg">
+            <i class="fas fa-user-plus me-2"></i>Стать оптовиком
+        </a>
+    </div>
+</section>
+
+{# JSON-LD: организация для SEO #}
+<script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": {{ config.SHOP_NAME|tojson }},
+    "url": {{ config.APP_URL|tojson }},
+    "logo": {{ (config.APP_URL + "/static/logo-full.png")|tojson }},
+    "description": "Оптовые поставки свежих цветов из Эквадора, Колумбии и Голландии",
+    {% if config.SHOP_PHONE %}"telephone": {{ config.SHOP_PHONE|tojson }},{% endif %}
+    {% if config.SHOP_ADDRESS %}"address": {{ config.SHOP_ADDRESS|tojson }},{% endif %}
+    "contactPoint": [{
+        "@type": "ContactPoint",
+        "contactType": "sales",
+        "availableLanguage": ["Russian"]
+    }]
+}
+</script>
+{% endblock %}

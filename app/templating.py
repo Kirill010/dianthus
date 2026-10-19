@@ -101,6 +101,18 @@ templates.env.cache_size = -1
 templates.env.auto_reload = (config.ENV != "prod")
 
 
+def _fmt_price(value) -> str:
+    """95.00 → «95», 95.50 → «95.50». Пустое/нечисло — как есть."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return str(value or "")
+    return f"{int(v)}" if v == int(v) else f"{v:.2f}"
+
+
+templates.env.filters["price"] = _fmt_price
+
+
 def render(request: Request, template: str, db: Session, **context):
     user = context.pop("user", None)
     if user is None:
@@ -116,28 +128,29 @@ def render(request: Request, template: str, db: Session, **context):
     )
     csrf_token = ensure_csrf_token(request)
 
-    active_supply = None
-    unread_count = 0
-    if user:
-        active_supply = (
-            db.query(models.Supply)
-            .options(selectinload(models.Supply.items))
-            .filter(
-                models.Supply.status.in_(["Ожидается", "В пути"]),
-                models.Supply.is_service.is_(False),
-            )
-            .order_by(nulls_last(models.Supply.arrival_date.asc()))
-            .first()
+    # Баннер активной поставки показываем всем — и анонимам на публичных
+    # страницах (лендинг/каталог): это рабочий маркетинговый триггер.
+    active_supply = (
+        db.query(models.Supply)
+        .options(selectinload(models.Supply.items))
+        .filter(
+            models.Supply.status.in_(["Ожидается", "В пути"]),
+            models.Supply.is_service.is_(False),
         )
-        if request.url.path != "/notifications":
-            unread_count = (
-                db.query(models.Notification)
-                .filter(
-                    models.Notification.user_id == user.id,
-                    models.Notification.is_read.is_(False),
-                )
-                .count()
+        .order_by(nulls_last(models.Supply.arrival_date.asc()))
+        .first()
+    )
+
+    unread_count = 0
+    if user and request.url.path != "/notifications":
+        unread_count = (
+            db.query(models.Notification)
+            .filter(
+                models.Notification.user_id == user.id,
+                models.Notification.is_read.is_(False),
             )
+            .count()
+        )
 
     context.update({
         "user": user,

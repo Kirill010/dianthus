@@ -3,15 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Диантус · Оптовый магазин цветов</title>
+    <title>{% block title %}Диантус · Оптовый магазин цветов{% endblock %}</title>
     {% if csrf_token %}<meta name="csrf-token" content="{{ csrf_token }}">{% endif %}
-    <meta name="description" content="Диантус — оптовые поставки цветов из Эквадора, Колумбии, Голландии. Розы, гвоздики, хризантемы, тюльпаны упаковками. Только для юрлиц и ИП.">
+    <meta name="description" content="{% block description %}Диантус — оптовые поставки цветов из Эквадора, Колумбии, Голландии. Розы, гвоздики, хризантемы, тюльпаны упаковками. Только для юрлиц и ИП.{% endblock %}">
     <meta name="robots" content="index, follow">
+    <link rel="canonical" href="{% block canonical %}{{ config.APP_URL }}{{ request.url.path }}{% endblock %}">
+
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Диантус">
+    <meta property="og:title" content="{% block og_title %}Диантус · Оптовый магазин цветов{% endblock %}">
+    <meta property="og:description" content="{% block og_description %}Оптовые поставки свежих цветов напрямую из Эквадора, Колумбии и Голландии. Только для юрлиц и ИП.{% endblock %}">
+    <meta property="og:url" content="{{ config.APP_URL }}{{ request.url.path }}">
+    <meta property="og:image" content="{{ config.APP_URL }}/static/logo-full.png">
 
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <link href="/static/vendor/bootstrap.min.css?v=7" rel="stylesheet">
     <link href="/static/vendor/fontawesome/css/all.min.css?v=7" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=7">
+    <link rel="stylesheet" href="/static/style.css?v=8">
     <link rel="manifest" href="/static/manifest.json">
     <meta name="theme-color" content="#4a6741">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -19,7 +27,7 @@
 </head>
 <body class="{% if user and not hide_bottom_nav %}has-bottom-nav{% endif %}">
 
-{% if active_supply and user and not active_supply.is_service %}
+{% if active_supply and (user or not active_supply.is_service) %}
 <div class="supply-banner">
     <div class="container d-flex align-items-center justify-content-center gap-2 flex-wrap">
         <span class="supply-banner__icon"><i class="fas fa-truck-fast"></i></span>
@@ -67,6 +75,21 @@
     {% if user.company_name %}
     <div class="app-header__company">{{ user.company_name }}</div>
     {% endif %}
+</header>
+{% else %}
+<header class="app-header app-header--public">
+    <div class="app-header__inner">
+        <a class="app-logo" href="/">
+            <img src="/static/logo-icon.png" alt="Диантус — оптовый магазин цветов" class="app-logo__icon">
+            <span>Диантус</span>
+        </a>
+        <nav class="public-nav" aria-label="Основная навигация">
+            <a href="/catalog" class="public-nav__link">Каталог</a>
+            <a href="/contacts" class="public-nav__link">Контакты</a>
+            <a href="/login" class="public-nav__link">Войти</a>
+            <a href="/register" class="btn btn-primary btn-sm public-nav__cta">Стать оптовиком</a>
+        </nav>
+    </div>
 </header>
 {% endif %}
 

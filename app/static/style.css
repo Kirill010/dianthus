@@ -1593,3 +1593,391 @@ a.contacts-item__value:hover { color: var(--primary); }
     .product-gallery__arrow--prev { left: 8px; }
     .product-gallery__arrow--next { right: 8px; }
 }
+/* =========================================================
+   30. ЛЕНДИНГ (публичная главная) и публичная шапка
+   ========================================================= */
+
+.app-header--public .app-header__inner {
+    gap: 12px;
+}
+
+.public-nav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+}
+
+.public-nav__link {
+    padding: 8px 12px;
+    border-radius: var(--radius-pill);
+    color: var(--primary-dark);
+    font-weight: 500;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.public-nav__link:hover {
+    background: var(--primary-mist);
+    color: var(--primary-dark);
+}
+
+.public-nav__cta {
+    margin-left: 6px;
+    border-radius: var(--radius-pill);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+@media (max-width: 576px) {
+    .app-header--public .app-logo span { display: none; }
+    .public-nav__link { padding: 8px 8px; }
+    .public-nav__cta { margin-left: 2px; padding: 6px 10px; }
+}
+
+/* ─── HERO ─── */
+.landing-hero {
+    background:
+        radial-gradient(circle at 85% 15%, rgba(200, 138, 146, .18) 0, transparent 40%),
+        linear-gradient(160deg, var(--primary-dark) 0%, var(--primary) 55%, #5d7a50 100%);
+    color: #fdfcf8;
+    padding: 56px 20px 48px;
+}
+
+.landing-hero__inner {
+    max-width: 860px;
+    margin: 0 auto;
+    text-align: center;
+}
+
+.landing-hero__badge {
+    display: inline-block;
+    padding: 6px 14px;
+    border-radius: var(--radius-pill);
+    background: rgba(255, 255, 255, .14);
+    border: 1px solid rgba(255, 255, 255, .25);
+    font-size: .85rem;
+    margin-bottom: 20px;
+}
+
+.landing-hero__title {
+    color: #fdfcf8;
+    font-size: clamp(1.8rem, 4.5vw, 3rem);
+    line-height: 1.15;
+    margin-bottom: 18px;
+}
+
+.landing-hero__lead {
+    font-size: clamp(1rem, 2vw, 1.2rem);
+    line-height: 1.6;
+    opacity: .92;
+    max-width: 640px;
+    margin: 0 auto 28px;
+}
+
+.landing-hero__actions {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 40px;
+}
+
+.landing-hero .btn-light {
+    color: var(--primary-dark);
+}
+
+.landing-hero__cta {
+    background: #fdfcf8;
+    border-color: #fdfcf8;
+    color: var(--primary-dark);
+    font-weight: 600;
+}
+
+.landing-hero__cta:hover {
+    background: var(--accent-pale);
+    border-color: var(--accent-pale);
+    color: var(--primary-dark);
+}
+
+.landing-hero__cta2 {
+    border-color: rgba(255, 255, 255, .6);
+    color: #fdfcf8;
+}
+
+.landing-hero__cta2:hover {
+    background: rgba(255, 255, 255, .12);
+    border-color: #fdfcf8;
+    color: #fdfcf8;
+}
+
+.landing-stats {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 16px 48px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.landing-stats__item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.landing-stats__value {
+    font-family: 'Playfair Display', serif;
+    font-size: 2rem;
+    font-weight: 700;
+    color: #fdfcf8;
+}
+
+.landing-stats__label {
+    font-size: .85rem;
+    opacity: .85;
+}
+
+/* ─── СЕКЦИИ ─── */
+.landing-section {
+    padding: 44px 0 8px;
+}
+
+.landing-section__title {
+    text-align: center;
+    margin-bottom: 28px;
+    font-size: clamp(1.4rem, 3vw, 2rem);
+}
+
+/* ─── ПРЕИМУЩЕСТВА ─── */
+.landing-features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+}
+
+.feature-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-card);
+    padding: 24px 20px;
+    box-shadow: var(--shadow-sm);
+    transition: transform .2s ease, box-shadow .2s ease;
+}
+
+.feature-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-md);
+}
+
+.feature-card__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: var(--primary-mist);
+    color: var(--primary);
+    font-size: 1.3rem;
+    margin-bottom: 14px;
+}
+
+.feature-card__title {
+    font-size: 1.1rem;
+    margin-bottom: 8px;
+}
+
+.feature-card__text {
+    color: var(--text-muted);
+    font-size: .92rem;
+    line-height: 1.55;
+    margin-bottom: 0;
+}
+
+/* ─── ШАГИ ─── */
+.landing-steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    counter-reset: step;
+}
+
+.step-card {
+    position: relative;
+    background: var(--bg-card);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-card);
+    padding: 24px 20px 20px;
+    box-shadow: var(--shadow-sm);
+}
+
+.step-card__num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: #fdfcf8;
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    font-size: 1.1rem;
+    margin-bottom: 12px;
+}
+
+.step-card__title {
+    font-size: 1.05rem;
+    margin-bottom: 6px;
+}
+
+.step-card__text {
+    color: var(--text-muted);
+    font-size: .92rem;
+    line-height: 1.5;
+    margin-bottom: 0;
+}
+
+/* ─── АССОРТИМЕНТ ─── */
+.landing-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 14px;
+}
+
+.landing-grid__card {
+    display: block;
+    background: var(--bg-card);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-card);
+    overflow: hidden;
+    text-decoration: none;
+    box-shadow: var(--shadow-sm);
+    transition: transform .2s ease, box-shadow .2s ease;
+}
+
+.landing-grid__card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-md);
+    text-decoration: none;
+}
+
+.landing-grid__photo {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+}
+
+.landing-grid__name {
+    display: block;
+    padding: 10px 12px;
+    font-weight: 600;
+    font-size: .9rem;
+    color: var(--primary-dark);
+}
+
+.landing-note {
+    color: var(--text-muted);
+    font-size: .9rem;
+}
+
+/* ─── КОНТАКТЫ НА ЛЕНДИНГЕ ─── */
+.landing-contacts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 16px;
+}
+
+.landing-contacts__item {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    background: var(--bg-card);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-card);
+    padding: 18px;
+    box-shadow: var(--shadow-sm);
+}
+
+.landing-contacts__item > i {
+    color: var(--primary);
+    font-size: 1.2rem;
+    margin-top: 3px;
+}
+
+.landing-contacts__label {
+    font-size: .8rem;
+    color: var(--text-soft);
+    margin-bottom: 2px;
+}
+
+.landing-contacts__value {
+    font-weight: 600;
+    color: var(--text);
+    text-decoration: none;
+}
+
+a.landing-contacts__value:hover {
+    color: var(--primary);
+}
+
+/* ─── ФИНАЛЬНЫЙ CTA ─── */
+.landing-cta {
+    margin-top: 48px;
+    background:
+        radial-gradient(circle at 15% 85%, rgba(224, 168, 120, .25) 0, transparent 45%),
+        linear-gradient(150deg, var(--primary) 0%, var(--primary-dark) 100%);
+    color: #fdfcf8;
+    padding: 48px 20px;
+}
+
+.landing-cta__inner {
+    max-width: 640px;
+    margin: 0 auto;
+    text-align: center;
+}
+
+.landing-cta__title {
+    color: #fdfcf8;
+    font-size: clamp(1.4rem, 3vw, 2rem);
+    margin-bottom: 12px;
+}
+
+.landing-cta__text {
+    opacity: .9;
+    margin-bottom: 24px;
+}
+
+/* =========================================================
+   31. ПУБЛИЧНЫЙ КАТАЛОГ (без цен)
+   ========================================================= */
+.product-card-v2__price-locked {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 8px 0;
+    margin-bottom: 8px;
+    border-radius: var(--radius-input);
+    background: var(--primary-mist);
+    color: var(--primary-dark);
+    font-weight: 600;
+    font-size: .85rem;
+}
+
+.product-card-v2__out-btn--cta {
+    background: var(--primary);
+    color: #fff;
+    border-radius: var(--radius-input);
+}
+
+.product-card-v2__out-btn--cta:hover {
+    background: var(--primary-dark);
+    color: #fff;
+}
