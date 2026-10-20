@@ -126,27 +126,27 @@
                         <td>{{ item.quantity }}</td>
                         <td>{{ pack }}</td>
                         <td>{{ stems }}</td>
-                        <td>{{ "%.2f"|format(item.price) }} ₽</td>
-                        <td><strong>{{ "%.2f"|format(item.subtotal) }} ₽</strong></td>
+                        <td>{{ item.price|price }} ₽</td>
+                        <td><strong>{{ item.subtotal|price }} ₽</strong></td>
                     </tr>
                 {% endfor %}
             </tbody>
             <tfoot>
                 <tr>
                     <td colspan="6" class="text-end">Подытог:</td>
-                    <td>{{ "%.2f"|format(order.subtotal) }} ₽</td>
+                    <td>{{ order.subtotal|price }} ₽</td>
                 </tr>
                 {% if order.discount_percent and order.discount_percent > 0 %}
                 <tr style="color:#c97b4a;">
                     <td colspan="6" class="text-end">
                         Скидка {{ order.discount_percent }}%:
                     </td>
-                    <td>−{{ "%.2f"|format(order.discount_amount) }} ₽</td>
+                    <td>−{{ order.discount_amount|price }} ₽</td>
                 </tr>
                 {% endif %}
                 <tr style="font-size:1.1rem;">
                     <td colspan="6" class="text-end"><strong>Итого:</strong></td>
-                    <td><strong>{{ "%.2f"|format(order.total_price) }} ₽</strong></td>
+                    <td><strong>{{ order.total_price|price }} ₽</strong></td>
                 </tr>
             </tfoot>
         </table>

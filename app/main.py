@@ -139,6 +139,22 @@ app.add_middleware(
     redis_getter=security.get_redis_client,
 )
 
+# Доверенные Host-заголовки: отсекаем запросы с поддельным Host
+# (Host header poisoning — например, для подмены ссылок в письмах).
+# Middleware добавлен ПОСЛЕДНИМ = самый внешний слой (Starlette оборачивает
+# в обратном порядке): чужой Host отбрасывается до любой логики.
+if config.ENV == "prod":
+    from urllib.parse import urlparse
+    _host = (urlparse(config.APP_URL).hostname or "").lower()
+    _allowed_hosts = [h for h in {
+        _host,
+        f"www.{_host}" if _host and not _host.startswith("www.") else "",
+        "localhost", "127.0.0.1",   # healthcheck из docker-контейнера
+        "app",                      # имя сервиса в docker-сети
+    } if h]
+    if _allowed_hosts:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=_allowed_hosts)
+
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 (STATIC_DIR / "uploads").mkdir(parents=True, exist_ok=True)

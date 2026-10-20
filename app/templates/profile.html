@@ -121,6 +121,85 @@
     </form>
 </div>
 
+{% if user.is_admin %}
+<div class="card p-4 mb-4" id="2fa">
+    <h5 class="mb-3"><i class="fas fa-shield-halved me-2"></i>Двухфакторная защита (2FA)</h5>
+
+    {% if totp_error %}
+        <div class="alert alert-danger py-2 px-3 small mb-3">
+            <i class="fas fa-exclamation-circle me-1"></i>{{ totp_error }}
+        </div>
+    {% endif %}
+    {% if totp_ok %}
+        <div class="alert alert-success py-2 px-3 small mb-3">
+            <i class="fas fa-check me-1"></i>{{ totp_ok }}
+        </div>
+    {% endif %}
+
+    {% if totp_enabled %}
+        <p class="small text-muted">
+            2FA <span class="badge bg-success">включена</span> — при входе
+            запрашивается код из приложения (Яндекс.Ключ, Google Authenticator).
+        </p>
+        <form action="/profile/2fa/disable" method="post"
+              onsubmit="return confirm('Отключить двухфакторную защиту?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="mb-3">
+                <label class="form-label small fw-bold">Текущий пароль</label>
+                <input type="password" name="password" class="form-control"
+                       required autocomplete="current-password">
+            </div>
+            <button type="submit" class="btn btn-outline-danger">
+                <i class="fas fa-shield me-1"></i>Отключить 2FA
+            </button>
+        </form>
+    {% elif totp_pending %}
+        <p class="small text-muted mb-2">
+            Отсканируйте QR-код в приложении-аутентификаторе
+            (Яндекс.Ключ, Google Authenticator) и введите первый код:
+        </p>
+        {% if totp_qr %}
+            <div class="text-center mb-3">
+                <img src="{{ totp_qr }}" alt="QR-код 2FA" style="width:200px;height:200px;">
+            </div>
+        {% endif %}
+        <div class="mb-3">
+            <label class="form-label small fw-bold">Или введите секрет вручную:</label>
+            <code class="d-block p-2 bg-light rounded user-select-all"
+                  style="word-break:break-all;">{{ totp_pending_secret }}</code>
+        </div>
+        <form action="/profile/2fa/confirm" method="post" class="mb-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="mb-3">
+                <label class="form-label small fw-bold">Код из приложения</label>
+                <input type="text" name="code" class="form-control"
+                       inputmode="numeric" maxlength="6" placeholder="000000"
+                       autocomplete="one-time-code" required>
+            </div>
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-check me-1"></i>Подтвердить и включить
+            </button>
+        </form>
+        <form action="/profile/2fa/cancel" method="post" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-link btn-sm text-muted">Отмена</button>
+        </form>
+    {% else %}
+        <p class="small text-muted">
+            2FA <span class="badge bg-secondary">выключена</span>.
+            Рекомендуем включить: даже если пароль украдут,
+            без кода с вашего телефона в админку не войти.
+        </p>
+        <form action="/profile/2fa/start" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-shield-halved me-1"></i>Включить 2FA
+            </button>
+        </form>
+    {% endif %}
+</div>
+{% endif %}
+
 <div class="card p-4 mb-4">
     <h5 class="mb-3"><i class="fas fa-cog me-2"></i>Дополнительно</h5>
     <div class="d-flex flex-column gap-2">

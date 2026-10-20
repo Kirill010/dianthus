@@ -223,9 +223,6 @@ def move_fulfilled_preorder_to_cart(
 ) -> tuple[bool, dict | str]:
     preorder = (
         db.query(Preorder)
-        .options(
-            joinedload(Preorder.supply_item).joinedload(SupplyItem.product),
-        )
         .filter(
             Preorder.id == preorder_id,
             Preorder.user_id == user.id,
@@ -233,11 +230,22 @@ def move_fulfilled_preorder_to_cart(
         )
         .first()
     )
-    if not preorder:
+    if not preorder or preorder.supply_item_id is None:
         return False, "Предзаказ не найден или ещё не поступил"
 
-    item = preorder.supply_item
+    # fix: ПЕССИМИСТИЧНАЯ БЛОКИРОВКА строки склада. Раньше два быстрых клика
+    # (или два устройства) читали один и тот же reserved_stock, оба вычитали
+    # своё количество — резерв уходил в минус, а клиент получал лишние упаковки.
+    # FOR UPDATE сериализует перенос: второй запрос дождётся первого.
+    item = (
+        db.query(SupplyItem)
+        .options(joinedload(SupplyItem.product), joinedload(SupplyItem.supply))
+        .filter(SupplyItem.id == preorder.supply_item_id)
+        .with_for_update()
+        .first()
+    )
     if not item or not item.is_active:
+        db.rollback()
         return False, "Товар ещё не активирован в каталоге"
 
     product = item.product
@@ -245,11 +253,22 @@ def move_fulfilled_preorder_to_cart(
     min_packs = max(1, product.min_quantity or 1)
 
     reserved = item.reserved_stock or 0
-    want_packs = min(reserved, preorder.quantity) if reserved > 0 else preorder.quantity
-    want_packs = max(min_packs, want_packs)
+    if reserved > 0:
+        # Сначала тратим СВОЙ резерв (он уже выделен под этот предзаказ)
+        want_packs = min(reserved, preorder.quantity)
+    else:
+        # Резерва нет (например, его уже сняли) — берём из свободного остатка
+        want_packs = min(preorder.quantity, item.available_stock)
 
     if want_packs <= 0:
+        db.rollback()
         return False, "Товар закончился"
+    if want_packs < min_packs:
+        db.rollback()
+        return False, (
+            f"Доступно только {want_packs} упак., а минимальный заказ — "
+            f"{min_packs} упак. Свяжитесь с менеджером."
+        )
 
     item.reserved_stock = max(0, reserved - want_packs)
     db.commit()

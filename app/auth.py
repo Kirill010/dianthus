@@ -154,8 +154,18 @@ async def login(
     if user.is_admin and user.totp_secret:
         code = (await request.form()).get("totp_code", "")
         if not totp.verify(user.totp_secret, str(code)):
-            # Не сообщаем, что пароль верный: просим код заново.
-            request.session["login_error"] = "Неверный код двухфакторной аутентификации"
+            # Неверный код 2FA считается НЕУДАЧНОЙ попыткой входа:
+            # иначе 6-значный код можно было бы перебирать бесконечно
+            # (лимит IP на /login легко обходится сменой адресов).
+            lock_sec = await record_login_failure(email)
+            if lock_sec > 0:
+                minutes = max(1, lock_sec // 60)
+                request.session["login_error"] = (
+                    f"Слишком много неудачных попыток. "
+                    f"Вход заблокирован на {minutes} мин."
+                )
+            else:
+                request.session["login_error"] = "Неверный код двухфакторной аутентификации"
             request.session["show_totp"] = True
             logger.warning("2FA: неверный код для %s, IP=%s", email, _client_ip(request))
             return RedirectResponse(url="/login", status_code=303)

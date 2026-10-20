@@ -7,12 +7,14 @@ from typing import List
 from fastapi import HTTPException, UploadFile
 from PIL import Image, ImageOps
 
+from ..config import config
+
 logger = logging.getLogger(__name__)
 
 UPLOAD_DIR = Path(__file__).resolve().parent.parent / "static" / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-MAX_SIZE = 5 * 1024 * 1024
+MAX_SIZE = config.MAX_UPLOAD_SIZE
 ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 FULL_SIZE = (1600, 1600)
 

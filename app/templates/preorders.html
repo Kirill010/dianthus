@@ -42,7 +42,7 @@
         </div>
 
         <div class="order-card__meta">
-            Цена: {{ "%.2f"|format(p.price) }} ₽/шт
+            Цена: {{ p.price|price }} ₽/шт
         </div>
 
         <div class="order-card__meta">
@@ -60,16 +60,16 @@
         {# ─── Суммы со скидкой ─── #}
         <div class="order-card__price-block" style="margin-top:10px;">
             <div style="font-size:.85rem; color:#8a857a;">
-                Подытог: {{ "%.2f"|format(p.subtotal) }} ₽
+                Подытог: {{ p.subtotal|price }} ₽
             </div>
             {% if p.discount_percent and p.discount_percent > 0 %}
             <div style="font-size:.85rem; color:#c97b4a;">
                 Ваша скидка {{ p.discount_percent }}%:
-                −{{ "%.2f"|format(p.discount_amount) }} ₽
+                −{{ p.discount_amount|price }} ₽
             </div>
             {% endif %}
             <div class="order-card__sum" style="margin-top:4px;">
-                Итого: {{ "%.2f"|format(p.total) }} ₽
+                Итого: {{ p.total|price }} ₽
             </div>
         </div>
 

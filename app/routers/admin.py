@@ -18,6 +18,7 @@ from ..models import (ORDER_STATUSES, PRODUCT_CATEGORIES, SUPPLY_STATUSES,
                       Notification, Order, OrderItem, Preorder, Product,
                       Supply, SupplyItem, User)
 from ..security import check_csrf
+from ..services.audit import log_action
 from ..services.excel_service import (build_products_import_template,
                                       export_customers_to_excel,
                                       export_orders_to_excel,
@@ -154,7 +155,7 @@ def dashboard(
         "pending_orders": db.query(Order).filter(Order.status == "Новый").count(),
         "new_clients_week": db.query(User).filter(User.created_at >= week_ago).count(),
     }
-    products = db.query(Product).order_by(Product.name).all()
+    products = db.query(Product).order_by(Product.name).limit(500).all()
 
     supplies = (
         db.query(Supply)
@@ -165,8 +166,12 @@ def dashboard(
         .order_by(Supply.arrival_date.asc())
         .all()
     )
-    users = db.query(User).order_by(User.created_at.desc()).all()
-    pending_count = sum(1 for u in users if not u.is_approved and not u.is_admin)
+    users = db.query(User).order_by(User.created_at.desc()).limit(500).all()
+    pending_count = (
+        db.query(User)
+        .filter(User.is_approved.is_(False), User.is_admin.is_(False))
+        .count()
+    )
 
     active_items = (
         db.query(SupplyItem)
@@ -207,6 +212,8 @@ def user_make_admin(
     user.is_admin = True
     user.is_approved = True
     db.commit()
+    log_action(db, request, current_admin, "user_make_admin",
+               "user", user.id, f"{user.email} назначен администратором")
     request.session["flash"] = f"👑 «{user.full_name}» теперь администратор"
     return RedirectResponse(url=_back(request), status_code=303)
 
@@ -232,6 +239,8 @@ def user_demote(
         return RedirectResponse(url=_back(request), status_code=303)
     user.is_admin = False
     db.commit()
+    log_action(db, request, current_admin, "user_demote",
+               "user", user.id, f"{user.email} лишён прав администратора")
     request.session["flash"] = f"«{user.full_name}» больше не администратор"
     return RedirectResponse(url=_back(request), status_code=303)
 
@@ -252,6 +261,8 @@ def user_approve(
         return RedirectResponse(url=_back(request), status_code=303)
     user.is_approved = True
     db.commit()
+    log_action(db, request, current_admin, "user_approve",
+               "user", user.id, f"{user.email} ({user.company_name}) одобрен")
     request.session["flash"] = f"✅ «{user.company_name}» одобрен"
     return RedirectResponse(url=_back(request), status_code=303)
 
@@ -290,8 +301,11 @@ def user_reject(
             synchronize_session=False
         )
         name = user.full_name
+        email = user.email
         db.delete(user)
         db.commit()
+        log_action(db, request, current_admin, "user_reject",
+                   "user", user_id, f"Удалён пользователь {email} ({name})")
         request.session["flash"] = f"🗑 «{name}» удалён"
     except Exception as e:
         db.rollback()
@@ -315,8 +329,12 @@ def user_set_discount(
     if discount_percent < 0 or discount_percent > 100:
         request.session["flash"] = "❌ Скидка должна быть в диапазоне 0..100"
         return RedirectResponse(url=_back(request), status_code=303)
+    old_discount = user.discount_percent or 0
     user.discount_percent = float(discount_percent)
     db.commit()
+    log_action(db, request, current_admin, "user_discount",
+               "user", user.id,
+               f"{user.email}: скидка {old_discount:.1f}% → {discount_percent:.1f}%")
     request.session["flash"] = f"💸 «{user.company_name}»: скидка {discount_percent:.1f}%"
     return RedirectResponse(url=_back(request), status_code=303)
 
@@ -340,8 +358,11 @@ def update_order_status(
         request.session["flash"] = f"Заказ №{order_id} не найден"
         return RedirectResponse(url=_back(request), status_code=303)
 
+    old_status = order.status
     order.status = status
     db.commit()
+    log_action(db, request, _a, "order_status",
+               "order", order.id, f"{old_status} → {status}")
 
     if order.user_id:
         status_text = {
@@ -566,6 +587,8 @@ def product_new(
         photos=photos,
     ))
     db.commit()
+    log_action(db, request, _a, "product_new",
+               "product", None, f"Добавлен товар «{name.strip()}»")
     request.session["flash"] = f"Товар добавлен ({len(photos)} фото)"
     return RedirectResponse(url=_back(request), status_code=303)
 
@@ -630,6 +653,8 @@ def product_edit(
     product.photos = final
     product.image_url = final[0] if final else ""
     db.commit()
+    log_action(db, request, _a, "product_edit",
+               "product", product.id, f"Обновлён товар «{product.name}»")
     request.session["flash"] = f"Товар обновлён ({len(final)} фото)"
     return RedirectResponse(url=_back(request), status_code=303)
 
@@ -657,6 +682,8 @@ def product_delete(
         name = product.name
         db.delete(product)
         db.commit()
+        log_action(db, request, _a, "product_delete",
+                   "product", product_id, f"Удалён товар «{name}»")
         request.session["flash"] = f"«{name}» удалён из справочника"
     except Exception as e:
         db.rollback()
@@ -719,6 +746,9 @@ def supply_new(
     db.add(supply)
     db.commit()
     db.refresh(supply)
+    log_action(db, request, _a, "supply_new",
+               "supply", supply.id,
+               f"Создана поставка: {supply.location}, прибытие {arrival_date}")
     request.session["flash"] = f"Поставка №{supply.id} создана. Добавьте товары."
     return RedirectResponse(url=f"/admin/supplies/{supply.id}/edit", status_code=303)
 
@@ -777,6 +807,9 @@ def supply_edit(
     supply.arrival_date = _parse_date(arrival_date)
     supply.notes = notes.strip()
     db.commit()
+    log_action(db, request, _a, "supply_edit",
+               "supply", supply.id,
+               f"Поставка №{supply.id}: статус «{status}», прибытие {arrival_date}")
     request.session["flash"] = "Поставка обновлена"
     return RedirectResponse(url=_back(request), status_code=303)
 
@@ -804,6 +837,8 @@ def supply_delete(
         _detach_supply_items(db, item_ids)
         db.delete(supply)
         db.commit()
+        log_action(db, request, _a, "supply_delete",
+                   "supply", supply_id, f"Удалена поставка №{supply_id}")
         request.session["flash"] = f"Поставка №{supply_id} удалена"
     except Exception as e:
         db.rollback()
@@ -1075,6 +1110,9 @@ def supply_unload(
         from ..scheduler import do_unload
         count = do_unload(db, supply)
         db.commit()
+        log_action(db, request, _a, "supply_unload",
+                   "supply", supply_id,
+                   f"Поставка №{supply_id} разгружена, товаров: {count}")
         request.session["flash"] = (
             f"Поставка №{supply_id} разгружена. {count} товаров в каталоге."
         )

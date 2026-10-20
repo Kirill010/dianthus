@@ -12,7 +12,6 @@ from typing import Optional
 from urllib.parse import urlparse
 import hashlib
 import hmac
-import time
 
 from fastapi import HTTPException, Request
 

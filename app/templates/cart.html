@@ -25,7 +25,7 @@
                 {% endif %}
             </div>
             <div class="cart-item__price">
-                {{ "%.2f"|format(item.price) }} ₽/шт × {{ pack }} шт × {{ item.quantity }} упак.
+                {{ item.price|price }} ₽/шт × {{ pack }} шт × {{ item.quantity }} упак.
                 <span class="cart-item__stems">= {{ stems }} шт</span>
             </div>
             <div class="cart-item__sum">{{ "%.0f"|format(line_total) }} ₽</div>
@@ -46,16 +46,16 @@
         <span>Позиций:</span><span>{{ cart|length }}</span>
     </div>
     <div class="cart-summary__row">
-        <span>Подытог:</span><span>{{ "%.2f"|format(subtotal) }} ₽</span>
+        <span>Подытог:</span><span>{{ subtotal|price }} ₽</span>
     </div>
     {% if discount_percent and discount_percent > 0 %}
     <div class="cart-summary__row" style="color:#c97b4a;">
         <span>Ваша скидка {{ discount_percent }}%:</span>
-        <span>−{{ "%.2f"|format(discount_amount) }} ₽</span>
+        <span>−{{ discount_amount|price }} ₽</span>
     </div>
     {% endif %}
     <div class="cart-summary__row cart-summary__row--total">
-        <span>Итого:</span><strong>{{ "%.2f"|format(total) }} ₽</strong>
+        <span>Итого:</span><strong>{{ total|price }} ₽</strong>
     </div>
 </div>
 
@@ -85,7 +85,7 @@
         <div class="cart-item__body">
             <div class="cart-item__name">{{ p.name }}</div>
             <div class="cart-item__price">
-                {{ "%.2f"|format(p.price) }} ₽/шт × {{ p.package_size }} шт × {{ p.quantity }} упак.
+                {{ p.price|price }} ₽/шт × {{ p.package_size }} шт × {{ p.quantity }} упак.
                 <span class="cart-item__stems">= {{ p.quantity * p.package_size }} шт</span>
             </div>
             <div class="cart-item__price" style="color:#c97b4a;">
@@ -99,16 +99,16 @@
 
             <div style="margin-top:6px;">
                 <div style="font-size:.82rem; color:#8a857a;">
-                    Подытог: {{ "%.2f"|format(p.subtotal) }} ₽
+                    Подытог: {{ p.subtotal|price }} ₽
                 </div>
                 {% if p.discount_percent and p.discount_percent > 0 %}
                 <div style="font-size:.82rem; color:#c97b4a;">
                     Скидка {{ p.discount_percent }}%:
-                    −{{ "%.2f"|format(p.discount_amount) }} ₽
+                    −{{ p.discount_amount|price }} ₽
                 </div>
                 {% endif %}
                 <div class="cart-item__sum" style="margin-top:2px;">
-                    Итого: {{ "%.2f"|format(p.total) }} ₽
+                    Итого: {{ p.total|price }} ₽
                 </div>
             </div>
         </div>

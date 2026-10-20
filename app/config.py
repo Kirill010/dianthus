@@ -43,6 +43,9 @@ class Config:
     PAGE_SIZE: int = _int_env("PAGE_SIZE", 12)
     CACHE_TTL: int = _int_env("CACHE_TTL", 300)
 
+    # Максимальный размер загружаемого изображения товара, байт
+    MAX_UPLOAD_SIZE: int = _int_env("MAX_UPLOAD_SIZE", 5 * 1024 * 1024)
+
     SHOP_NAME: str = _str_env("SHOP_NAME", "ООО «Диантус»")
     SHOP_PHONE: str = _str_env("SHOP_PHONE", "")
     SHOP_PHONE_2: str = _str_env("SHOP_PHONE_2", "")

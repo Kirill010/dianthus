@@ -133,9 +133,9 @@
     </p>
 </footer>
 
-<script src="/static/vendor/bootstrap.bundle.min.js"></script>
+<script src="/static/vendor/bootstrap.bundle.min.js" nonce="{{ csp_nonce }}"></script>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 /* ─── CSRF для multipart-форм ─── */
 (function() {
     const token = document.querySelector('meta[name="csrf-token"]')?.content

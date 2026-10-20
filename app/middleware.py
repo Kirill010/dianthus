@@ -1,7 +1,15 @@
 """
 Заголовки безопасности для всех ответов.
 Защищают от XSS, clickjacking, MIME-sniffing и утечек Referer.
+
+CSP НА НОНСАХ. Для каждого запроса генерируется случайный nonce,
+который подставляется и в заголовок Content-Security-Policy, и в
+атрибуты встроенных <script nonce="..."> шаблонов (через контекст
+csp_nonce в templating.render). Браузер выполняет только скрипты
+с совпавшим nonce — внедрённый через XSS инлайн-скрипт без nonce
+не запустится, даже если атакующий смог вписать его в HTML.
 """
+import secrets
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -11,6 +19,11 @@ from .config import config
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        # Nonce нужен ДО формирования ответа: его читает templating.render
+        # и подставляет в <script nonce="...">.
+        nonce = secrets.token_urlsafe(16)
+        request.state.csp_nonce = nonce
+
         response = await call_next(request)
 
         # Базовые заголовки
@@ -20,11 +33,17 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Permissions-Policy"] = (
             "geolocation=(), microphone=(), camera=(), payment=()"
         )
+        # Изоляция контекста: нашу страницу нельзя открыть в чужом окне/iframe
+        # и внешним сайтам нельзя читать наши ответы из своих скриптов.
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+        response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
 
-        # CSP (добавлено)
+        # CSP. В script-src БОЛЬШЕ НЕТ 'unsafe-inline': выполняются только
+        # скрипты с нашим nonce или из наших же файлов. Это главная
+        # страховка от хранимого/отражённого XSS.
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline'; "
+            f"script-src 'self' 'nonce-{nonce}'; "
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: https:; "
             "font-src 'self'; "

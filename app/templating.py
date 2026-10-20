@@ -161,6 +161,8 @@ def render(request: Request, template: str, db: Session, **context):
         "csrf_token": csrf_token,
         "config": config,
         "unread_count": unread_count,
+        # CSP nonce из SecurityHeadersMiddleware — для встроенных <script>.
+        "csp_nonce": getattr(request.state, "csp_nonce", ""),
     })
     return templates.TemplateResponse(
         request=request, name=template, context=context,

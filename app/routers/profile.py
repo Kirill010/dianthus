@@ -10,6 +10,7 @@ from ..config import config
 from ..database import get_db
 from ..deps import get_current_user
 from ..security import check_csrf
+from ..services import totp
 from ..templating import render
 from ..validators import (validate_company_name, validate_full_name,
                           validate_password, validate_phone,
@@ -41,6 +42,13 @@ def profile_page(request: Request, db: Session = Depends(get_db)):
     )
     total_sum = sum((p[0] or 0) for p in prices)
 
+    # ── 2FA: если идёт настройка, показываем QR и поле для кода ──
+    totp_pending = request.session.get("totp_pending") or ""
+    totp_qr = totp_url = ""
+    if totp_pending and user.is_admin:
+        totp_url = totp.provisioning_url(totp_pending, user.email)
+        totp_qr = totp.qr_data_uri(totp_url)
+
     return render(request, "profile.html", db,
                   user=user,
                   orders_count=orders_count,
@@ -48,7 +56,108 @@ def profile_page(request: Request, db: Session = Depends(get_db)):
                   profile_errors=request.session.pop("profile_errors", None),
                   profile_ok=request.session.pop("profile_ok", None),
                   password_errors=request.session.pop("password_errors", None),
-                  password_ok=request.session.pop("password_ok", None))
+                  password_ok=request.session.pop("password_ok", None),
+                  totp_enabled=bool(user.totp_secret),
+                  totp_pending=bool(totp_pending),
+                  totp_pending_secret=totp_pending,
+                  totp_qr=totp_qr, totp_url=totp_url,
+                  totp_error=request.session.pop("totp_error", None),
+                  totp_ok=request.session.pop("totp_ok", None))
+
+
+# ── ДВУХФАКТОРНАЯ АУТЕНТИФИКАЦИЯ (TOTP) ДЛЯ АДМИНОВ ──
+
+def _require_admin(request: Request, db: Session):
+    user = get_current_user(request, db)
+    if not user:
+        return None
+    return user if user.is_admin else None
+
+
+@router.post("/profile/2fa/start")
+def totp_start(
+    request: Request,
+    db: Session = Depends(get_db),
+    _csrf: None = Depends(check_csrf),
+):
+    """Шаг 1: сгенерировать секрет и показать QR. Секрет живёт в сессии
+    до подтверждения кодом — в профиль пользователя он ещё НЕ записан."""
+    user = _require_admin(request, db)
+    if not user:
+        return RedirectResponse(url="/profile", status_code=303)
+    request.session["totp_pending"] = totp.new_secret()
+    request.session["totp_error"] = None
+    return RedirectResponse(url="/profile#2fa", status_code=303)
+
+
+@router.post("/profile/2fa/confirm")
+def totp_confirm(
+    request: Request,
+    code: str = Form(""),
+    db: Session = Depends(get_db),
+    _csrf: None = Depends(check_csrf),
+):
+    """Шаг 2: подтверждение первым кодом из приложения.
+    Только после верного кода секрет сохраняется в профиле."""
+    user = _require_admin(request, db)
+    if not user:
+        return RedirectResponse(url="/profile", status_code=303)
+
+    pending = request.session.get("totp_pending") or ""
+    if not pending:
+        request.session["totp_error"] = "Сначала начните настройку 2FA"
+        return RedirectResponse(url="/profile#2fa", status_code=303)
+
+    if not totp.verify(pending, code):
+        request.session["totp_error"] = "Неверный код. Проверьте время на телефоне и попробуйте ещё раз."
+        logger.warning("2FA setup: неверный код подтверждения (%s)", user.email)
+        return RedirectResponse(url="/profile#2fa", status_code=303)
+
+    user.totp_secret = pending
+    db.commit()
+    request.session.pop("totp_pending", None)
+    request.session["totp_ok"] = (
+        "Двухфакторная защита включена. При следующем входе понадобится код из приложения."
+    )
+    logger.info("2FA включена: %s", user.email)
+    return RedirectResponse(url="/profile#2fa", status_code=303)
+
+
+@router.post("/profile/2fa/cancel")
+def totp_cancel(
+    request: Request,
+    db: Session = Depends(get_db),
+    _csrf: None = Depends(check_csrf),
+):
+    user = _require_admin(request, db)
+    if not user:
+        return RedirectResponse(url="/profile", status_code=303)
+    request.session.pop("totp_pending", None)
+    return RedirectResponse(url="/profile#2fa", status_code=303)
+
+
+@router.post("/profile/2fa/disable")
+def totp_disable(
+    request: Request,
+    password: str = Form(""),
+    db: Session = Depends(get_db),
+    _csrf: None = Depends(check_csrf),
+):
+    """Отключение 2FA — только с подтверждением текущим паролем."""
+    user = _require_admin(request, db)
+    if not user:
+        return RedirectResponse(url="/profile", status_code=303)
+
+    if not verify_password(password, user.hashed_password):
+        request.session["totp_error"] = "Неверный пароль — 2FA не отключена"
+        logger.warning("2FA disable: неверный пароль (%s)", user.email)
+        return RedirectResponse(url="/profile#2fa", status_code=303)
+
+    user.totp_secret = ""
+    db.commit()
+    request.session["totp_ok"] = "Двухфакторная защита отключена"
+    logger.info("2FA отключена: %s", user.email)
+    return RedirectResponse(url="/profile#2fa", status_code=303)
 
 @router.post("/profile")
 def profile_update(

@@ -155,9 +155,6 @@ def _level_url(current: dict, new_level: str) -> str:
         params["country"] = current["country"]
     return "/catalog" + ("?" + urlencode(params) if params else "")
 
-def _back(request: Request, default: str = "/catalog") -> str:
-    return request.headers.get("referer") or default
-
 @router.get("/catalog", response_class=HTMLResponse)
 def catalog(
     request: Request,

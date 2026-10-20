@@ -233,7 +233,12 @@
 
     <!-- КЛИЕНТЫ -->
     <div class="tab-pane fade" id="clients">
-        <h5 class="mb-3">Клиенты и заявки</h5>
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <h5 class="mb-0">Клиенты и заявки</h5>
+            <input type="search" id="client-search" class="form-control form-control-sm"
+                   style="max-width: 320px"
+                   placeholder="Поиск: компания, email, имя…">
+        </div>
         {% if users %}
         <div class="table-responsive">
             <table class="table table-hover align-middle">
@@ -243,9 +248,9 @@
                         <th>Статус</th><th>Действия</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="clients-tbody">
                 {% for u in users %}
-                    <tr>
+                    <tr data-search="{{ (u.company_name ~ ' ' ~ u.email ~ ' ' ~ (u.full_name or ''))|lower|e }}">
                         <td>{{ u.id }}</td>
                         <td><strong>{{ u.company_name }}</strong></td>
                         <td>
@@ -344,6 +349,8 @@
     <div class="tab-pane fade" id="products">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h5 class="mb-0">Справочник товаров</h5>
+            <input type="search" id="product-search" class="form-control form-control-sm"
+                   style="max-width: 280px" placeholder="Поиск товара…">
             <div class="d-flex gap-2 flex-wrap">
                 <a href="/admin/products/new" class="btn btn-primary btn-sm">
                     <i class="fas fa-plus me-1"></i>Добавить
@@ -367,9 +374,9 @@
                         <th>Категория</th><th>Страна</th><th>Упак.</th><th></th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="products-tbody">
                 {% for p in products %}
-                    <tr>
+                    <tr data-search="{{ (p.name ~ ' ' ~ (p.category or '') ~ ' ' ~ (p.country or ''))|lower|e }}">
                         <td>{{ p.id }}</td>
                         <td>
                             {% if p.image_url %}
@@ -515,7 +522,7 @@
                         <td>
                             <small>№{{ i.supply.id }} · {{ i.supply.country }}</small>
                         </td>
-                        <td>{{ "%.2f"|format(i.price) }} ₽</td>
+                        <td>{{ i.price|price }} ₽</td>
                         <td>
                             {% if i.stock > 0 %}
                                 <span class="badge bg-success">{{ i.stock }}</span>
@@ -562,5 +569,21 @@
         </div>
     </div>
 </div>
-
+<script nonce="{{ csp_nonce }}">
+(function () {
+    function bindFilter(inputId, tbodyId) {
+        const input = document.getElementById(inputId);
+        const tbody = document.getElementById(tbodyId);
+        if (!input || !tbody) return;
+        input.addEventListener("input", function () {
+            const q = input.value.trim().toLowerCase();
+            tbody.querySelectorAll("tr[data-search]").forEach(function (tr) {
+                tr.style.display = !q || tr.dataset.search.includes(q) ? "" : "none";
+            });
+        });
+    }
+    bindFilter("client-search", "clients-tbody");
+    bindFilter("product-search", "products-tbody");
+})();
+</script>
 {% endblock %}

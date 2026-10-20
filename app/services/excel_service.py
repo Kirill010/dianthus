@@ -15,6 +15,23 @@ HEADER_ALIGN = Alignment(horizontal="center", vertical="center")
 
 # ОБЩИЕ УТИЛИТЫ
 
+# Символы, с которых Excel/LibreOffice начинают формулу. Если клиент ввёл
+# название компании вида "=HYPERLINK(...)", то при открытии выгрузки она бы
+# ВЫПОЛНИЛАСЬ на компьютере менеджера. Добавляем апостроф — текст как текст.
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _cell(value):
+    """Безопасное значение ячейки для ЭКСПОРТА (анти formula injection)."""
+    if isinstance(value, str) and value[:1] in _FORMULA_PREFIXES:
+        return "'" + value
+    return value
+
+
+def _row(values: list) -> list:
+    return [_cell(v) for v in values]
+
+
 def _header(ws) -> None:
     for c in ws[1]:
         c.fill = HEADER_FILL
@@ -50,19 +67,19 @@ def export_orders_to_excel(orders: list) -> BytesIO:
         user = order.user
         first = True
         if not order.items:
-            ws.append([order.id,
+            ws.append(_row([order.id,
                        order.created_at.strftime("%d.%m.%Y %H:%M"),
                        user.company_name if user else "Гость",
                        user.full_name if user else "",
                        user.email if user else "",
                        "—", 0, 0, 0, 0, 0,
                        order.subtotal, order.discount_percent,
-                       order.total_price, order.status, order.comment])
+                       order.total_price, order.status, order.comment]))
             continue
         for item in order.items:
             pack = item.package_size or 1
             stems = item.quantity * pack
-            ws.append([
+            ws.append(_row([
                 order.id if first else "",
                 order.created_at.strftime("%d.%m.%Y %H:%M") if first else "",
                 (user.company_name if user else "Гость") if first else "",
@@ -79,7 +96,7 @@ def export_orders_to_excel(orders: list) -> BytesIO:
                 order.total_price if first else "",
                 order.status if first else "",
                 order.comment if first else "",
-            ])
+            ]))
             first = False
     _autosize(ws)
     return _stream(wb)
@@ -93,11 +110,11 @@ def export_customers_to_excel(customers: list[dict]) -> BytesIO:
                "Заказов", "Сумма, ₽", "Последний заказ"])
     _header(ws)
     for c in customers:
-        ws.append([c.get("company_name", ""), c.get("full_name", ""),
-                   c.get("email", ""), c.get("phone", ""),
-                   c.get("discount_percent", 0),
-                   c.get("orders_count", 0), c.get("total_sum", 0),
-                   c.get("last_order_date", "")])
+        ws.append(_row([c.get("company_name", ""), c.get("full_name", ""),
+                        c.get("email", ""), c.get("phone", ""),
+                        c.get("discount_percent", 0),
+                        c.get("orders_count", 0), c.get("total_sum", 0),
+                        c.get("last_order_date", "")]))
     _autosize(ws)
     return _stream(wb)
 

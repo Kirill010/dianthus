@@ -294,7 +294,7 @@
                             </div>
                         </div>
                         <div class="product-card-v2__price">
-                            {{ "%.2f"|format(item.price) }} ₽
+                            {{ item.price|price }} ₽
                         </div>
                         <form action="/add_to_preorder" method="post" class="product-card-v2__cart-form">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -333,7 +333,7 @@
     </div>
 {% endif %}
 
-<script>
+<script nonce="{{ csp_nonce }}">
 /* ─── Поиск с автоподсказками ─── */
 (function() {
     const input = document.getElementById('searchInput');
@@ -349,9 +349,19 @@
                 const r = await fetch('/api/search-suggest?q=' + encodeURIComponent(q));
                 const d = await r.json();
                 if (!d.items.length) { box.style.display = 'none'; return; }
-                box.innerHTML = d.items.map(i =>
-                    `<a href="${i.url}" class="suggest-item">${i.name}</a>`
-                ).join('');
+                // fix XSS: название товара приходит из БД (его могла прислать
+                // и выгрузка из 1С), поэтому НЕ innerHTML, а безопасные DOM-узлы —
+                // textContent не исполняет разметку.
+                box.replaceChildren();
+                for (const i of d.items) {
+                    const a = document.createElement('a');
+                    a.className = 'suggest-item';
+                    const u = String(i.url || '');
+                    // разрешаем только внутренние ссылки вида /product/<id>
+                    a.href = /^\/product\/\d+$/.test(u) ? u : '/catalog';
+                    a.textContent = String(i.name || '');
+                    box.appendChild(a);
+                }
                 box.style.display = 'block';
             } catch(e) { box.style.display = 'none'; }
         }, 200);

@@ -251,7 +251,7 @@
     {% endif %}
 </div>
 {% endif %}
-<script>
+<script nonce="{{ csp_nonce }}">
 document.addEventListener('DOMContentLoaded', function() {
     const rows = document.querySelectorAll('.supply-items-table tbody tr');
     rows.forEach((row, i) => {

@@ -25,20 +25,20 @@
             {{ item.name }} — {{ item.quantity }} упак. × {{ pack }} шт
             = {{ item.quantity * pack }} шт
         </span>
-        <span>{{ "%.2f"|format(line_total) }} ₽</span>
+        <span>{{ line_total|price }} ₽</span>
     </div>
     {% endfor %}
     <div class="cart-summary__row">
-        <span>Подытог:</span><span>{{ "%.2f"|format(subtotal) }} ₽</span>
+        <span>Подытог:</span><span>{{ subtotal|price }} ₽</span>
     </div>
     {% if discount_percent and discount_percent > 0 %}
     <div class="cart-summary__row" style="color:#c97b4a;">
         <span>Скидка {{ discount_percent }}%:</span>
-        <span>−{{ "%.2f"|format(discount_amount) }} ₽</span>
+        <span>−{{ discount_amount|price }} ₽</span>
     </div>
     {% endif %}
     <div class="cart-summary__row cart-summary__row--total">
-        <span>Итого:</span><strong>{{ "%.2f"|format(total) }} ₽</strong>
+        <span>Итого:</span><strong>{{ total|price }} ₽</strong>
     </div>
 </div>
 {% endblock %}

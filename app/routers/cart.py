@@ -12,7 +12,7 @@ from ..config import config
 from ..database import get_db
 from ..deps import get_current_user
 from ..models import Order, OrderItem, Product, SupplyItem, Supply
-from ..security import check_csrf
+from ..security import check_csrf, check_rate_limit
 from ..services.notifier import notify_admin_new_order
 from ..services.preorder_service import (
     add_preorder_to_db, get_user_preorders, remove_preorder_db,
@@ -80,7 +80,24 @@ def _merge_into_cart(cart: list[dict], new_item: dict) -> None:
 
 
 def _back(request: Request, default: str = "/catalog") -> str:
-    return request.headers.get("referer") or default
+    """Редирект «назад» ТОЛЬКО на свой сайт (защита от open redirect).
+
+    Заголовок Referer клиент контролирует: без проверки хоста POST-запрос
+    мог бы вернуть пользователя на чужой домен (фишинг после действия).
+    """
+    ref = request.headers.get("referer") or ""
+    if ref:
+        from urllib.parse import urlparse
+        host = (urlparse(ref).hostname or "").lower()
+        allowed = {
+            h for h in (
+                (request.url.hostname or "").lower(),
+                (urlparse(config.APP_URL).hostname or "").lower(),
+            ) if h
+        }
+        if host and host in allowed:
+            return ref
+    return default
 
 
 # ───────────────────────── ДОБАВЛЕНИЕ В КОРЗИНУ ─────────────────────────
@@ -476,6 +493,11 @@ def checkout_page(request: Request, db: Session = Depends(get_db)):
     )
 
 
+async def _rate_place_order(request: Request) -> None:
+    """Антиспам: не более 10 оформлений заказа в минуту с одного IP."""
+    await check_rate_limit(request, "place_order", max_hits=10, window=60)
+
+
 @router.post("/place_order")
 def place_order(
     request: Request,
@@ -484,6 +506,7 @@ def place_order(
     comment: str = Form(""),
     db: Session = Depends(get_db),
     _csrf: None = Depends(check_csrf),
+    _rate: None = Depends(_rate_place_order),
 ):
     """
     Оформление заказа с ПЕССИМИСТИЧНОЙ БЛОКИРОВКОЙ строк supply_items.
