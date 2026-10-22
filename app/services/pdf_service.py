@@ -1,9 +1,10 @@
 # Генерация PDF-счёта через xhtml2pdf (с поддержкой кириллицы).
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from html import escape as _e
 from io import BytesIO
 
+from ..timeutils import DATE_FMT, DATETIME_FMT, fmt_local
 from .pdf_fonts import get_font_css, get_font_family, link_callback
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,10 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
         supplier_extra += f"<p>Адрес: {_e(shop_address)}</p>"
     if shop_phone:
         supplier_extra += f"<p>Тел: {_e(shop_phone)}</p>"
+    # Банковские реквизиты (SHOP_REQUISITES в .env, строки через «|»)
+    for line in str(shop_info.get('requisites') or '').split('|'):
+        if line.strip():
+            supplier_extra += f"<p>{_e(line.strip())}</p>"
 
     html = f"""
     <!DOCTYPE html>
@@ -158,7 +163,7 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
     <body>
         <h1>Счёт на оплату №{order.id}</h1>
         <div class="subtitle">
-            от {order.created_at.strftime('%d.%m.%Y')}
+            от {fmt_local(order.created_at, DATE_FMT)}
         </div>
 
         <table class="info-table">
@@ -210,7 +215,7 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
         {comment_block}
 
         <div class="footer">
-            Счёт сгенерирован автоматически · {datetime.now().strftime('%d.%m.%Y %H:%M')}<br>
+            Счёт сгенерирован автоматически · {fmt_local(datetime.now(timezone.utc), DATETIME_FMT)}<br>
             {_e(shop_info.get('name', 'ООО «Диантус»'))}
         </div>
     </body>

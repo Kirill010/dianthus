@@ -1,41 +1,54 @@
+# Production image dependencies. Keep this file ASCII-only: some tools
+# (pip-audit on Windows with a cp1251 locale) read it in the system encoding.
+#
+# All versions are pinned and verified:
+#   * the full test suite passes on exactly these versions (pytest);
+#   * pip-audit -r requirements.txt --no-deps --disable-pip
+#     -> "No known vulnerabilities found".
+# The previous pins (FastAPI 0.115 / Starlette 0.38 / python-multipart 0.0.12 /
+# Pillow 10.4 / Jinja2 3.1.4) had 82 known vulnerabilities in 6 packages.
+#
+# To update: change a version -> run pytest -> run pip-audit.
+# Test-only dependencies live in requirements-dev.txt.
+
 # Web
-fastapi==0.115.0
-uvicorn[standard]==0.32.0
-starlette==0.38.6
-jinja2==3.1.4
-python-multipart==0.0.12
+fastapi==0.159.0
+starlette==1.9.0
+uvicorn[standard]==0.54.0
+jinja2==3.1.6
+python-multipart==0.0.32
 itsdangerous==2.2.0
 
-# БД
-SQLAlchemy==2.0.35
-psycopg2-binary==2.9.9
-alembic==1.13.3
+# Database
+SQLAlchemy==2.0.52
+psycopg2-binary==2.9.13
+alembic==1.20.0
 
-# Безопасность
-bcrypt==4.0.1
-redis==5.1.1
-python-dotenv==1.0.1
+# Security
+bcrypt==5.0.0
+redis==8.1.0
+python-dotenv==1.2.4
+pyotp==2.10.0
+qrcode==8.2
 
 # Excel
 openpyxl==3.1.5
-xlrd==2.0.1
+xlrd==2.0.2
 
-# PDF
-xhtml2pdf==0.2.16
-reportlab==4.2.5
-Pillow==10.4.0
+# PDF and images
+xhtml2pdf==0.2.27
+reportlab==5.0.1
+Pillow==13.0.0
 
-# Мониторинг
-sentry-sdk[fastapi]==2.17.0
+# Monitoring
+sentry-sdk[fastapi]==2.72.0
 
-# Планировщик
-APScheduler==3.10.4
+# Scheduler
+APScheduler==3.11.3
 
-# WebPush (опционально)
-pywebpush==2.0.3
+# Time zone database (absent on Windows and in slim images; the shop shows
+# time in SHOP_TZ, Europe/Moscow by default)
+tzdata==2026.5
 
-pyotp==2.9.0
-qrcode==8.2
-# Ограничение частоты запросов реализовано самостоятельно
-# (app/security.py: Redis или память) — slowapi не использовался
-# и удалён, чтобы не тащить лишнюю зависимость в образ.
+# WebPush is not wired in (app/services/webpush_service.py is never called),
+# so pywebpush is not installed. If you need it: add pywebpush.

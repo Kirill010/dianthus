@@ -43,7 +43,11 @@ services:
     mem_limit: 1g
     logging: *logging
 
-  # ── Redis (лимиты запросов, блокировки входа) ────────────────
+  # ── Redis: сессии (в них лежат корзины), лимиты запросов, блокировки входа ──
+  # Включён журнал AOF (appendonly): после перезагрузки сервера или
+  # пересоздания контейнера клиентов НЕ выкидывает из аккаунтов и корзины не
+  # пропадают. Раньше стояло --save "" (без записи на диск) — каждый рестарт
+  # Redis обнулял все сессии.
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -57,7 +61,11 @@ services:
         --requirepass "$$REDIS_PASSWORD"
         --maxmemory 128mb
         --maxmemory-policy allkeys-lru
+        --appendonly yes
+        --appendfsync everysec
         --save ""
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG"]
       interval: 10s
@@ -71,6 +79,8 @@ services:
   app:
     build:
       context: .
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
     image: dianthus-app:latest
     restart: unless-stopped
     env_file: .env
@@ -155,6 +165,7 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:
   uploads:
   letsencrypt:
   certbot_www:

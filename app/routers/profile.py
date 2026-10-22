@@ -12,6 +12,7 @@ from ..deps import get_current_user
 from ..security import check_csrf
 from ..services import totp
 from ..templating import render
+from ..web import safe_back
 from ..validators import (validate_company_name, validate_full_name,
                           validate_password, validate_phone,
                           validate_inn, validate_city)
@@ -21,7 +22,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 def _back(request: Request, default: str = "/profile") -> str:
-    return request.headers.get("referer") or default
+    # Раньше возвращался любой Referer как есть — open redirect.
+    return safe_back(request, default)
 
 # ПРОФИЛЬ
 @router.get("/profile", response_class=HTMLResponse)

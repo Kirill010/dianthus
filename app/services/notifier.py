@@ -1,6 +1,5 @@
 # Уведомления админам о важных событиях — через email (SMTP).
 import logging
-import os
 import smtplib
 import ssl
 import time
@@ -9,6 +8,7 @@ from email.mime.text import MIMEText
 from html import escape
 
 from ..config import config
+from ..timeutils import fmt_local
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +31,11 @@ MAX_ATTEMPTS = 3  # fix #63: retry при временных сбоях SMTP
 
 def _get_smtp_config() -> dict | None:
     """Возвращает конфиг SMTP или None, если не настроено."""
-    host = (os.getenv("SMTP_HOST") or "").strip()
-    user = (os.getenv("SMTP_USER") or "").strip()
-    password = (os.getenv("SMTP_PASSWORD") or "").strip()
-    sender = (os.getenv("SMTP_FROM") or user).strip()
-    recipients_raw = (os.getenv("SMTP_TO") or "").strip()
+    host = (config.SMTP_HOST or "").strip()
+    user = (config.SMTP_USER or "").strip()
+    password = (config.SMTP_PASSWORD or "").strip()
+    sender = (config.SMTP_FROM or user).strip()
+    recipients_raw = (config.SMTP_TO or "").strip()
 
     if not host or not user or not password or not recipients_raw:
         logger.warning(
@@ -48,22 +48,14 @@ def _get_smtp_config() -> dict | None:
     if not recipients:
         return None
 
-    try:
-        port = int(os.getenv("SMTP_PORT", "465"))
-    except ValueError:
-        port = 465
-
-    use_ssl = (os.getenv("SMTP_USE_SSL", "true").strip().lower()
-               in ("1", "true", "yes", "on"))
-
     return {
         "host": host,
-        "port": port,
+        "port": config.SMTP_PORT,
         "user": user,
         "password": password,
         "sender": sender,
         "recipients": recipients,
-        "use_ssl": use_ssl,
+        "use_ssl": config.SMTP_USE_SSL,
     }
 
 
@@ -141,7 +133,8 @@ def send_email(subject: str, body_html: str) -> bool:
     return ok
 
 
-def send_email_to(to: str, subject: str, body_html: str) -> bool:
+def send_email_to(to: str, subject: str, body_html: str,
+                  text: str | None = None) -> bool:
     """Отправка конкретному получателю (клиенту)."""
     cfg = _get_smtp_config()
     if not cfg:
@@ -151,7 +144,8 @@ def send_email_to(to: str, subject: str, body_html: str) -> bool:
     msg["Subject"] = subject
     msg["From"] = cfg["sender"]
     msg["To"] = to
-    msg.attach(MIMEText("Откройте в HTML-клиенте.", "plain", "utf-8"))
+    # Текстовая часть нужна почтовым фильтрам и клиентам без HTML
+    msg.attach(MIMEText(text or subject, "plain", "utf-8"))
     msg.attach(MIMEText(body_html, "html", "utf-8"))
 
     ok = _send_with_retry(cfg, msg, [to])
@@ -352,7 +346,7 @@ def notify_admin_new_order(order, user) -> None:
 
         <div class="footer">
           {config.SHOP_NAME} · Оптовые поставки цветов<br>
-          {order.created_at.strftime('%d.%m.%Y %H:%M')}
+          {fmt_local(order.created_at)}
         </div>
       </div>
     </body></html>
@@ -428,7 +422,7 @@ def notify_client_status_changed(order, status: str) -> None:
     <html><head><meta charset="UTF-8">{_BASE_STYLE}</head>
     <body>
       <div class="card">
-        <h1>{emoji} Заказ №{order.id}: {status}</h1>
+        <h1>{emoji} Заказ №{order.id}: {_e(status)}</h1>
         <p style="font-size:16px;">Здравствуйте, <b>{_e(user.full_name)}</b>!</p>
         <p>{text}</p>
 
@@ -532,3 +526,77 @@ def notify_client_preorder_available(preorder, supply_item) -> None:
         )
     except Exception as e:
         logger.warning("Ошибка email о предзаказе: %s", e)
+
+def notify_client_order_created(order, user) -> None:
+    """Клиенту: заказ принят (раньше письмо получал только админ)."""
+    if not order or not user or not user.email:
+        return
+
+    rows = ""
+    for item in order.items:
+        pack = item.package_size or 1
+        rows += (
+            f"<tr><td>{_e(item.product_name)}</td>"
+            f"<td>{item.quantity} упак. × {pack} шт = {item.quantity * pack} шт</td></tr>"
+        )
+    discount = ""
+    if order.discount_percent and order.discount_percent > 0:
+        discount = (
+            f"<tr><td>Скидка {order.discount_percent:.0f}%:</td>"
+            f"<td>−{order.discount_amount:.2f} ₽</td></tr>"
+        )
+
+    body = f"""
+    <!DOCTYPE html>
+    <html><head><meta charset="UTF-8">{_BASE_STYLE}</head>
+    <body>
+      <div class="card">
+        <h1>✅ Заказ №{order.id} принят</h1>
+        <p style="font-size:16px;">Здравствуйте, <b>{_e(user.full_name)}</b>!</p>
+        <p>Мы получили ваш заказ от {fmt_local(order.created_at)}.
+           Менеджер свяжется с вами для подтверждения и уточнения доставки.</p>
+        <table>
+          {rows}
+          {discount}
+          <tr><td><b>Итого:</b></td><td><b>{order.total_price:.2f} ₽</b></td></tr>
+        </table>
+        <a href="{config.APP_URL}/orders" class="btn">Мои заказы</a>
+        <div class="footer">{_e(config.SHOP_NAME)} · {_e(config.SHOP_PHONE)}</div>
+      </div>
+    </body></html>
+    """
+    send_email_to(
+        to=user.email,
+        subject=f"✅ Заказ №{order.id} принят",
+        body_html=body,
+        text=(f"Заказ №{order.id} принят. Сумма: {order.total_price:.2f} ₽. "
+              f"Менеджер свяжется с вами. {config.APP_URL}/orders"),
+    )
+
+
+def notify_client_approved(user) -> None:
+    """Клиенту: заявка одобрена, можно входить (раньше он об этом не узнавал)."""
+    if not user or not user.email:
+        return
+
+    body = f"""
+    <!DOCTYPE html>
+    <html><head><meta charset="UTF-8">{_BASE_STYLE}</head>
+    <body>
+      <div class="card">
+        <h1>🌸 Добро пожаловать, {_e(user.company_name)}!</h1>
+        <p style="font-size:16px;">Здравствуйте, <b>{_e(user.full_name)}</b>!</p>
+        <p>Ваша заявка одобрена. Теперь вам доступны оптовые цены
+           и онлайн-заказ. Войдите, используя email <b>{_e(user.email)}</b>
+           и пароль, который вы указали при регистрации.</p>
+        <a href="{config.APP_URL}/login" class="btn">Войти в каталог</a>
+        <div class="footer">{_e(config.SHOP_NAME)} · {_e(config.SHOP_PHONE)}</div>
+      </div>
+    </body></html>
+    """
+    send_email_to(
+        to=user.email,
+        subject="🌸 Доступ к оптовому каталогу открыт",
+        body_html=body,
+        text=f"Ваша заявка одобрена. Войти: {config.APP_URL}/login",
+    )

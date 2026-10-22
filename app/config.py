@@ -46,10 +46,19 @@ class Config:
     # Максимальный размер загружаемого изображения товара, байт
     MAX_UPLOAD_SIZE: int = _int_env("MAX_UPLOAD_SIZE", 5 * 1024 * 1024)
 
+    # Часовой пояс магазина. В БД все даты лежат в UTC, а клиентам и
+    # менеджерам время показывается в этом поясе (IANA-имя, напр. Europe/Moscow).
+    SHOP_TZ: str = _str_env("SHOP_TZ", "Europe/Moscow")
+
     SHOP_NAME: str = _str_env("SHOP_NAME", "ООО «Диантус»")
     SHOP_PHONE: str = _str_env("SHOP_PHONE", "")
     SHOP_PHONE_2: str = _str_env("SHOP_PHONE_2", "")
     SHOP_ADDRESS: str = _str_env("SHOP_ADDRESS", "")
+    # Почта для обращений клиентов (политика конфиденциальности, контакты)
+    SHOP_EMAIL: str = _str_env("SHOP_EMAIL", "")
+    # Банковские реквизиты для PDF-счёта. Строки разделяются знаком «|», например:
+    #   ИНН 7720965534 | КПП 772001001 | р/с 40702810… | БИК 044525225 | Банк «…»
+    SHOP_REQUISITES: str = _str_env("SHOP_REQUISITES", "")
     SHOP_WORKING_HOURS: str = _str_env("SHOP_WORKING_HOURS", "")
     SHOP_MAX_LINK: str = _str_env("SHOP_MAX_LINK", "")
     SHOP_MAP_URL: str = _str_env("SHOP_MAP_URL", "")
@@ -59,6 +68,13 @@ class Config:
         _str_env("INTEGRATION_PASSWORD", "")
         or _str_env("INTEGRATION_SECRET", "")
     )
+    # 1 = при загрузке остатков из 1С вычитать заказы, которые 1С ещё не
+    # «подтвердила» (POST /api/1c/orders/ack). Закрывает окно, когда клиент
+    # оформил заказ уже ПОСЛЕ того, как 1С посчитала остатки: без этого
+    # свежая выгрузка вернёт проданные упаковки на полку (перепродажа).
+    # Включайте, только если 1С реально вызывает orders/ack — иначе
+    # подтверждения не придут и остатки будут занижены.
+    ONEC_RESERVE_UNEXPORTED: bool = _bool_env("ONEC_RESERVE_UNEXPORTED", False)
 
     SMTP_HOST: str = _str_env("SMTP_HOST", "")
     SMTP_PORT: int = _int_env("SMTP_PORT", 465)
@@ -70,10 +86,10 @@ class Config:
 
     ALLOW_SQLITE_IN_PROD: bool = _bool_env("ALLOW_SQLITE_IN_PROD", False)
 
-    # Безопасность
+    # Безопасность.
+    # (Флаги LOGIN_LOCK_ENABLED / CSRF_ENABLED удалены: они нигде не читались,
+    # и казалось, что защиту можно «выключить» настройкой, хотя это не так.)
     SESSION_MAX_AGE: int = _int_env("SESSION_MAX_AGE", 604800)  # 7 дней
-    LOGIN_LOCK_ENABLED: bool = _bool_env("LOGIN_LOCK_ENABLED", True)
-    CSRF_ENABLED: bool = _bool_env("CSRF_ENABLED", True)
 
 
 config = Config()
@@ -102,6 +118,18 @@ if config.ENV == "prod":
         logger.warning(
             "⚠️ APP_URL указывает на localhost — CSRF/письма будут "
             "со ссылками на localhost. Установите https://ваш-домен."
+        )
+    elif config.APP_URL.startswith("http://"):
+        logger.warning(
+            "⚠️ APP_URL начинается с http:// — в prod cookie сессии выдаётся "
+            "только по HTTPS, войти на сайт не получится. Укажите https://."
+        )
+
+    if not (os.getenv("REDIS_URL") or "").strip():
+        logger.critical(
+            "❌ ENV=prod, но REDIS_URL не задан: сессии и лимиты запросов "
+            "хранятся в памяти КАЖДОГО воркера отдельно — клиентов будет "
+            "«выкидывать» из аккаунта. Подключите Redis (см. docker-compose.yml)."
         )
 
     if config.DATABASE_URL.startswith("sqlite"):

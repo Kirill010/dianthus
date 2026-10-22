@@ -10,16 +10,15 @@
   * перед созданием каждого индекса — перечитываем состояние БД
 """
 import logging
-import os
 
 from sqlalchemy import inspect, text
 
-from .database import current_bind
-from .locks import file_lock
+from .database import Base, current_bind
+from .locks import file_lock, lock_path
 
 logger = logging.getLogger(__name__)
 
-MIGRATION_LOCK = os.getenv("MIGRATION_LOCK", "/run/dianthus/migration.lock")
+MIGRATION_LOCK = lock_path("MIGRATION_LOCK", "migration.lock")
 
 
 EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
@@ -35,6 +34,8 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
         "category":     "VARCHAR(100) DEFAULT 'Прочее'",
         "sku":          "VARCHAR(100) DEFAULT ''",
         "external_id":  "VARCHAR(64) DEFAULT ''",
+        # Для PostgreSQL _column_ddl() заменит тип на JSONB.
+        "photos":       "TEXT DEFAULT '[]'",
     },
     "users": {
         "phone":            "VARCHAR(30) DEFAULT ''",
@@ -45,6 +46,7 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
         "is_approved":      "BOOLEAN DEFAULT FALSE",
         "discount_percent": "FLOAT DEFAULT 0",
         "totp_secret":     "VARCHAR(64) DEFAULT ''",
+        "consent_at":      "TIMESTAMP",
     },
     "supplies": {
         "status":     "VARCHAR(30) DEFAULT 'Ожидается'",
@@ -61,6 +63,10 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
         "comment":          "TEXT DEFAULT ''",
         "subtotal":         "FLOAT DEFAULT 0",
         "discount_percent": "FLOAT DEFAULT 0",
+        # Обмен с 1С: когда заказ забрала 1С и под каким номером он там заведён
+        "exported_at":      "TIMESTAMP",
+        "onec_number":      "VARCHAR(64) DEFAULT ''",
+        "order_token":      "VARCHAR(64)",
     },
     "order_items": {
         "package_size": "INTEGER DEFAULT 1",
@@ -73,7 +79,8 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
     },
 }
 
-EXPECTED_INDEXES: dict[str, list[tuple[str, str]]] = {
+# (имя индекса, колонки) или (имя, колонки, "unique")
+EXPECTED_INDEXES: dict[str, list[tuple]] = {
     "products": [
         ("ix_products_category", "category"),
         ("ix_products_sku", "sku"),
@@ -84,6 +91,9 @@ EXPECTED_INDEXES: dict[str, list[tuple[str, str]]] = {
         ("ix_orders_created_at", "created_at"),
         ("ix_orders_status", "status"),
         ("ix_orders_user_created", "user_id, created_at"),
+        ("ix_orders_exported_at", "exported_at"),
+        # NULL-ы в уникальном индексе допустимы (старые заказы без токена)
+        ("uq_orders_order_token", "order_token", "unique"),
     ],
     "supply_items": [
         ("ix_supply_items_supply_product", "supply_id, product_id"),
@@ -265,6 +275,30 @@ def _backfill_order_subtotals() -> None:
         logger.warning("Backfill orders: %s", e)
 
 
+def _ensure_trigram_search_indexes(dialect: str) -> None:
+    """PostgreSQL: триграммные индексы для поиска ILIKE '%текст%'.
+
+    Обычный индекс для такого поиска бесполезен — запрос читает всю таблицу.
+    С pg_trgm поиск по названию остаётся быстрым и при десятках тысяч товаров
+    из 1С. Делается «по возможности»: нет прав на CREATE EXTENSION — просто
+    пропускаем (поиск работает, только медленнее).
+    """
+    if dialect != "postgresql":
+        return
+    try:
+        existing = {i["name"] for i in inspect(current_bind()).get_indexes("products")}
+    except Exception:                                        # noqa: BLE001
+        existing = set()
+    if "ix_products_name_trgm" in existing:
+        return
+    if _exec_one("CREATE EXTENSION IF NOT EXISTS pg_trgm", "Включено расширение pg_trgm"):
+        _exec_one(
+            "CREATE INDEX IF NOT EXISTS ix_products_name_trgm "
+            "ON products USING gin (name gin_trgm_ops)",
+            "Создан триграммный индекс по названию товара",
+        )
+
+
 def _auto_migrate_inner() -> None:
     try:
         engine = current_bind()  # актуальный bind (см. app/database.py)
@@ -299,7 +333,8 @@ def _auto_migrate_inner() -> None:
     for table, indexes in EXPECTED_INDEXES.items():
         if table not in tables:
             continue
-        for idx_name, columns in indexes:
+        for idx_name, columns, *flags in indexes:
+            unique = "UNIQUE " if "unique" in flags else ""
             try:
                 engine = current_bind()  # актуальный bind (см. app/database.py)
                 insp_local = inspect(engine)
@@ -311,11 +346,13 @@ def _auto_migrate_inner() -> None:
             if idx_name in existing_idx:
                 continue
             sql = (
-                f"CREATE INDEX IF NOT EXISTS {idx_name} "
+                f"CREATE {unique}INDEX IF NOT EXISTS {idx_name} "
                 f"ON {table} ({columns})"
             )
             if _exec_one(sql, f"Создан индекс {idx_name} ON {table}"):
                 added += 1
+
+    _ensure_trigram_search_indexes(dialect)
 
     _backfill_order_item_pack_sizes()
     _backfill_product_photos()
@@ -333,6 +370,33 @@ def auto_migrate() -> None:
         if got_lock:
             logger.info("🔒 Lock миграции получен: %s", MIGRATION_LOCK)
         _auto_migrate_inner()
+
+
+def prepare_database(*after) -> None:
+    """Вся подготовка БД при старте — ОДНИМ куском под одной блокировкой.
+
+    Порядок: создать таблицы → довести схему (колонки/индексы) → выполнить
+    шаги `after` (например, создание админа из .env).
+
+    Почему так. Раньше create_all() выполнялся ДО блокировки: при первом
+    старте на пустой PostgreSQL два воркера одновременно делали CREATE TABLE
+    и один из них падал. А ensure_default_admin() вызывался при импорте
+    модуля — раньше, чем появлялись таблицы, поэтому на чистой базе админ
+    не создавался вообще («no such table: users»).
+
+    Блокировки нельзя вкладывать друг в друга (flock на двух дескрипторах
+    одного файла блокирует сам себя), поэтому здесь — один with.
+    """
+    from . import models  # noqa: F401 — регистрация таблиц в Base.metadata
+
+    with file_lock(MIGRATION_LOCK) as got_lock:
+        if got_lock:
+            logger.info("🔒 Lock миграции получен: %s", MIGRATION_LOCK)
+        Base.metadata.create_all(bind=current_bind())
+        _auto_migrate_inner()
+        ensure_notifications_table()
+        for step in after:
+            step()
 
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@
                 {% elif order.status == 'Отправлен' %}bg-primary
                 {% else %}bg-secondary{% endif %}">{{ order.status }}</span>
         </div>
-        <div class="order-card__meta">{{ order.created_at.strftime('%d.%m.%Y %H:%M') }}</div>
+        <div class="order-card__meta">{{ order.created_at|localdt }}</div>
         {% if order.discount_percent and order.discount_percent > 0 %}
         <div class="order-card__meta">
             Подытог {{ "%.0f"|format(order.subtotal) }} ₽ ·

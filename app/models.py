@@ -2,11 +2,12 @@
 import json
 from datetime import datetime, timezone
 
-from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey,
+from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey, Index,
                         Integer, JSON, String, Text)
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
 from .database import Base
+from .services.pricing import line_total, money
 
 
 def _utcnow() -> datetime:
@@ -73,6 +74,8 @@ class User(Base):
     notifications = relationship("Notification", back_populates="user",
                                  cascade="all, delete-orphan")
     totp_secret = Column(String(64), default="", nullable=False)
+    # Когда клиент дал согласие на обработку персональных данных (152-ФЗ)
+    consent_at = Column(DateTime, nullable=True)
 
 
 class Product(Base):
@@ -211,13 +214,22 @@ class Order(Base):
     status = Column(String(30), default="Новый")
     comment = Column(Text, default="")
     created_at = Column(DateTime, default=_utcnow)
+    # Обмен с 1С: когда 1С забрала заказ (NULL = ещё не забирала) и номер
+    # документа «Заказ клиента» в самой 1С.
+    exported_at = Column(DateTime, nullable=True, index=True)
+    onec_number = Column(String(64), default="")
+    # Одноразовый ключ формы оформления. Уникальный индекс гарантирует, что
+    # двойная отправка формы (два быстрых клика, повтор запроса на плохой
+    # сети) создаст только ОДИН заказ — вторая вставка упадёт на уникальности.
+    order_token = Column(String(64), nullable=True)
+    __table_args__ = (Index("uq_orders_order_token", "order_token", unique=True),)
     user = relationship("User", back_populates="orders")
     items = relationship("OrderItem", back_populates="order",
                          cascade="all, delete-orphan")
 
     @property
     def discount_amount(self) -> float:
-        return max(0.0, self.subtotal - self.total_price)
+        return money(max(0.0, (self.subtotal or 0) - (self.total_price or 0)))
 
 
 class OrderItem(Base):
@@ -240,7 +252,7 @@ class OrderItem(Base):
 
     @property
     def subtotal(self) -> float:
-        return self.price * (self.package_size or 1) * self.quantity
+        return line_total(self.price, self.package_size, self.quantity)
 
 
 class Notification(Base):

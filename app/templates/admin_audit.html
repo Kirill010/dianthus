@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% set hide_bottom_nav = true %}
+{% block title %}Журнал действий — Диантус{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h2 class="mb-0"><i class="fas fa-clipboard-list me-2"></i>Журнал действий</h2>
+    <a href="/admin" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-arrow-left me-1"></i>В админку
+    </a>
+</div>
+
+<p class="text-muted small">
+    Последние {{ rows|length }} записей: кто и что менял (скидки, статусы заказов, товары, поставки,
+    действия 1С). Время — по поясу магазина ({{ config.SHOP_TZ }}).
+    {% if rows|length >= limit and limit < 1000 %}
+        <a href="/admin/audit?limit=1000">Показать 1000</a>
+    {% endif %}
+</p>
+
+{% if rows %}
+<div class="table-responsive">
+    <table class="table table-sm table-hover align-middle">
+        <thead>
+            <tr><th>Время</th><th>Кто</th><th>Действие</th><th>Объект</th><th>Подробности</th><th>IP</th></tr>
+        </thead>
+        <tbody>
+        {% for r in rows %}
+            <tr>
+                <td class="text-nowrap">{{ r.created_at|localdt }}</td>
+                <td>{{ r.user.email if r.user else "1С / система" }}</td>
+                <td><code>{{ r.action }}</code></td>
+                <td class="text-nowrap">{{ r.entity }}{% if r.entity_id %} #{{ r.entity_id }}{% endif %}</td>
+                <td>{{ r.details }}</td>
+                <td class="text-muted small">{{ r.ip }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+    <p class="text-muted py-4 text-center">Записей пока нет.</p>
+{% endif %}
+
+{% endblock %}

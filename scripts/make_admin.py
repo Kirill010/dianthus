@@ -2,7 +2,7 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.database import SessionLocal
 from app import models
@@ -34,6 +34,6 @@ def make_admin(email: str) -> int:
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Использование: python make_admin.py EMAIL")
+        print("Использование: python -m scripts.make_admin EMAIL")
         sys.exit(1)
     sys.exit(make_admin(sys.argv[1]))

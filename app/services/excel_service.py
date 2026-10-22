@@ -6,6 +6,8 @@ from io import BytesIO
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
+from ..timeutils import fmt_local
+
 logger = logging.getLogger(__name__)
 
 HEADER_FILL = PatternFill("solid", fgColor="2D6A4F")
@@ -68,7 +70,7 @@ def export_orders_to_excel(orders: list) -> BytesIO:
         first = True
         if not order.items:
             ws.append(_row([order.id,
-                       order.created_at.strftime("%d.%m.%Y %H:%M"),
+                       fmt_local(order.created_at),
                        user.company_name if user else "Гость",
                        user.full_name if user else "",
                        user.email if user else "",
@@ -81,7 +83,7 @@ def export_orders_to_excel(orders: list) -> BytesIO:
             stems = item.quantity * pack
             ws.append(_row([
                 order.id if first else "",
-                order.created_at.strftime("%d.%m.%Y %H:%M") if first else "",
+                fmt_local(order.created_at) if first else "",
                 (user.company_name if user else "Гость") if first else "",
                 (user.full_name if user else "") if first else "",
                 (user.email if user else "") if first else "",
@@ -147,15 +149,17 @@ def import_products_from_excel(content: bytes) -> tuple[list[dict], list[str]]:
             def safe(idx, default=""):
                 return row[idx] if idx < len(row) else None
 
+            # Значения обрезаются/ограничиваются под колонки БД: иначе на
+            # PostgreSQL одна «длинная» строка роняла импорт целиком.
             products.append({
-                "name": name,
-                "country": _to_str_preserve(safe(1)),
-                "length_cm": _to_int(safe(2)),
-                "unit": _to_str_preserve(safe(3)) or "упаковка",
-                "package_size": _to_int(safe(4)) or 1,
-                "min_quantity": _to_int(safe(5)) or 1,
-                "category": _to_str_preserve(safe(6)) or "Прочее",
-                "description": _to_str_preserve(safe(7)),
+                "name": name[:200],
+                "country": _to_str_preserve(safe(1))[:100],
+                "length_cm": min(500, max(0, _to_int(safe(2)))),
+                "unit": (_to_str_preserve(safe(3)) or "упаковка")[:30],
+                "package_size": min(10_000, max(1, _to_int(safe(4)) or 1)),
+                "min_quantity": min(10_000, max(1, _to_int(safe(5)) or 1)),
+                "category": (_to_str_preserve(safe(6)) or "Прочее")[:100],
+                "description": _to_str_preserve(safe(7))[:5000],
                 "image_url": "",
             })
         except (ValueError, TypeError) as e:

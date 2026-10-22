@@ -16,6 +16,7 @@ from ..models import (
 )
 from ..security import check_rate_limit
 from ..templating import render
+from ..web import LIKE_ESCAPE, contains_pattern
 
 router = APIRouter()
 
@@ -74,11 +75,11 @@ def _apply_quantity_filter(query, level: str):
 def _apply_filters(query, q, country, category, min_price, max_price,
                    min_length, max_length):
     if q:
-        pattern = f"%{q}%"
+        pattern = contains_pattern(q)
         query = query.filter(or_(
-            Product.name.ilike(pattern),
-            Product.description.ilike(pattern),
-            Product.country.ilike(pattern),
+            Product.name.ilike(pattern, escape=LIKE_ESCAPE),
+            Product.description.ilike(pattern, escape=LIKE_ESCAPE),
+            Product.country.ilike(pattern, escape=LIKE_ESCAPE),
         ))
     if country:
         query = query.filter(Product.country == country)
@@ -262,17 +263,20 @@ def catalog(
         level_url=lambda l: _level_url(current_filters, l),
     )
 
-@router.get("/api/search-suggest")
-async def search_suggest(
-    request: Request,
-    q: str = "",
-    db: Session = Depends(get_db),
-):
+async def _rate_suggest(request: Request) -> None:
     # Подсказки доступны и анонимам (публичный каталог), но с лимитом —
     # ILIKE-поиск по всем товарам не должен стать вектором абьюза.
     await check_rate_limit(request, "search-suggest", max_hits=60, window=60)
 
-    q = (q or "").strip()
+
+@router.get("/api/search-suggest", dependencies=[Depends(_rate_suggest)])
+def search_suggest(
+    q: str = "",
+    db: Session = Depends(get_db),
+):
+    # Обычная `def` (а не async): запрос к БД синхронный, FastAPI выполнит
+    # его в пуле потоков, и поиск «на лету» не будет замораживать сайт.
+    q = (q or "").strip()[:100]
     if len(q) < 2:
         return JSONResponse({"items": []})
 
@@ -281,7 +285,7 @@ async def search_suggest(
         .join(SupplyItem, SupplyItem.product_id == Product.id)
         .filter(
             SupplyItem.is_active.is_(True),
-            Product.name.ilike(f"%{q}%"),
+            Product.name.ilike(contains_pattern(q), escape=LIKE_ESCAPE),
         )
         .limit(8)
         .all()

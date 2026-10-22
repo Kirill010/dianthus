@@ -46,7 +46,8 @@ CACHE_TTL=300
 PAGE_SIZE=12
 SESSION_MAX_AGE=604800
 
-# Администратор (создаётся при первом запуске)
+# Администратор (создаётся при первом запуске). После первого входа смените
+# пароль в профиле, включите 2FA и удалите ADMIN_PASSWORD из этого файла.
 ADMIN_EMAIL=${ADMIN_EMAIL}
 ADMIN_PASSWORD=${ADMIN_PASS}
 ADMIN_NAME=Администратор
@@ -62,6 +63,16 @@ SHOP_ADDRESS=г. Москва, Вешняковская ул., 39Г, этаж 1
 SHOP_WORKING_HOURS=Пн–Вс 09:00–21:00
 SHOP_MAX_LINK=https://max.ru/id7720965534_biz
 SHOP_MAP_URL=https://yandex.ru/map-widget/v1/?ll=37.816578%2C55.717630&z=17
+# Почта для обращений клиентов (политика конфиденциальности, контакты)
+SHOP_EMAIL=${ADMIN_EMAIL}
+# Банковские реквизиты для PDF-счёта, строки через «|». Пример:
+#   ИНН 7720965534 | КПП 772001001 | р/с 40702810000000000000 | БИК 044525225 | Банк «Название»
+SHOP_REQUISITES=
+# Часовой пояс магазина: так показывается время заказов клиентам и менеджерам
+SHOP_TZ=Europe/Moscow
+
+# Число процессов приложения (по умолчанию 2 — для сервера 4 ядра / 4 ГБ)
+# WEB_CONCURRENCY=2
 
 # Почта (уведомления о новых клиентах и заказах).
 # Заполните сами: для Яндекса нужен «пароль приложения», а не пароль от ящика.
@@ -76,14 +87,16 @@ SMTP_USE_SSL=true
 # Интеграция с 1С (Basic Auth). Эти же логин и пароль вводятся в 1С.
 INTEGRATION_USER=1c_dianthus
 INTEGRATION_PASSWORD=${INTEGRATION_PASS}
+# 1 = при загрузке остатков вычитать заказы, которые 1С ещё не подтвердила
+# (POST /api/1c/orders/ack). Включайте, только когда 1С реально вызывает ack.
+ONEC_RESERVE_UNEXPORTED=0
 
 # Мониторинг ошибок (необязательно): DSN из sentry.io
 SENTRY_DSN=
 
-# Web Push (необязательно)
-VAPID_PRIVATE_KEY=
-VAPID_PUBLIC_KEY=
-VAPID_CLAIMS_EMAIL=mailto:${ADMIN_EMAIL}
+# Копия резервных копий на ДРУГОЙ сервер (необязательно, очень рекомендуется).
+# Нужен rsync и вход по SSH-ключу. Пример: backup@203.0.113.10:/srv/dianthus-backups
+BACKUP_REMOTE=
 EOF
     chmod 600 .env
     echo "✅ Создан .env (права 600)."

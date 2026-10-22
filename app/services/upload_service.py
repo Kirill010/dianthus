@@ -15,6 +15,12 @@ UPLOAD_DIR = Path(__file__).resolve().parent.parent / "static" / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 MAX_SIZE = config.MAX_UPLOAD_SIZE
+# Маленький по размеру файл может «распаковаться» в гигантскую картинку
+# (decompression bomb) и съесть всю память. Лимит в пикселях проверяем сами:
+# Pillow по MAX_IMAGE_PIXELS только предупреждает и отказывает лишь при
+# ДВОЙНОМ превышении, то есть настоящий потолок был бы вдвое выше заявленного.
+MAX_PIXELS = 40_000_000          # ≈ 7000×5700
+Image.MAX_IMAGE_PIXELS = MAX_PIXELS
 ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 FULL_SIZE = (1600, 1600)
 
@@ -36,10 +42,16 @@ def save_product_image(file: UploadFile) -> str:
     if not content:
         raise HTTPException(400, "Файл пустой")
     if len(content) > MAX_SIZE:
-        raise HTTPException(400, "Файл больше 5 МБ")
+        raise HTTPException(400, f"Файл больше {MAX_SIZE // (1024 * 1024)} МБ")
 
     try:
-        img = Image.open(BytesIO(content))
+        img = Image.open(BytesIO(content))          # читает только заголовок
+        width, height = img.size
+    except Exception:
+        raise HTTPException(400, "Не изображение")
+    if width * height > MAX_PIXELS:
+        raise HTTPException(400, "Изображение слишком большое по размерам")
+    try:
         # fix #49: применяем ориентацию по EXIF
         img = ImageOps.exif_transpose(img)
         img = img.convert("RGB")

@@ -2,14 +2,12 @@
 import logging
 import os
 
-from dotenv import load_dotenv
 from sqlalchemy.exc import IntegrityError
 
-from .database import SessionLocal
+from .database import SessionLocal   # (импорт database подгружает config → .env)
 from .services.passwords import hash_password, verify_password
 from . import models
 
-load_dotenv()
 logger = logging.getLogger(__name__)
 
 

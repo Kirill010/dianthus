@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block title %}{{ product.name }} — оптом · Диантус{% endblock %}
-{% block description %}{{ product.name }}{% if product.country %} из {{ product.country }}{% endif %} — оптовые поставки упаковками от {{ pack }} шт. Цены — после регистрации. Диантус, оптовый магазин цветов.{% endblock %}
+{% block description %}{{ product.name }}{% if product.country %} из {{ product.country }}{% endif %} — оптовые поставки упаковками от {{ product.package_size or 1 }} шт. Цены — после регистрации. Диантус, оптовый магазин цветов.{% endblock %}
 
 {% block content %}
 <a href="/catalog" class="btn btn-outline-secondary btn-sm mb-3">
@@ -112,7 +112,7 @@
                     <div class="qty-control qty-control--lg d-flex align-items-center"
                          style="max-width: 200px;">
                         <button type="button" class="btn btn-outline-secondary"
-                                onclick="this.nextElementSibling.stepDown()">−</button>
+                                data-qty-step="down" aria-label="Меньше">−</button>
                         <input type="number" name="quantity_stems"
                                class="form-control text-center mx-2"
                                value="{{ min_stems }}"
@@ -120,7 +120,7 @@
                                max="{{ max_stems_valid }}"
                                step="{{ pack }}" required>
                         <button type="button" class="btn btn-outline-secondary"
-                                onclick="this.previousElementSibling.stepUp()">+</button>
+                                data-qty-step="up" aria-label="Больше">+</button>
                     </div>
                 </div>
                 <button type="submit" class="btn btn-primary btn-lg w-100">

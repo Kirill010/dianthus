@@ -1,6 +1,8 @@
 # app/auth.py — исправленная версия
 """Регистрация, вход, выход."""
 import logging
+from datetime import datetime, timezone
+from functools import lru_cache
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request
 from fastapi.responses import RedirectResponse
@@ -9,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from .database import get_db
 from .security import (check_csrf, check_rate_limit, reset_rate_limit,
-                       ensure_csrf_token, _client_ip,
+                       ensure_csrf_token, _client_ip, consume_once,
                        check_login_lock, record_login_failure,
                        reset_login_failures)
 from .services import totp
@@ -22,6 +24,13 @@ from .services.notifier import notify_admin_new_client
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+@lru_cache(maxsize=1)
+def _dummy_hash() -> str:
+    """Хэш-пустышка: чтобы проверка пароля занимала одно и то же время,
+    есть такой email в базе или нет."""
+    return hash_password("dummy-password-for-timing")
 
 
 async def _rate_register(request: Request) -> None:
@@ -45,6 +54,7 @@ async def register(
     company_name: str = Form(""),
     inn: str = Form(""),
     city: str = Form(""),
+    consent: str = Form(""),
     db: Session = Depends(get_db),
 ):
     email = email.strip().lower()
@@ -68,6 +78,10 @@ async def register(
         if msg:
             errors.append(msg)
 
+    # 152-ФЗ: персональные данные обрабатываются только с согласием субъекта
+    if not consent:
+        errors.append("Нужно согласие на обработку персональных данных")
+
     if not errors and db.query(models.User).filter(
             models.User.email == email).first():
         errors.append("Этот email уже зарегистрирован")
@@ -77,7 +91,7 @@ async def register(
         request.session["register_data"] = {
             "email": email, "full_name": full_name,
             "phone": phone, "company_name": company_name,
-            "inn": inn, "city": city,
+            "inn": inn, "city": city, "consent": bool(consent),
         }
         return RedirectResponse(url="/register", status_code=303)
 
@@ -92,6 +106,8 @@ async def register(
         full_name=full_name, phone=phone,
         company_name=company_name, inn=inn, city=city,
         is_approved=False,
+        # фиксируем момент согласия — подтверждение на случай запроса проверяющих
+        consent_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
     try:
         db.add(user)
@@ -132,7 +148,13 @@ async def login(
         return RedirectResponse(url="/login", status_code=303)
 
     user = db.query(models.User).filter(models.User.email == email).first()
-    if not user or not verify_password(password, user.hashed_password):
+    # bcrypt считается ВСЕГДА, даже если такого email нет. Иначе по времени
+    # ответа (≈0,2 с у существующих и ≈0 у несуществующих) можно было бы
+    # подбирать, какие адреса зарегистрированы в магазине.
+    password_ok = verify_password(
+        password, user.hashed_password if user else _dummy_hash()
+    )
+    if not user or not password_ok:
         lock_sec = await record_login_failure(email)
         if lock_sec > 0:
             minutes = max(1, lock_sec // 60)
@@ -152,8 +174,21 @@ async def login(
         return RedirectResponse(url="/login", status_code=303)
 
     if user.is_admin and user.totp_secret:
-        code = (await request.form()).get("totp_code", "")
-        if not totp.verify(user.totp_secret, str(code)):
+        code = "".join(str((await request.form()).get("totp_code", "") or "").split())
+        if not code:
+            # Пароль верный, но кода ещё нет — просто просим его. Раньше такой
+            # вход считался НЕУДАЧНЫМ: у админа с 2FA первая попытка всегда
+            # «сгорала», и две обычные опечатки подряд блокировали вход.
+            request.session["login_error"] = "Введите код из приложения-аутентификатора"
+            request.session["show_totp"] = True
+            return RedirectResponse(url="/login", status_code=303)
+
+        # Один и тот же код нельзя использовать дважды (перехваченный код
+        # не пригодится): консумируем успешный код на 90 секунд.
+        code_ok = totp.verify(user.totp_secret, code) and await consume_once(
+            f"totp:{user.id}:{code}", ttl=90
+        )
+        if not code_ok:
             # Неверный код 2FA считается НЕУДАЧНОЙ попыткой входа:
             # иначе 6-значный код можно было бы перебирать бесконечно
             # (лимит IP на /login легко обходится сменой адресов).
@@ -169,7 +204,7 @@ async def login(
             request.session["show_totp"] = True
             logger.warning("2FA: неверный код для %s, IP=%s", email, _client_ip(request))
             return RedirectResponse(url="/login", status_code=303)
-        
+
     request.session.clear()
     request.session["_rotate"] = True      # новый id сессии (защита от фиксации)
     ensure_csrf_token(request)

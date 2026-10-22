@@ -72,3 +72,31 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def check_cyrillic_search() -> bool:
+    """Проверяет, что PostgreSQL сравнивает кириллицу без учёта регистра.
+
+    Поиск по каталогу построен на ILIKE. Если база создана с локалью «C»,
+    ILIKE работает только для латиницы: «роза» не найдёт «Роза Freedom» —
+    и ошибки при этом нет, просто пустая выдача. Лучше сказать об этом в логе
+    при старте, чем искать причину по жалобам клиентов.
+    """
+    if current_bind().dialect.name != "postgresql":
+        return True
+    import logging
+    from sqlalchemy import text
+    log = logging.getLogger(__name__)
+    try:
+        with current_bind().connect() as conn:
+            ok = bool(conn.execute(text("SELECT 'Роза' ILIKE 'роза'")).scalar())
+    except Exception as e:                                   # noqa: BLE001
+        log.warning("Проверка поиска по кириллице не выполнена: %s", e)
+        return True
+    if not ok:
+        log.error(
+            "❌ PostgreSQL не различает регистр кириллицы (ILIKE 'Роза' vs 'роза'). "
+            "Поиск по русским названиям будет работать только при точном "
+            "совпадении регистра. Создайте базу с локалью en_US.UTF-8/ru_RU.UTF-8 "
+            "или ICU-сортировкой (см. docs/GUIDE_FROM_SCRATCH.md, раздел 10)."
+        )
+    return ok

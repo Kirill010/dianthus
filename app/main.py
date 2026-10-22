@@ -6,19 +6,26 @@ from datetime import datetime, timezone
 from importlib import import_module
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Request, HTTPException
+from fastapi import Depends, FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.orm import Session, joinedload
+from starlette.concurrency import run_in_threadpool
+# Именно класс Starlette, а не fastapi.HTTPException: «страница не найдена»
+# (404 на несуществующий адрес) бросает Starlette, и обработчик, повешенный
+# на подкласс FastAPI, её не ловит — пользователь видел сырой JSON.
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .auth import router as auth_router
 from .bootstrap import ensure_default_admin
 from .config import config
-from .database import Base, current_bind, get_db
+from .database import check_cyrillic_search, get_db
 from .deps import get_current_user
-from .migrations import auto_migrate, ensure_notifications_table
+from .migrations import prepare_database
 from .scheduler import start_scheduler, stop_scheduler
 from .sentry_config import init_sentry
 from . import models, security
@@ -26,6 +33,7 @@ from .security import CsrfError, init_rate_limiter, close_rate_limiter
 from .templating import render
 from .middleware import SecurityHeadersMiddleware
 from .session import ServerSessionMiddleware
+from .web import safe_back
 
 
 logging.basicConfig(
@@ -88,11 +96,12 @@ def _check_vendor() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
-        # bind берём через current_bind(): в тестах SessionLocal
-        # перепривязан к in-memory БД, и таблицы должны создаваться именно там
-        Base.metadata.create_all(bind=current_bind())
-        auto_migrate()
-        ensure_notifications_table()
+        # Таблицы → миграции → админ из .env. Всё под одной блокировкой
+        # (см. prepare_database): на пустой базе админ создаётся ПОСЛЕ таблиц,
+        # а два воркера не дерутся за CREATE TABLE. Движок внутри берётся через
+        # current_bind(): в тестах SessionLocal перепривязан к in-memory БД.
+        prepare_database(ensure_default_admin)
+        check_cyrillic_search()
         db_name = (
             config.DATABASE_URL.split("@")[-1]
             if "@" in config.DATABASE_URL
@@ -106,6 +115,9 @@ async def lifespan(app: FastAPI):
     _check_vendor()
     await init_rate_limiter()
     start_scheduler()
+    # Сообщение «готов» — ПОСЛЕ подготовки БД, Redis и планировщика (раньше оно
+    # печаталось при импорте модуля, до того как что-либо было готово)
+    logger.info("🌸 Диантус готов (%s)", config.ENV)
     try:
         yield
     finally:
@@ -160,8 +172,6 @@ STATIC_DIR.mkdir(parents=True, exist_ok=True)
 (STATIC_DIR / "uploads").mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-_check_vendor()
-
 # ── РОУТЕРЫ ──
 app.include_router(auth_router)
 
@@ -172,8 +182,6 @@ for _name, _mod in _routers.items():
     except Exception as e:
         logger.exception("❌ Ошибка include_router(%s): %s", _name, e)
 
-ensure_default_admin()
-
 
 # ═══════════════════════════════════════════════════════════
 # ОБРАБОТЧИКИ ОШИБОК
@@ -182,40 +190,79 @@ ensure_default_admin()
 @app.exception_handler(CsrfError)
 async def csrf_error_handler(request: Request, exc: CsrfError):
     request.session["flash"] = f"⚠️ {exc.message}"
-    referer = request.headers.get("referer") or "/login"
-    # Защита от open redirect
-    if not referer.startswith(str(request.base_url)):
-        referer = "/login"
-    return RedirectResponse(url=referer, status_code=303)
+    return RedirectResponse(url=safe_back(request, "/login"), status_code=303)
 
 
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
+_ERROR_TITLES = {
+    400: "Некорректный запрос",
+    401: "Требуется вход",
+    403: "Доступ запрещён",
+    404: "Страница не найдена",
+    405: "Метод не поддерживается",
+    413: "Слишком большой запрос",
+    429: "Слишком много запросов",
+    500: "Ошибка сервера",
+    503: "Сервис временно недоступен",
+}
+
+# Стандартные англоязычные тексты Starlette — для людей переводим.
+_DEFAULT_DETAILS = {
+    "Not Found": "Такой страницы нет. Возможно, товар уже снят с продажи.",
+    "Method Not Allowed": "Это действие нельзя выполнить таким способом.",
+}
+
+
+def _wants_html(request: Request) -> bool:
+    return request.headers.get("accept", "").startswith("text/html")
+
+
+def _error_page(request: Request, status_code: int, detail,
+                headers: dict | None = None):
+    """HTML-страница ошибки с настоящим HTTP-статусом (раньше было 200 OK)."""
+    title = _ERROR_TITLES.get(status_code, "Ошибка")
+    message = _DEFAULT_DETAILS.get(str(detail), detail or "")
+    db = next(get_db())
+    try:
+        response = render(request, "error.html", db, code=status_code,
+                          title=title, message=message)
+        response.status_code = status_code
+        for key, value in (headers or {}).items():
+            response.headers[key] = value          # напр. Retry-After у 429
+        return response
+    finally:
+        db.close()
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     if exc.status_code in (301, 302, 303, 307, 308):
         return RedirectResponse(
-            url=exc.headers.get("Location", "/login"),
+            url=(exc.headers or {}).get("Location", "/login"),
             status_code=exc.status_code,
         )
+    if _wants_html(request):
+        return _error_page(request, exc.status_code, exc.detail, exc.headers)
+    return JSONResponse(
+        {"detail": exc.detail}, status_code=exc.status_code,
+        headers=exc.headers,
+    )
 
-    if request.headers.get("accept", "").startswith("text/html"):
-        titles = {
-            403: "Доступ запрещён",
-            404: "Страница не найдена",
-            429: "Слишком много запросов",
-            500: "Ошибка сервера",
-        }
-        title = titles.get(exc.status_code, "Ошибка")
-        db = next(get_db())
-        try:
-            return render(
-                request, "error.html", db,
-                code=exc.status_code, title=title,
-                message=exc.detail or "",
-            )
-        finally:
-            db.close()
 
-    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request,
+                                       exc: RequestValidationError):
+    """Неверный параметр запроса. В браузере — понятная страница, а не JSON.
+
+    Раньше адрес вроде /product/abc показывал человеку сырой JSON с
+    описанием ошибки валидации.
+    """
+    if _wants_html(request):
+        in_path = any(tuple(e.get("loc", ()))[:1] == ("path",) for e in exc.errors())
+        return _error_page(
+            request, 404 if in_path else 400,
+            "Такой страницы нет." if in_path else "Проверьте введённые данные.",
+        )
+    return JSONResponse({"detail": jsonable_encoder(exc.errors())}, status_code=422)
 
 
 @app.exception_handler(Exception)
@@ -228,11 +275,14 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         try:
             db = next(get_db())
             try:
-                return render(
+                response = render(
                     request, "error.html", db,
                     code=500, title="Ошибка сервера",
-                    message="Мы уже знаем о проблеме и чиним её.",
+                    message="Что-то пошло не так. Попробуйте обновить "
+                            "страницу или зайдите чуть позже.",
                 )
+                response.status_code = 500      # не «200 OK» на странице ошибки
+                return response
             finally:
                 db.close()
         except Exception as render_err:
@@ -285,6 +335,7 @@ def sitemap(db: Session = Depends(get_db)):
         ("/catalog", today, "daily", "0.9"),
         ("/contacts", today, "monthly", "0.6"),
         ("/register", today, "monthly", "0.5"),
+        ("/privacy", today, "yearly", "0.2"),
     ]
     rows = (
         db.query(models.SupplyItem.id, models.SupplyItem.created_at)
@@ -340,6 +391,11 @@ def login_page(request: Request, db: Session = Depends(get_db)):
     )
 
 
+@app.get("/privacy", response_class=HTMLResponse)
+def privacy_page(request: Request, db: Session = Depends(get_db)):
+    return render(request, "privacy.html", db)
+
+
 @app.get("/registration_pending", response_class=HTMLResponse)
 def registration_pending(request: Request, db: Session = Depends(get_db)):
     if get_current_user(request, db):
@@ -356,7 +412,8 @@ async def health(db: Session = Depends(get_db)):
     }
 
     try:
-        db.execute(text("SELECT 1"))
+        # синхронный драйвер БД не должен блокировать event loop
+        await run_in_threadpool(db.execute, text("SELECT 1"))
         result["db"] = "ok"
     except Exception as e:
         result["db"] = f"error: {str(e)[:100]}"
@@ -375,6 +432,3 @@ async def health(db: Session = Depends(get_db)):
 
     status_code = 200 if result["status"] == "ok" else 503
     return JSONResponse(result, status_code=status_code)
-
-
-logger.info("🌸 Диантус готов (%s)", config.ENV)

@@ -15,7 +15,7 @@
         <div class="notification-card__body">
             <div class="notification-card__text">{{ n.text }}</div>
             <div class="notification-card__date">
-                {{ n.created_at.strftime('%d.%m.%Y %H:%M') }}
+                {{ n.created_at|localdt }}
             </div>
         </div>
         <form action="/notifications/{{ n.id }}/delete" method="post">

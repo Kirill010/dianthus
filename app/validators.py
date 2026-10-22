@@ -4,20 +4,24 @@ import re
 _EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
 _NAME_RE = re.compile(r"^[А-Яа-яЁёA-Za-z\- .]{2,120}$")
 
-# Запрещённые паттерны для инъекций
-_INJECTION_PATTERNS = re.compile(
-    r"(\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|EXEC|SCRIPT|"
-    r"JAVASCRIPT|ALERT|ONERROR|ONLOAD)\b|<script|</script|"
-    r"javascript:|data:|vbscript:|expression\s*\()",
-    re.IGNORECASE,
+# Запрещённые символы в текстовых полях: управляющие и угловые скобки.
+#
+# Раньше здесь был «чёрный список» слов (SELECT, UNION, DROP, SCRIPT, ALERT…).
+# Он ничего не защищал — от SQL-инъекций защищает параметризация запросов
+# SQLAlchemy, от XSS — автоэкранирование Jinja2 и html.escape в письмах и PDF, —
+# зато отклонял настоящих клиентов: «Union Flowers», «Select Group»,
+# «Alert Trade» получали «содержит недопустимые символы». Оставлено только то,
+# что действительно не бывает в названии компании или городе.
+_BAD_CHARS = re.compile(
+    "[" + "".join(chr(c) for c in [*range(0, 9), 11, 12, *range(14, 32), 127]) + "<>]"
 )
 
 
 def _contains_injection(value: str) -> bool:
-    """Проверяет наличие подозрительных паттернов."""
+    """True, если в тексте есть управляющие символы или угловые скобки."""
     if not value:
         return False
-    return bool(_INJECTION_PATTERNS.search(value))
+    return bool(_BAD_CHARS.search(value))
 
 
 def validate_email(email: str) -> str | None:

@@ -129,6 +129,7 @@
     <p class="mb-0">
         © 2026 {{ config.SHOP_NAME }}
         · <a href="/contacts">Контакты</a>
+        · <a href="/privacy">Конфиденциальность</a>
         · Оптовые поставки цветов
     </p>
 </footer>
@@ -136,6 +137,49 @@
 <script src="/static/vendor/bootstrap.bundle.min.js" nonce="{{ csp_nonce }}"></script>
 
 <script nonce="{{ csp_nonce }}">
+/* ─── Подтверждения и «+/−» количества ───
+   CSP запрещает inline-обработчики (onclick="…", onsubmit="…"), поэтому в
+   разметке остались только data-атрибуты, а вся логика — здесь, под nonce.
+     data-confirm="Текст?"          на <form>, кнопке отправки или <a>
+     data-confirm-when="Отменён"    спрашивать, только если поле status = значению
+     data-qty-step="up|down"        кнопки рядом с <input type="number"> */
+(function() {
+    function confirmText(el, form) {
+        const msg = el && el.dataset ? el.dataset.confirm : '';
+        if (!msg) return '';
+        const when = el.dataset.confirmWhen;
+        if (when) {
+            const field = form && form.elements ? form.elements['status'] : null;
+            if (!field || field.value !== when) return '';
+        }
+        return msg;
+    }
+    // capture: срабатывает раньше остальных обработчиков отправки
+    document.addEventListener('submit', function(e) {
+        const form = e.target;
+        const msg = confirmText(form, form) || confirmText(e.submitter, form);
+        if (msg && !window.confirm(msg)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        }
+    }, true);
+    document.addEventListener('click', function(e) {
+        const link = e.target.closest('a[data-confirm]');
+        if (link && !window.confirm(link.dataset.confirm)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            return;
+        }
+        const btn = e.target.closest('[data-qty-step]');
+        if (btn) {
+            const input = btn.parentElement.querySelector('input[type="number"]');
+            if (!input) return;
+            if (btn.dataset.qtyStep === 'up') input.stepUp(); else input.stepDown();
+            input.dispatchEvent(new Event('input', {bubbles: true}));
+        }
+    });
+})();
+
 /* ─── CSRF для multipart-форм ─── */
 (function() {
     const token = document.querySelector('meta[name="csrf-token"]')?.content

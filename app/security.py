@@ -76,6 +76,18 @@ def verify_hmac_signature(headers, body: bytes, secret: str,
     return hmac.compare_digest(expected, sig.lower())
 
 
+def safe_equal(a: str, b: str) -> bool:
+    """Сравнение строк за постоянное время, безопасное для не-ASCII.
+
+    secrets.compare_digest(str, str) бросает TypeError, если в строке есть
+    не-ASCII символы: достаточно прислать в форме токен «ё» — и вместо
+    отказа сервер отвечал 500. Сравниваем байты.
+    """
+    return hmac.compare_digest(
+        (a or "").encode("utf-8"), (b or "").encode("utf-8")
+    )
+
+
 def _fails_key(email: str) -> str:
     return f"lf:{email}"
 
@@ -209,7 +221,7 @@ async def check_csrf(request: Request) -> None:
     if not client_token:
         raise CsrfError("Отсутствует CSRF-токен")
 
-    if not secrets.compare_digest(str(session_token), str(client_token)):
+    if not safe_equal(str(session_token), str(client_token)):
         raise CsrfError("Неверный CSRF-токен")
 
     origin = (
@@ -287,13 +299,18 @@ async def check_rate_limit(
 
     if _redis_enabled:
         count = await _redis_incr(bucket, window)
-        if count is not None and count > max_hits:
-            raise HTTPException(
-                status_code=429,
-                detail=f"Слишком много запросов. Повторите через {window} сек.",
-                headers={"Retry-After": str(window)},
-            )
-        return
+        if count is not None:
+            if count > max_hits:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Слишком много запросов. Повторите через {window} сек.",
+                    headers={"Retry-After": str(window)},
+                )
+            return
+        # Redis не ответил. Раньше лимит в этом случае просто отключался
+        # (защита от перебора пароля исчезала именно тогда, когда у сервера
+        # проблемы). Теперь считаем в памяти процесса — хуже, чем общий
+        # счётчик, но защита остаётся.
 
     _cleanup_memory_buckets(window)
 
@@ -309,6 +326,30 @@ async def check_rate_limit(
             headers={"Retry-After": str(retry_after)},
         )
     hits.append(now)
+
+
+_used_once: dict[str, float] = {}
+
+
+async def consume_once(key: str, ttl: int = 90) -> bool:
+    """True, если ключ использован впервые (и запоминает его на ttl секунд).
+
+    Нужен для одноразовости кодов 2FA: Redis SET NX EX, а если Redis
+    недоступен — словарь в памяти процесса.
+    """
+    if _redis_enabled and _redis_client is not None:
+        try:
+            return bool(await _redis_client.set(f"once:{key}", "1", ex=ttl, nx=True))
+        except Exception as e:
+            logger.warning("consume_once redis: %s", e)
+    now = time.time()
+    if len(_used_once) > 5000:
+        for k in [k for k, exp in _used_once.items() if exp < now]:
+            _used_once.pop(k, None)
+    if _used_once.get(key, 0) > now:
+        return False
+    _used_once[key] = now + ttl
+    return True
 
 
 async def reset_rate_limit(request: Request, key: str) -> None:

@@ -16,6 +16,7 @@ from .config import config
 from .deps import get_current_user
 from .security import ensure_csrf_token
 from .services.preorder_service import preorder_count_db
+from .timeutils import DATETIME_FMT, fmt_local
 from . import models
 
 logger = logging.getLogger(__name__)
@@ -111,6 +112,9 @@ def _fmt_price(value) -> str:
 
 
 templates.env.filters["price"] = _fmt_price
+# {{ order.created_at|localdt }} → «14.02.2026 12:31» по времени магазина (МСК),
+# а не «09:31» по UTC, как лежит в БД.
+templates.env.filters["localdt"] = lambda v, fmt=DATETIME_FMT: fmt_local(v, fmt)
 
 
 def render(request: Request, template: str, db: Session, **context):

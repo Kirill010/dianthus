@@ -6,7 +6,8 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))          # scripts/
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # корень проекта (пакет app)
 
 from sqlalchemy.orm import Session
 

@@ -1,6 +1,8 @@
-# syntax=docker/dockerfile:1
 # ───────────────────────────────────────────────────────────────
 # Диантус — образ приложения (FastAPI + Uvicorn)
+# (Строки «# syntax=docker/dockerfile:1» здесь намеренно нет: она заставляла
+# Docker при каждой сборке скачивать лишний образ с Docker Hub, а он бывает
+# недоступен с российских серверов. Все нужные возможности уже есть в Docker.)
 # Двухэтапная сборка: компилятор остаётся в builder, в итоговый
 # образ попадают только готовые пакеты.
 # ───────────────────────────────────────────────────────────────
@@ -11,15 +13,24 @@ FROM python:3.12-slim AS builder
 ENV PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# build-essential/pkg-config/libcairo2-dev нужны, чтобы собрать pycairo
-# (его тянет xhtml2pdf → svglib). libffi/libjpeg/zlib/freetype — запас для Pillow/bcrypt.
+# Все зависимости из requirements.txt ставятся готовыми бинарными пакетами
+# (wheels), компилятор обычно не нужен. build-essential и dev-библиотеки
+# оставлены «про запас» — на случай, если для вашей платформы (например,
+# ARM-сервер) какого-то wheel нет и пакет придётся собирать из исходников.
+# Этот этап в итоговый образ не попадает. (Раньше здесь были libcairo2-dev и
+# pycairo — новые xhtml2pdf/svglib в них больше не нуждаются.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential pkg-config libcairo2-dev libffi-dev \
+        build-essential pkg-config libffi-dev \
         libjpeg-dev zlib1g-dev libfreetype6-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
+
+# Адрес индекса пакетов можно заменить, если pypi.org недоступен с вашего
+# сервера: в .env добавьте PIP_INDEX_URL=https://зеркало/simple (см. docs).
+ARG PIP_INDEX_URL=https://pypi.org/simple
+ENV PIP_INDEX_URL=${PIP_INDEX_URL}
 
 COPY requirements.txt .
 RUN pip install -r requirements.txt
@@ -32,9 +43,9 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PATH="/opt/venv/bin:$PATH"
 
-# libcairo2 — рантайм для pycairo; fonts-dejavu-core — кириллица в PDF-счетах.
+# fonts-dejavu-core — шрифт с кириллицей для PDF-счетов (иначе вместо букв квадраты)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libcairo2 fonts-dejavu-core \
+        fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Обычный пользователь без прав root

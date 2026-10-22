@@ -1,0 +1,16 @@
+# Единые окончания строк (LF). Проект запускается в Linux-контейнерах, а
+# разрабатывается часто на Windows: файл со скриптом, сохранённый с CRLF,
+# на сервере падает с ошибкой "command not found" на каждой строке.
+* text=auto
+*.sh   text eol=lf
+*.py   text eol=lf
+*.yml  text eol=lf
+*.conf text eol=lf
+*.html text eol=lf
+*.css  text eol=lf
+*.md   text eol=lf
+Dockerfile text eol=lf
+*.png  binary
+*.webp binary
+*.ico  binary
+*.woff2 binary

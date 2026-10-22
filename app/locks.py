@@ -17,7 +17,9 @@
 """
 import logging
 import os
+import tempfile
 from contextlib import contextmanager
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,29 @@ except ImportError:      # POSIX
 
 # Коды «занято»: EAGAIN/EWOULDBLOCK (11), EACCES (13), EDEADLK (35/36).
 _BUSY_ERRNOS = (11, 13, 35, 36)
+
+
+def lock_path(env_var: str, filename: str) -> str:
+    """Где лежит lock-файл.
+
+    1) явно заданный путь в переменной окружения (в docker-compose — /tmp/dianthus);
+    2) /run/dianthus — стандартное место под systemd (RuntimeDirectory), если
+       каталог доступен для записи;
+    3) иначе временная папка системы. Раньше на Windows путь «/run/dianthus»
+       превращался в D:/run/dianthus: приложение мусорило в корне диска.
+    """
+    explicit = (os.getenv(env_var) or "").strip()
+    if explicit:
+        return explicit
+    if os.name != "nt":
+        run_dir = "/run/dianthus"
+        try:
+            os.makedirs(run_dir, exist_ok=True)
+            if os.access(run_dir, os.W_OK):
+                return f"{run_dir}/{filename}"
+        except OSError:
+            pass
+    return str(Path(tempfile.gettempdir()) / "dianthus" / filename)
 
 
 def _ensure_dir(path: str) -> None:

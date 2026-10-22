@@ -27,15 +27,31 @@ echo "==> 1/6 Обновление системы"
 apt-get update -y
 apt-get upgrade -y
 apt-get install -y --no-install-recommends \
-    curl git nano htop ufw fail2ban ca-certificates gnupg \
+    curl git nano htop ufw fail2ban ca-certificates gnupg rsync \
     unattended-upgrades cron dnsutils
 dpkg-reconfigure -f noninteractive unattended-upgrades || true
+
+# Часовой пояс сервера: логи и ночной бэкап (03:15) — по местному времени.
+# Приложение само хранит время в UTC и показывает по SHOP_TZ — это отдельная настройка.
+timedatectl set-timezone "${TIMEZONE:-Europe/Moscow}" || true
 
 echo "==> 2/6 Пользователь ${DEPLOY_USER}"
 if ! id "$DEPLOY_USER" &>/dev/null; then
     adduser --disabled-password --gecos "" "$DEPLOY_USER"
 fi
 usermod -aG sudo "$DEPLOY_USER"
+# У пользователя нет пароля (вход только по SSH-ключу), поэтому обычный sudo
+# спросил бы пароль, которого не существует, и `sudo ...` из инструкции не
+# работал бы. Разрешаем sudo без пароля; файл проверяется visudo, чтобы
+# опечатка не сломала sudo на сервере.
+SUDOERS_FILE="/etc/sudoers.d/90-${DEPLOY_USER}"
+echo "${DEPLOY_USER} ALL=(ALL) NOPASSWD:ALL" > "${SUDOERS_FILE}.tmp"
+if visudo -cf "${SUDOERS_FILE}.tmp" >/dev/null; then
+    chmod 440 "${SUDOERS_FILE}.tmp" && mv "${SUDOERS_FILE}.tmp" "$SUDOERS_FILE"
+else
+    rm -f "${SUDOERS_FILE}.tmp"
+    echo "ВНИМАНИЕ: правило sudo не создано — задайте пароль: passwd ${DEPLOY_USER}" >&2
+fi
 if [[ -s /root/.ssh/authorized_keys ]]; then
     install -d -m 700 -o "$DEPLOY_USER" -g "$DEPLOY_USER" "/home/${DEPLOY_USER}/.ssh"
     install -m 600 -o "$DEPLOY_USER" -g "$DEPLOY_USER" \
@@ -48,14 +64,22 @@ fi
 echo "==> 3/6 Docker"
 if ! command -v docker &>/dev/null; then
     install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-    chmod a+r /etc/apt/keyrings/docker.asc
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
+    # Официальный репозиторий Docker. С некоторых российских серверов
+    # download.docker.com бывает недоступен — тогда ставим Docker из
+    # репозитория самой Ubuntu (версия чуть старше, но работает так же).
+    if curl -fsSL --max-time 25 https://download.docker.com/linux/ubuntu/gpg \
+            -o /etc/apt/keyrings/docker.asc; then
+        chmod a+r /etc/apt/keyrings/docker.asc
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
 https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
-        > /etc/apt/sources.list.d/docker.list
-    apt-get update -y
-    apt-get install -y docker-ce docker-ce-cli containerd.io \
-        docker-buildx-plugin docker-compose-plugin
+            > /etc/apt/sources.list.d/docker.list
+        apt-get update -y
+        apt-get install -y docker-ce docker-ce-cli containerd.io \
+            docker-buildx-plugin docker-compose-plugin
+    else
+        echo "    download.docker.com недоступен — ставлю Docker из репозитория Ubuntu"
+        apt-get install -y docker.io docker-compose-v2
+    fi
 fi
 systemctl enable --now docker
 usermod -aG docker "$DEPLOY_USER"

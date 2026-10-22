@@ -32,6 +32,9 @@ tests/
 pytest.ini
 README.md
 DEPLOY.md
+REVIEW.md
+docs/
+requirements-dev.txt
 
 # Деплой-файлы (в образ не нужны)
 nginx/
@@ -41,3 +44,6 @@ docker-compose.yml
 # Загруженные картинки живут в Docker-томе, а не в образе
 app/static/uploads/*
 !app/static/uploads/.gitkeep
+
+# Готовые архивы проекта
+dist/

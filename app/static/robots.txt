@@ -1,10 +1,16 @@
 User-agent: *
 Disallow: /admin
+Disallow: /api/
 Disallow: /cart
 Disallow: /checkout
+Disallow: /orders
+Disallow: /preorders
+Disallow: /notifications
 Disallow: /profile
 Allow: /catalog
 Allow: /product/
+Allow: /contacts
+Allow: /privacy
 Allow: /login
 
 Sitemap: https://dianthus-opt.ru/sitemap.xml

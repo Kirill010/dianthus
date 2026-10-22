@@ -15,21 +15,25 @@ from sqlalchemy.orm import Session, selectinload, joinedload
 from ..database import get_db
 from ..deps import require_admin
 from ..models import (ORDER_STATUSES, PRODUCT_CATEGORIES, SUPPLY_STATUSES,
-                      Notification, Order, OrderItem, Preorder, Product,
+                      AuditLog, Order, OrderItem, Preorder, Product,
                       Supply, SupplyItem, User)
 from ..security import check_csrf
 from ..services.audit import log_action
+from ..services.orders import (apply_status_change, load_order_for_update,
+                               notify_client_of_status)
 from ..services.excel_service import (build_products_import_template,
                                       export_customers_to_excel,
                                       export_orders_to_excel,
                                       guess_package_size,
                                       import_products_from_excel,
                                       parse_invoice)
-from ..services.notifier import notify_client_status_changed
+from ..services.notifier import notify_client_approved
 from ..services.upload_service import delete_upload, save_uploads
 from ..templating import render
+from ..timeutils import DATE_FMT, fmt_local, local_midnight_utc
 from ..validators import (validate_country, validate_positive_int,
                           validate_price, validate_stock, validate_city)
+from ..web import LIKE_ESCAPE, contains_pattern, safe_back
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin")
@@ -37,6 +41,7 @@ XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 MAX_EXCEL_SIZE = 10 * 1024 * 1024
 CHUNK = 64 * 1024
 ORDERS_PER_PAGE = 20
+LIST_LIMIT = 500          # сколько строк показывать во вкладках админки
 
 
 # ───────────────────────── helpers ─────────────────────────
@@ -64,10 +69,10 @@ def _err(request: Request, errors: list[str]) -> None:
 
 
 def _back(request: Request, default: str = "/admin") -> str:
-    ref = request.headers.get("referer") or ""
-    if ref and ref.startswith(str(request.base_url)):
-        return ref
-    return default
+    # Раньше сравнивали Referer с request.base_url: за nginx схема/хост
+    # расходились, проверка всегда падала, и менеджера возвращало в /admin
+    # вместо открытой страницы заказа. safe_back делает это корректно.
+    return safe_back(request, default)
 
 
 def _detach_supply_items(db: Session, item_ids: list[int]) -> None:
@@ -94,6 +99,43 @@ def _detach_product(db: Session, product_id: int, supply_item_ids: list[int]) ->
     _detach_supply_items(db, supply_item_ids)
 
 
+# ───────────────────────── проверка полей товара ─────────────────────────
+
+def _check_product_fields(name, description, country, length_cm, unit,
+                          package_size, min_quantity, category) -> list[str]:
+    """Единые правила для создания и правки товара.
+
+    Раньше правка не проверяла ничего: package_size=0 или длина названия
+    больше колонки (200) приводили к странным остаткам и ошибке 500 на
+    PostgreSQL.
+    """
+    errors = []
+    name = (name or "").strip()
+    if not name:
+        errors.append("Укажите название")
+    elif len(name) > 200:
+        errors.append("Название длиннее 200 символов")
+    if len((country or "").strip()) > 100:
+        errors.append("Страна длиннее 100 символов")
+    if len((category or "").strip()) > 100:
+        errors.append("Категория длиннее 100 символов")
+    if len((unit or "").strip()) > 30:
+        errors.append("Единица измерения длиннее 30 символов")
+    if len((description or "")) > 5000:
+        errors.append("Описание длиннее 5000 символов")
+    if not (0 <= (length_cm or 0) <= 500):
+        errors.append("Длина стебля: от 0 до 500 см")
+    if not (1 <= (package_size or 0) <= 10_000):
+        errors.append("Размер упаковки: от 1 до 10 000 шт")
+    if not (1 <= (min_quantity or 0) <= 10_000):
+        errors.append("Мин. заказ: от 1 до 10 000 упаковок")
+    return errors
+
+
+def _is_photo_url(url: str) -> bool:
+    return url.startswith(("http://", "https://", "/static/")) and len(url) <= 500
+
+
 # ───────────────────────── ДАШБОРД ─────────────────────────
 
 @router.get("", response_class=HTMLResponse)
@@ -115,10 +157,11 @@ def dashboard(
         conditions = []
         if q.isdigit() and len(q) < 15:
             conditions.append(Order.id == int(q))
+        pattern = contains_pattern(q)
         conditions.extend([
-            User.company_name.ilike(f"%{q}%"),
-            User.email.ilike(f"%{q}%"),
-            User.full_name.ilike(f"%{q}%"),
+            User.company_name.ilike(pattern, escape=LIKE_ESCAPE),
+            User.email.ilike(pattern, escape=LIKE_ESCAPE),
+            User.full_name.ilike(pattern, escape=LIKE_ESCAPE),
         ])
         orders_query = orders_query.outerjoin(
             User, Order.user_id == User.id
@@ -137,12 +180,10 @@ def dashboard(
         .all()
     )
 
-    # datetime.utcnow() устарел (DeprecationWarning с Python 3.12) —
-    # берём текущее UTC-время без tzinfo, как хранится в БД.
-    today = datetime.now(timezone.utc).replace(
-        tzinfo=None, hour=0, minute=0, second=0, microsecond=0
-    )
-    week_ago = today - timedelta(days=7)
+    # Границы «сегодня» и «неделя назад» — полночь по времени магазина,
+    # переведённая в UTC (в БД всё лежит в UTC).
+    today = local_midnight_utc(0)
+    week_ago = local_midnight_utc(7)
     stats = {
         "orders_today": db.query(Order).filter(Order.created_at >= today).count(),
         "orders_week": db.query(Order).filter(Order.created_at >= week_ago).count(),
@@ -155,7 +196,8 @@ def dashboard(
         "pending_orders": db.query(Order).filter(Order.status == "Новый").count(),
         "new_clients_week": db.query(User).filter(User.created_at >= week_ago).count(),
     }
-    products = db.query(Product).order_by(Product.name).limit(500).all()
+    products_total = db.query(Product).count()
+    products = db.query(Product).order_by(Product.name).limit(LIST_LIMIT).all()
 
     supplies = (
         db.query(Supply)
@@ -166,20 +208,27 @@ def dashboard(
         .order_by(Supply.arrival_date.asc())
         .all()
     )
-    users = db.query(User).order_by(User.created_at.desc()).limit(500).all()
+    users_total = db.query(User).count()
+    users = db.query(User).order_by(User.created_at.desc()).limit(LIST_LIMIT).all()
     pending_count = (
         db.query(User)
         .filter(User.is_approved.is_(False), User.is_admin.is_(False))
         .count()
     )
 
+    active_filter = (SupplyItem.is_active.is_(True), SupplyItem.stock > 0)
+    active_total = db.query(SupplyItem).filter(*active_filter).count()
+    # Раньше грузились ВСЕ позиции: при каталоге из 1С (тысячи товаров)
+    # вкладка «На складе» делала тяжёлый запрос на каждое открытие админки.
     active_items = (
         db.query(SupplyItem)
         .options(
             joinedload(SupplyItem.product),
             joinedload(SupplyItem.supply),
         )
-        .filter(SupplyItem.is_active.is_(True), SupplyItem.stock > 0)
+        .filter(*active_filter)
+        .order_by(SupplyItem.id.desc())
+        .limit(LIST_LIMIT)
         .all()
     )
 
@@ -191,8 +240,34 @@ def dashboard(
         supplies=supplies, users=users, pending_count=pending_count,
         active_items=active_items, statuses=ORDER_STATUSES,
         supply_statuses=SUPPLY_STATUSES, categories=PRODUCT_CATEGORIES,
-        stats=stats,
+        stats=stats, list_limit=LIST_LIMIT,
+        products_total=products_total, users_total=users_total,
+        active_total=active_total,
     )
+
+# ───────────────────────── ЖУРНАЛ ДЕЙСТВИЙ ─────────────────────────
+
+@router.get("/audit", response_class=HTMLResponse)
+def audit_log_page(
+    request: Request,
+    limit: int = 200,
+    db: Session = Depends(get_db),
+    admin=Depends(require_admin),
+):
+    """Кто и что менял: скидки, статусы заказов, товары, поставки, действия 1С.
+
+    Записи писались давно, но посмотреть их было негде.
+    """
+    limit = max(10, min(int(limit), 1000))
+    rows = (
+        db.query(AuditLog)
+        .options(joinedload(AuditLog.user))
+        .order_by(AuditLog.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return render(request, "admin_audit.html", db, user=admin, rows=rows, limit=limit)
+
 
 # ───────────────────────── МОДЕРАЦИЯ КЛИЕНТОВ ─────────────────────────
 
@@ -248,6 +323,7 @@ def user_demote(
 @router.post("/users/{user_id}/approve")
 def user_approve(
     user_id: int, request: Request,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_admin=Depends(require_admin),
     _csrf: None = Depends(check_csrf),
@@ -263,6 +339,8 @@ def user_approve(
     db.commit()
     log_action(db, request, current_admin, "user_approve",
                "user", user.id, f"{user.email} ({user.company_name}) одобрен")
+    # Клиент должен узнать, что может входить (раньше письма не было вообще)
+    background_tasks.add_task(notify_client_approved, user)
     request.session["flash"] = f"✅ «{user.company_name}» одобрен"
     return RedirectResponse(url=_back(request), status_code=303)
 
@@ -353,48 +431,41 @@ def update_order_status(
 ):
     if status not in ORDER_STATUSES:
         raise HTTPException(400, "Неизвестный статус")
-    order = db.query(Order).filter(Order.id == order_id).first()
+
+    # Заказ блокируется на время смены статуса: два одновременных «Отменить»
+    # не вернут остаток на склад дважды.
+    order = load_order_for_update(db, order_id)
     if not order:
         request.session["flash"] = f"Заказ №{order_id} не найден"
         return RedirectResponse(url=_back(request), status_code=303)
 
-    old_status = order.status
-    order.status = status
+    result = apply_status_change(db, order, status)
+    if result.error:
+        db.rollback()
+        request.session["flash"] = f"❌ Заказ №{order_id}: {result.error}"
+        return RedirectResponse(url=_back(request), status_code=303)
+    if not result.changed:
+        db.rollback()
+        request.session["flash"] = f"Заказ №{order_id}: статус уже «{status}»"
+        return RedirectResponse(url=_back(request), status_code=303)
+
     db.commit()
-    log_action(db, request, _a, "order_status",
-               "order", order.id, f"{old_status} → {status}")
+    details = f"{result.old} → {result.new}"
+    if result.stock_note:
+        details += f" ({result.stock_note})"
+    log_action(db, request, _a, "order_status", "order", order.id, details)
+    notify_client_of_status(db, order, status, background_tasks)
 
-    if order.user_id:
-        status_text = {
-            "Подтверждён": "Ваш заказ подтверждён",
-            "В работе": "Заказ собирается на складе",
-            "Отправлен": "Заказ отправлен в доставку",
-            "Выполнен": "Заказ выполнен. Спасибо за покупку!",
-            "Отменён": "Заказ отменён. Свяжитесь с менеджером.",
-        }.get(status, f"Статус заказа изменён на «{status}»")
-        db.add(Notification(
-            user_id=order.user_id,
-            order_id=order.id,
-            text=f"Заказ №{order.id}: {status_text}",
-        ))
-        db.commit()
-
-        order_loaded = (
-            db.query(Order)
-            .options(selectinload(Order.user), selectinload(Order.items))
-            .filter(Order.id == order.id)
-            .first()
-        )
-        if order_loaded:
-            background_tasks.add_task(
-                notify_client_status_changed, order_loaded, status,
-            )
-
-    request.session["flash"] = f"Заказ №{order.id}: «{status}»"
+    flash = f"Заказ №{order.id}: «{status}»"
+    if result.stock_note:
+        flash += f" — {result.stock_note}"
+    request.session["flash"] = flash
     return RedirectResponse(url=_back(request), status_code=303)
 
 
-@router.get("/orders/{order_id}", response_class=HTMLResponse)
+# {order_id:int} — только цифры. Без этого адрес /admin/orders/export (кнопка
+# «Экспорт» в админке) попадал сюда как order_id="export" и отдавал 422.
+@router.get("/orders/{order_id:int}", response_class=HTMLResponse)
 def order_detail(
     order_id: int,
     request: Request,
@@ -449,7 +520,8 @@ def customers_export(db: Session = Depends(get_db), _a=Depends(require_admin)):
             "discount_percent": u.discount_percent or 0,
             "orders_count": len(u.orders),
             "total_sum": sum(o.total_price for o in u.orders),
-            "last_order_date": max(o.created_at for o in u.orders).strftime("%d.%m.%Y"),
+            "last_order_date": fmt_local(
+                max(o.created_at for o in u.orders), DATE_FMT),
         })
     customers.sort(key=lambda c: c["total_sum"], reverse=True)
     return _xlsx(export_customers_to_excel(customers), "dianthus_customers.xlsx")
@@ -503,9 +575,39 @@ async def products_import(
         request.session["flash"] = msg
         return RedirectResponse(url=_back(request), status_code=303)
 
+    # Повторная загрузка того же файла раньше дублировала весь справочник.
+    # Теперь товар ищется по ТОЧНОМУ названию (как и при обмене с 1С): найден —
+    # обновляем характеристики, нет — создаём. Регистр намеренно не сглаживаем:
+    # lower() в SQLite не понимает кириллицу, а в PostgreSQL зависит от локали.
+    created = updated = 0
     try:
+        by_name: dict[str, Product] = {}
+        names = sorted({d["name"][:200] for d in products})
+        for i in range(0, len(names), 500):
+            for p in db.query(Product).filter(
+                    Product.name.in_(names[i:i + 500])).all():
+                by_name.setdefault(p.name, p)
+
         for data in products:
-            db.add(Product(**data))
+            data = dict(data)
+            data["name"] = data["name"][:200]
+            existing = by_name.get(data["name"])
+            if existing is None:
+                product = Product(**data)
+                db.add(product)
+                by_name[data["name"]] = product
+                created += 1
+            else:
+                for field in ("country", "unit", "category", "description"):
+                    if data.get(field):
+                        setattr(existing, field, data[field][:5000])
+                if data.get("length_cm"):
+                    existing.length_cm = data["length_cm"]
+                if data.get("package_size"):
+                    existing.package_size = data["package_size"]
+                if data.get("min_quantity"):
+                    existing.min_quantity = data["min_quantity"]
+                updated += 1
         db.commit()
     except (IntegrityError, SQLAlchemyError) as e:
         db.rollback()
@@ -513,7 +615,7 @@ async def products_import(
         request.session["flash"] = "Импорт не удался, БД откатана."
         return RedirectResponse(url=_back(request), status_code=303)
 
-    msg = f"Импортировано товаров: {len(products)}"
+    msg = f"Импорт: создано {created}, обновлено {updated}"
     if warnings:
         msg += f". Предупреждений: {len(warnings)}"
     request.session["flash"] = msg
@@ -562,13 +664,10 @@ def product_new(
     _a=Depends(require_admin),
     _csrf: None = Depends(check_csrf),
 ):
-    errors = []
-    if not (name or "").strip():
-        errors.append("Укажите название")
-    if package_size < 1:
-        errors.append("Размер упаковки должен быть >= 1")
-    if min_quantity < 1:
-        errors.append("Мин. заказ должен быть >= 1")
+    errors = _check_product_fields(name, description, country, length_cm,
+                                   unit, package_size, min_quantity, category)
+    if image_url.strip() and not _is_photo_url(image_url.strip()):
+        errors.append("Ссылка на фото должна начинаться с http://, https:// или /static/")
     if errors:
         _err(request, errors)
         return RedirectResponse(url="/admin/products/new", status_code=303)
@@ -615,18 +714,22 @@ def product_edit(
     if not product:
         raise HTTPException(404, "Товар не найден")
 
-    if not (name or "").strip():
-        _err(request, ["Укажите название"])
+    errors = _check_product_fields(name, description, country, length_cm,
+                                   unit, package_size, min_quantity, category)
+    if image_url.strip() and not _is_photo_url(image_url.strip()):
+        errors.append("Ссылка на фото должна начинаться с http://, https:// или /static/")
+    if errors:
+        _err(request, errors)
         return RedirectResponse(url=f"/admin/products/{product_id}/edit", status_code=303)
 
     product.name = name.strip()
     product.description = description.strip()
     product.country = country.strip()
     product.length_cm = length_cm
-    product.unit = unit
+    product.unit = (unit or "упаковка").strip() or "упаковка"
     product.package_size = package_size
     product.min_quantity = min_quantity
-    product.category = category
+    product.category = (category or "Прочее").strip() or "Прочее"
 
     current = list(product.photos or [])
     if not current and product.image_url:

@@ -11,7 +11,9 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))          # scripts/
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # корень проекта (пакет app)
+import _guard  # noqa: E402,F401 — в ENV=prod отказывается работать без явного подтверждения
 
 from clear_orders_return_stock import clear_orders_return_stock
 from clear_clients_return_stock import clear_clients_return_stock

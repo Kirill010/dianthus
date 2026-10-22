@@ -6,20 +6,24 @@ from fastapi import (APIRouter, BackgroundTasks, Depends, Form,
                      HTTPException, Request)
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from ..config import config
 from ..database import get_db
 from ..deps import get_current_user
 from ..models import Order, OrderItem, Product, SupplyItem, Supply
-from ..security import check_csrf, check_rate_limit
-from ..services.notifier import notify_admin_new_order
+from ..security import check_csrf, check_rate_limit, safe_equal
+from ..services.notifier import (notify_admin_new_order,
+                                 notify_client_order_created)
 from ..services.preorder_service import (
     add_preorder_to_db, get_user_preorders, remove_preorder_db,
     get_all_user_preorders, move_fulfilled_preorder_to_cart,
     remove_fulfilled_preorder_db,
 )
+from ..services.pricing import apply_discount, line_total, money
 from ..templating import render
+from ..web import safe_back
 from .. import models
 
 logger = logging.getLogger(__name__)
@@ -28,19 +32,15 @@ MAX_COMMENT_LENGTH = 1000
 
 
 def _cart_subtotal(cart: list[dict]) -> float:
-    total = 0.0
-    for it in cart:
-        pack = it.get("package_size") or 1
-        total += it["price"] * pack * it["quantity"]
-    return total
+    # каждая позиция округляется до копейки — сумма сходится со счётом и 1С
+    return money(sum(
+        line_total(it["price"], it.get("package_size"), it["quantity"])
+        for it in cart
+    ))
 
 
 def _apply_discount(subtotal: float, discount_percent: float):
-    pct = max(0.0, min(100.0, float(discount_percent or 0)))
-    if pct <= 0:
-        return 0.0, subtotal
-    discount = subtotal * pct / 100.0
-    return discount, subtotal - discount
+    return apply_discount(subtotal, discount_percent)
 
 
 def _clean_cart(cart: list[dict]) -> list[dict]:
@@ -80,24 +80,8 @@ def _merge_into_cart(cart: list[dict], new_item: dict) -> None:
 
 
 def _back(request: Request, default: str = "/catalog") -> str:
-    """Редирект «назад» ТОЛЬКО на свой сайт (защита от open redirect).
-
-    Заголовок Referer клиент контролирует: без проверки хоста POST-запрос
-    мог бы вернуть пользователя на чужой домен (фишинг после действия).
-    """
-    ref = request.headers.get("referer") or ""
-    if ref:
-        from urllib.parse import urlparse
-        host = (urlparse(ref).hostname or "").lower()
-        allowed = {
-            h for h in (
-                (request.url.hostname or "").lower(),
-                (urlparse(config.APP_URL).hostname or "").lower(),
-            ) if h
-        }
-        if host and host in allowed:
-            return ref
-    return default
+    """Редирект «назад» ТОЛЬКО на свой сайт (защита от open redirect)."""
+    return safe_back(request, default)
 
 
 # ───────────────────────── ДОБАВЛЕНИЕ В КОРЗИНУ ─────────────────────────
@@ -524,7 +508,7 @@ def place_order(
         return RedirectResponse(url="/catalog", status_code=303)
 
     expected = request.session.get("order_token")
-    if not expected or not secrets.compare_digest(order_token, expected):
+    if not expected or not safe_equal(order_token, expected):
         request.session["flash"] = "Заказ уже оформлен (повторная отправка формы)"
         return RedirectResponse(url="/orders", status_code=303)
 
@@ -648,6 +632,7 @@ def place_order(
             total_price=total,
             status="Новый",
             comment=comment,
+            order_token=order_token[:64] or None,
         )
         db.add(order)
         db.flush()
@@ -667,6 +652,25 @@ def place_order(
         db.commit()
         db.refresh(order)
 
+    except IntegrityError as e:
+        # Чаще всего — тот же order_token уже использован: форма отправлена дважды
+        # (двойной клик, повтор запроса). Заказ создан ровно один раз, а списание
+        # остатков второй попыткой откатывается вместе с ней.
+        db.rollback()
+        duplicate = bool(order_token) and db.query(Order.id).filter(
+            Order.order_token == order_token[:64]).first() is not None
+        if duplicate:
+            request.session.pop("order_token", None)
+            request.session["cart"] = []
+            request.session["flash"] = "Заказ уже оформлен (повторная отправка формы)"
+            return RedirectResponse(url="/orders", status_code=303)
+        # другая причина (например, товар удалили во время оформления)
+        logger.exception("❌ Ошибка целостности при создании заказа (user_id=%s): %s",
+                         user.id, e)
+        request.session["flash"] = (
+            "Не удалось оформить заказ. Проверьте корзину и попробуйте ещё раз."
+        )
+        return RedirectResponse(url="/cart", status_code=303)
     except Exception as e:
         db.rollback()
         logger.exception(
@@ -692,6 +696,9 @@ def place_order(
     background_tasks.add_task(
         notify_admin_new_order, order_loaded, user_loaded,
     )
+    background_tasks.add_task(
+        notify_client_order_created, order_loaded, user_loaded,
+    )
 
     request.session["cart"] = []
     request.session["flash"] = f"Заказ №{order.id} оформлен!"
@@ -710,6 +717,7 @@ def order_history(request: Request, db: Session = Depends(get_db)):
         .options(selectinload(Order.items))          # ← Eager loading!
         .filter(Order.user_id == user.id)
         .order_by(Order.created_at.desc())
+        .limit(100)          # у постоянного клиента заказов тысячи — страницу не раздуваем
         .all()
     )
     return render(request, "orders.html", db, user=user, orders=orders)
@@ -813,6 +821,7 @@ def download_invoice(
             "name": config.SHOP_NAME,
             "phone": config.SHOP_PHONE,
             "address": config.SHOP_ADDRESS,
+            "requisites": config.SHOP_REQUISITES,
         }
         pdf_bytes = generate_invoice_pdf(order, user, shop_info)
     except ImportError:

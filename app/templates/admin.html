@@ -34,7 +34,12 @@
     </div>
 </div>
 
-<h2 class="mb-3"><i class="fas fa-cog me-2"></i>Админка</h2>
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h2 class="mb-0"><i class="fas fa-cog me-2"></i>Админка</h2>
+    <a href="/admin/audit" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-clipboard-list me-1"></i>Журнал действий
+    </a>
+</div>
 
 {% if pending_count %}
 <div class="alert alert-warning d-flex align-items-center mb-4">
@@ -59,14 +64,14 @@
             {% if pending_count %}
                 <span class="badge bg-warning text-dark ms-1">{{ pending_count }}</span>
             {% else %}
-                <span class="badge bg-secondary ms-1">{{ users|length }}</span>
+                <span class="badge bg-secondary ms-1">{{ users_total }}</span>
             {% endif %}
         </a>
     </li>
     <li class="nav-item">
         <a class="nav-link" data-bs-toggle="tab" href="#products">
             <i class="fas fa-seedling me-1"></i>Справочник
-            <span class="badge bg-secondary ms-1">{{ products|length }}</span>
+            <span class="badge bg-secondary ms-1">{{ products_total }}</span>
         </a>
     </li>
     <li class="nav-item">
@@ -78,7 +83,7 @@
     <li class="nav-item">
         <a class="nav-link" data-bs-toggle="tab" href="#active">
             <i class="fas fa-check-circle me-1"></i>На складе
-            <span class="badge bg-success ms-1">{{ active_items|length }}</span>
+            <span class="badge bg-success ms-1">{{ active_total }}</span>
         </a>
     </li>
 </ul>
@@ -157,7 +162,7 @@
                             {% endif %}
                         </td>
                         <td><strong>{{ "%.0f"|format(o.total_price) }} ₽</strong></td>
-                        <td>{{ o.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+                        <td>{{ o.created_at|localdt }}</td>
                         <td>
                             {% if o.status == "Выполнен" %}
                                 <span class="badge bg-success">{{ o.status }}</span>
@@ -179,6 +184,7 @@
                                     <i class="fas fa-eye"></i>
                                 </a>
                                 <form action="/admin/update_order_status" method="post"
+          data-confirm="Отменить заказ? Товар вернётся на склад." data-confirm-when="Отменён"
                                       class="d-flex">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                     <input type="hidden" name="order_id" value="{{ o.id }}">
@@ -239,6 +245,11 @@
                    style="max-width: 320px"
                    placeholder="Поиск: компания, email, имя…">
         </div>
+        {% if users_total > list_limit %}
+        <div class="alert alert-secondary py-2 small">
+            Показаны первые {{ list_limit }} из {{ users_total }}. Поиск ниже работает по показанным строкам.
+        </div>
+        {% endif %}
         {% if users %}
         <div class="table-responsive">
             <table class="table table-hover align-middle">
@@ -297,7 +308,7 @@
                                 </form>
                                 <form action="/admin/users/{{ u.id }}/reject"
                                       method="post" class="d-inline"
-                                      onsubmit="return confirm('Отклонить заявку?');">
+                                      data-confirm="Отклонить заявку?">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                     <button class="btn btn-sm btn-outline-danger">Отклонить</button>
                                 </form>
@@ -305,7 +316,7 @@
                                 {% if u.id != user.id %}
                                     <form action="/admin/users/{{ u.id }}/demote"
                                           method="post" class="d-inline"
-                                          onsubmit="return confirm('Снять права администратора?');">
+                                          data-confirm="Снять права администратора?">
                                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                         <button class="btn btn-sm btn-outline-warning">
                                             <i class="fas fa-user-minus me-1"></i>Снять админа
@@ -319,7 +330,7 @@
                             {% else %}
                                 <form action="/admin/users/{{ u.id }}/make_admin"
                                       method="post" class="d-inline"
-                                      onsubmit="return confirm('Сделать администратором?');">
+                                      data-confirm="Сделать администратором?">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                     <button class="btn btn-sm btn-outline-primary">
                                         <i class="fas fa-user-shield me-1"></i>Админ
@@ -327,7 +338,7 @@
                                 </form>
                                 <form action="/admin/users/{{ u.id }}/reject"
                                       method="post" class="d-inline"
-                                      onsubmit="return confirm('Удалить пользователя?');">
+                                      data-confirm="Удалить пользователя?">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                     <button class="btn btn-sm btn-outline-danger">
                                         <i class="fas fa-trash"></i>
@@ -365,6 +376,11 @@
                 </button>
             </div>
         </div>
+        {% if products_total > list_limit %}
+        <div class="alert alert-secondary py-2 small">
+            Показаны первые {{ list_limit }} из {{ products_total }}. Поиск ниже работает по показанным строкам.
+        </div>
+        {% endif %}
         {% if products %}
         <div class="table-responsive">
             <table class="table table-hover align-middle">
@@ -402,7 +418,7 @@
                             </a>
                             <form action="/admin/products/{{ p.id }}/delete"
                                   method="post" class="d-inline"
-                                  onsubmit="return confirm('Удалить из справочника?');">
+                                  data-confirm="Удалить из справочника?">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <button class="btn btn-sm btn-outline-danger">
                                     <i class="fas fa-trash"></i>
@@ -476,7 +492,7 @@
                             {% if s.status in ['В пути', 'Прибыл'] %}
                                 <form action="/admin/supplies/{{ s.id }}/unload"
                                       method="post" class="d-inline"
-                                      onsubmit="return confirm('Разгрузить?');">
+                                      data-confirm="Разгрузить?">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                     <button class="btn btn-sm btn-success">
                                         <i class="fas fa-box-open"></i>
@@ -485,7 +501,7 @@
                             {% endif %}
                             <form action="/admin/supplies/{{ s.id }}/delete"
                                   method="post" class="d-inline"
-                                  onsubmit="return confirm('Удалить поставку?');">
+                                  data-confirm="Удалить поставку?">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <button class="btn btn-sm btn-outline-danger">
                                     <i class="fas fa-trash"></i>
@@ -505,6 +521,11 @@
     <!-- НА СКЛАДЕ -->
     <div class="tab-pane fade" id="active">
         <h5 class="mb-3">Что сейчас в каталоге</h5>
+        {% if active_total > list_limit %}
+        <div class="alert alert-secondary py-2 small">
+            Показаны первые {{ list_limit }} из {{ active_total }}. Остальные видны в каталоге на сайте.
+        </div>
+        {% endif %}
         {% if active_items %}
         <div class="table-responsive">
             <table class="table table-hover align-middle">

@@ -38,4 +38,22 @@ docker run --rm \
 find "$BACKUP_DIR" -maxdepth 1 -type f \( -name 'db-*.sql.gz' -o -name 'uploads-*.tar.gz' \) \
     -mtime +"$KEEP_DAYS" -delete
 
+# ── Копия за пределы сервера (необязательно, но очень рекомендуется) ──
+# Копии на том же сервере не спасут, если сервер потеряется или будет взломан.
+# Задайте в .env строку (нужен rsync и вход по SSH-ключу без пароля):
+#   BACKUP_REMOTE=backup@другой-сервер:/srv/dianthus-backups
+REMOTE="${BACKUP_REMOTE:-}"
+if [[ -z "$REMOTE" && -f .env ]]; then
+    REMOTE="$(grep -E '^BACKUP_REMOTE=' .env | head -1 | cut -d= -f2- || true)"
+fi
+if [[ -n "$REMOTE" ]]; then
+    echo "[$(date '+%F %T')] Копирую на $REMOTE"
+    if rsync -a -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new" \
+            "$DB_FILE" "$UP_FILE" "${REMOTE%/}/"; then
+        echo "[$(date '+%F %T')] ✅ Копия отправлена"
+    else
+        echo "[$(date '+%F %T')] ⚠️  Не удалось отправить копию на $REMOTE (локальный бэкап сделан)" >&2
+    fi
+fi
+
 echo "[$(date '+%F %T')] ✅ Готово: $(du -h "$DB_FILE" | cut -f1) БД, $(du -h "$UP_FILE" | cut -f1) фото"

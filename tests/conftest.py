@@ -19,6 +19,13 @@ os.environ["ADMIN_PASSWORD"] = ""
 os.environ["REDIS_URL"] = ""
 os.environ["SENTRY_DSN"] = ""
 
+# Почта: у разработчика в .env могут стоять НАСТОЯЩИЕ SMTP-данные. Пустые
+# значения здесь важны — load_dotenv() не перезаписывает уже заданные
+# переменные, и тесты (оформление заказа, одобрение клиента и т.п.) иначе
+# рассылали бы реальные письма.
+for _smtp in ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM", "SMTP_TO"):
+    os.environ[_smtp] = ""
+
 # ── 1С-обмен ─────────────────────────────────────────────
 # Логин/пароль для эндпоинтов /api/1c/*. Без них приложение отдаёт 503
 # («интеграция не настроена»), и тесты обмена не смогли бы работать.
@@ -63,3 +70,56 @@ def anon_client():
     """TestClient без аутентификации (синоним client)."""
     with TestClient(app) as c:
         yield c
+
+# ── Общие фикстуры для новых тестов ─────────────────────────────
+
+@pytest.fixture(autouse=True)
+def _reset_in_memory_counters():
+    """Счётчики лимитов и блокировок живут в памяти процесса — между тестами
+    их нужно сбрасывать, иначе серия входов из разных тестов упрётся в лимит
+    «10 попыток в минуту» и тесты начнут падать случайным образом."""
+    from app import security
+    security._rate_buckets.clear()
+    security._login_fails_mem.clear()
+    security._login_locks_mem.clear()
+    security._used_once.clear()
+    yield
+
+
+@pytest.fixture
+def mem_db():
+    """Чистая SQLite в памяти на один тест (одно соединение на все потоки)."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    eng = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=eng)
+    session = sessionmaker(
+        bind=eng, autocommit=False, autoflush=False, expire_on_commit=False
+    )()
+    try:
+        yield session
+    finally:
+        session.close()
+        Base.metadata.drop_all(bind=eng)
+        eng.dispose()
+
+
+@pytest.fixture
+def web(mem_db):
+    """TestClient, у которого ВСЁ приложение (роутеры, обработчики ошибок,
+    планировщик) работает с БД из mem_db: перепривязывается SessionLocal."""
+    from app.database import SessionLocal
+
+    original = SessionLocal.kw["bind"]
+    SessionLocal.configure(bind=mem_db.get_bind())
+    try:
+        with TestClient(app) as c:
+            yield c
+    finally:
+        SessionLocal.configure(bind=original)

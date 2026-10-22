@@ -29,13 +29,14 @@
             {% endif %}
         </div>
         <div class="text-muted small">
-            Создан: {{ order.created_at.strftime('%d.%m.%Y %H:%M') }}
+            Создан: {{ order.created_at|localdt }}
         </div>
     </div>
 
     <hr>
 
     <form action="/admin/update_order_status" method="post"
+          data-confirm="Отменить заказ? Товар вернётся на склад." data-confirm-when="Отменён"
           class="d-flex gap-2 flex-wrap align-items-center">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="order_id" value="{{ order.id }}">

@@ -2,6 +2,7 @@
 Планировщик фоновых задач.
 Lock-файл — в /run/dianthus (systemd RuntimeDirectory).
 """
+import asyncio
 import logging
 import os
 from datetime import datetime, timezone
@@ -11,12 +12,12 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from .locks import acquire_file_lock, release_file_lock
-from .models import SupplyItem, Preorder, Notification, Product
+from .locks import acquire_file_lock, lock_path, release_file_lock
+from .models import SupplyItem, Supply, Preorder, Notification, Product
 
 logger = logging.getLogger(__name__)
 
-LOCK_FILE = os.getenv("SCHEDULER_LOCK", "/run/dianthus/scheduler.lock")
+LOCK_FILE = lock_path("SCHEDULER_LOCK", "scheduler.lock")
 
 _scheduler: AsyncIOScheduler | None = None
 _lock_fd: int | None = None
@@ -64,15 +65,18 @@ def do_unload(db: Session, supply) -> int:
         .all()
     )
 
-    active_count = (
-        db.query(SupplyItem)
-        .filter(SupplyItem.is_active.is_(True))
-        .count()
+    # «Старые партии» — это активные позиции ОБЫЧНЫХ поставок. Служебную
+    # партию 1С (весь живой каталог, который ведёт обмен) не трогаем: раньше
+    # ручная разгрузка любой поставки снимала с полок и её, и клиенты видели
+    # пустой каталог до ближайшей выгрузки из 1С.
+    regular_supplies = db.query(Supply.id).filter(Supply.is_service.is_(False))
+    old_active = db.query(SupplyItem).filter(
+        SupplyItem.is_active.is_(True),
+        SupplyItem.supply_id.in_(regular_supplies),
     )
+    active_count = old_active.count()
     if active_count > 0:
-        db.query(SupplyItem).filter(
-            SupplyItem.is_active.is_(True)
-        ).update(
+        old_active.update(
             {SupplyItem.is_active: False, SupplyItem.reserved_stock: 0},
             synchronize_session=False,
         )
@@ -172,9 +176,14 @@ def _build_preorder_email(preorder, item) -> str:
 
 
 async def auto_unload_overdue() -> None:
+    # Работа с БД и рассылка писем синхронные и могут длиться секунды.
+    # В потоке они не блокируют event loop, который обслуживает запросы.
+    await asyncio.to_thread(_auto_unload_overdue_sync)
+
+
+def _auto_unload_overdue_sync() -> None:
     logger.info("⏰ auto_unload_overdue: старт")
     from .database import SessionLocal
-    from .models import Supply, SupplyItem
 
     db = SessionLocal()
     try:
@@ -194,9 +203,12 @@ async def auto_unload_overdue() -> None:
         )
         for supply in overdue:
             try:
-                do_unload(db, supply)
+                # savepoint: сбой на одной поставке откатывает только её,
+                # а не оставляет «половину» разгрузки в общей транзакции
+                with db.begin_nested():
+                    do_unload(db, supply)
             except Exception as e:
-                logger.error("Разгрузка №%d: %s", supply.id, e)
+                logger.exception("Разгрузка №%d: %s", supply.id, e)
         db.commit()
         logger.info("✅ auto_unload_overdue: %d", len(overdue))
     except Exception as e:
