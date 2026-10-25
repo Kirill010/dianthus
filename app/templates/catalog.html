@@ -37,7 +37,7 @@
                value="{{ search_q or '' }}" autocomplete="off">
         <button type="submit" class="btn btn-primary">Найти</button>
         {% if current_filters.q %}
-            <a href="/catalog{% if current_filters.category %}?category={{ current_filters.category }}{% endif %}"
+            <a href="/catalog{% if current_filters.category %}?category={{ current_filters.category|urlencode }}{% endif %}"
                class="btn btn-outline-secondary"
                title="Сбросить поиск">
                 <i class="fas fa-times"></i>
@@ -50,7 +50,7 @@
 {# ─── КАТЕГОРИИ ─── #}
 {% if all_categories %}
 <div class="category-scroll mb-3">
-    <a href="/catalog{% if current_filters.q %}?q={{ current_filters.q }}{% endif %}"
+    <a href="/catalog{% if current_filters.q %}?q={{ current_filters.q|urlencode }}{% endif %}"
        class="category-btn {% if not current_filters.category %}active{% endif %}">
         Все
     </a>
@@ -89,10 +89,13 @@
 {% if not items %}
     <div class="empty-state text-center py-5">
         <i class="fas fa-seedling fa-3x text-muted mb-3"></i>
-        <h4>Ничего не найдено</h4>
-        <p class="text-muted">В данный момент товаров в наличии нет.</p>
         {% if has_filters %}
+            <h4>Ничего не найдено</h4>
+            <p class="text-muted">По вашему запросу товаров нет. Попробуйте изменить слова поиска или сбросить фильтры.</p>
             <a href="/catalog" class="btn btn-outline-primary mt-2">Сбросить фильтры</a>
+        {% else %}
+            <h4>Сейчас нет товаров в наличии</h4>
+            <p class="text-muted">Загляните позже — или оформите предзаказ на товары, которые уже в пути.</p>
         {% endif %}
     </div>
 {% else %}
@@ -243,7 +246,8 @@
 {# ═══════ ПРЕДЗАКАЗЫ ═══════ #}
 {% if preorder_items %}
     <div class="preorder-section mt-5">
-        <h3 class="mb-3"><i class="fas fa-truck-fast me-2"></i>Товары в пути (Предзаказ)</h3>
+        <h3 class="mb-1"><i class="fas fa-truck-fast me-2"></i>Товары в пути (Предзаказ)</h3>
+        <p class="small text-muted mb-3">Нужны цветы к конкретной дате? <a href="/deadlines">Проверьте, до какого числа заказывать</a>.</p>
         <div class="product-grid">
             {% for item in preorder_items %}
                 {% set product = item.product %}
@@ -252,7 +256,7 @@
                 <div class="product-card-v2"
                      data-step="{{ pack }}"
                      data-min="{{ pack }}"
-                     data-max="1000">
+                     data-max="{{ pack * preorder_max_packs }}">
                     <div class="product-card-v2__image-wrap">
                         <a href="/product/{{ item.id }}" class="product-card-v2__image-link">
                             {% if photos %}
@@ -310,7 +314,7 @@
                                        class="qty-input"
                                        value="{{ pack }}"
                                        min="{{ pack }}"
-                                       max="1000"
+                                       max="{{ pack * preorder_max_packs }}"
                                        step="{{ pack }}"
                                        inputmode="numeric">
 

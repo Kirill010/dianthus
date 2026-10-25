@@ -20,7 +20,7 @@
         </div>
         <form action="/notifications/{{ n.id }}/delete" method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button class="notification-card__remove"><i class="fas fa-times"></i></button>
+            <button class="notification-card__remove" aria-label="Удалить уведомление"><i class="fas fa-times"></i></button>
         </form>
     </div>
     {% endfor %}

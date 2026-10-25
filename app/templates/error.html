@@ -9,9 +9,11 @@
         <a href="/catalog" class="btn btn-primary mt-2">
             <i class="fas fa-home me-2"></i>В каталог
         </a>
+        {% if not user %}
         <a href="/login" class="btn btn-outline-secondary mt-2">
             <i class="fas fa-sign-in-alt me-2"></i>Войти заново
         </a>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

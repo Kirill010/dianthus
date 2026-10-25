@@ -1,10 +1,15 @@
 {% extends "base.html" %}
+{% block title %}Мои заказы — Диантус{% endblock %}
 {% block content %}
-<h1 class="catalog-title mb-4">Мои заказы</h1>
+{% set steps = ['Новый', 'Подтверждён', 'В работе', 'Отправлен', 'Выполнен'] %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <h1 class="catalog-title mb-0">Мои заказы</h1>
+    <a href="/claims" class="btn btn-outline-secondary btn-sm"><i class="fas fa-triangle-exclamation me-1"></i>Мои обращения по качеству</a>
+</div>
 {% if orders %}
 <div class="orders-list">
     {% for order in orders %}
-    <div class="order-card">
+    <div class="order-card" id="order-{{ order.id }}">
         <div class="order-card__head">
             <strong>№{{ order.id }}</strong>
             <span class="badge
@@ -14,7 +19,25 @@
                 {% elif order.status == 'Отправлен' %}bg-primary
                 {% else %}bg-secondary{% endif %}">{{ order.status }}</span>
         </div>
-        <div class="order-card__meta">{{ order.created_at|localdt }}</div>
+        <div class="order-card__meta">Оформлен {{ order.created_at|localdt }}</div>
+
+        {% if order.status in steps %}
+        {% set cur = steps.index(order.status) %}
+        <ol class="order-steps" aria-label="Этапы заказа">
+            {% for s in steps %}
+            <li class="{% if loop.index0 < cur %}done{% elif loop.index0 == cur %}current{% endif %}">{{ s }}</li>
+            {% endfor %}
+        </ol>
+        {% endif %}
+
+        {% if order.desired_date %}
+        <div class="order-card__meta"><i class="fas fa-calendar-day me-1"></i>Нужно к: <strong>{{ order.desired_date.strftime('%d.%m.%Y') }}</strong></div>
+        {% endif %}
+        {% if order.delivery_method == 'delivery' %}
+        <div class="order-card__meta"><i class="fas fa-truck me-1"></i>Доставка: {{ order.delivery_address }}</div>
+        {% elif order.delivery_method == 'pickup' %}
+        <div class="order-card__meta"><i class="fas fa-store me-1"></i>Самовывоз</div>
+        {% endif %}
         {% if order.discount_percent and order.discount_percent > 0 %}
         <div class="order-card__meta">
             Подытог {{ "%.0f"|format(order.subtotal) }} ₽ ·
@@ -24,21 +47,42 @@
         <div class="order-card__sum">{{ "%.0f"|format(order.total_price) }} ₽</div>
         {% if order.comment %}<div class="order-card__comment">{{ order.comment }}</div>{% endif %}
 
-        <!-- Кнопки действий -->
+        <details class="order-card__items">
+            <summary>Состав заказа ({{ order.items|length }} поз.)</summary>
+            <table class="table table-sm mb-0">
+                <tbody>
+                {% for it in order.items %}
+                <tr>
+                    <td>{{ it.product_name }}</td>
+                    <td class="text-end text-nowrap">{{ it.quantity }} упак. × {{ it.package_size or 1 }} шт</td>
+                    <td class="text-end text-nowrap">{{ it.subtotal|price }} ₽</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </details>
+
         <div class="order-card__actions">
-            <a href="/orders/{{ order.id }}/invoice"
-               target="_blank"
+            <a href="/orders/{{ order.id }}/invoice" target="_blank" rel="noopener"
                class="btn btn-sm btn-outline-secondary">
                 <i class="fas fa-file-pdf me-1"></i>Счёт PDF
             </a>
 
-            <form action="/orders/{{ order.id }}/repeat"
-                  method="post" class="d-inline">
+            <form action="/orders/{{ order.id }}/repeat" method="post" class="d-inline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn btn-sm btn-outline-primary">
                     <i class="fas fa-redo me-1"></i>Повторить
                 </button>
             </form>
+
+            {% if order.status in ('Отправлен', 'Выполнен') %}
+            <a href="/claims/new?order_id={{ order.id }}" class="btn btn-sm btn-outline-danger">
+                <i class="fas fa-triangle-exclamation me-1"></i>Сообщить о проблеме
+            </a>
+            {% endif %}
+            {% for c in claims_by_order.get(order.id, []) %}
+            <a href="/claims/{{ c.id }}" class="btn btn-sm btn-light border">{{ c.number }} · {{ c.status }}</a>
+            {% endfor %}
         </div>
     </div>
     {% endfor %}
@@ -50,19 +94,4 @@
     <a href="/catalog" class="btn btn-primary mt-2">В каталог</a>
 </div>
 {% endif %}
-
-<style>
-.order-card__actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px dashed var(--border);
-}
-.order-card__actions .btn {
-    font-size: 0.8rem;
-    padding: 5px 12px;
-}
-</style>
 {% endblock %}

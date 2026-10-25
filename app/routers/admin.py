@@ -13,11 +13,12 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload, joinedload
 
 from ..database import get_db
-from ..deps import require_admin
+from ..deps import require_admin, require_staff
 from ..models import (ORDER_STATUSES, PRODUCT_CATEGORIES, SUPPLY_STATUSES,
-                      AuditLog, Order, OrderItem, Preorder, Product,
+                      AuditLog, Claim, Order, OrderItem, Preorder, Product,
                       Supply, SupplyItem, User)
 from ..security import check_csrf
+from ..services import api_keys, exchange_log, legal
 from ..services.audit import log_action
 from ..services.orders import (apply_status_change, load_order_for_update,
                                notify_client_of_status)
@@ -30,7 +31,7 @@ from ..services.excel_service import (build_products_import_template,
 from ..services.notifier import notify_client_approved
 from ..services.upload_service import delete_upload, save_uploads
 from ..templating import render
-from ..timeutils import DATE_FMT, fmt_local, local_midnight_utc
+from ..timeutils import DATE_FMT, fmt_local, local_midnight_utc, shop_tz
 from ..validators import (validate_country, validate_positive_int,
                           validate_price, validate_stock, validate_city)
 from ..web import LIKE_ESCAPE, contains_pattern, safe_back
@@ -62,6 +63,16 @@ def _parse_date(v: str):
         return datetime.strptime(v, "%Y-%m-%d")
     except ValueError:
         return None
+
+
+def _day_start(days_ahead: int = 0) -> datetime:
+    """Полночь (naive) через N дней от сегодняшней даты по времени магазина.
+
+    Желаемая дата получения лежит в заказе как «дата в полночь» без пояса,
+    поэтому и границы считаем в тех же календарных сутках магазина.
+    """
+    today = datetime.now(shop_tz()).date() + timedelta(days=days_ahead)
+    return datetime(today.year, today.month, today.day)
 
 
 def _err(request: Request, errors: list[str]) -> None:
@@ -142,12 +153,14 @@ def _is_photo_url(url: str) -> bool:
 def dashboard(
     request: Request,
     db: Session = Depends(get_db),
-    admin=Depends(require_admin),
+    staff=Depends(require_staff),
     q: str = "",
     status: str = "",
+    due: int = 0,
     page: int = 1,
 ):
     q, status, page = (q or "").strip(), (status or "").strip(), max(1, page)
+    is_admin = bool(staff.is_admin)
 
     orders_query = db.query(Order).options(
         selectinload(Order.user),
@@ -162,12 +175,20 @@ def dashboard(
             User.company_name.ilike(pattern, escape=LIKE_ESCAPE),
             User.email.ilike(pattern, escape=LIKE_ESCAPE),
             User.full_name.ilike(pattern, escape=LIKE_ESCAPE),
+            User.phone.ilike(pattern, escape=LIKE_ESCAPE),
         ])
         orders_query = orders_query.outerjoin(
             User, Order.user_id == User.id
         ).filter(or_(*conditions))
     if status:
         orders_query = orders_query.filter(Order.status == status)
+    urgent_filter = (
+        Order.desired_date.isnot(None),
+        Order.desired_date < _day_start(2),            # сегодня, завтра и просроченные
+        Order.status.notin_(["Выполнен", "Отменён"]),
+    )
+    if due:
+        orders_query = orders_query.filter(*urgent_filter)
 
     total_orders = orders_query.count()
     orders_total_pages = max(1, (total_orders + ORDERS_PER_PAGE - 1) // ORDERS_PER_PAGE)
@@ -187,63 +208,70 @@ def dashboard(
     stats = {
         "orders_today": db.query(Order).filter(Order.created_at >= today).count(),
         "orders_week": db.query(Order).filter(Order.created_at >= week_ago).count(),
-        "revenue_today": db.query(func.coalesce(func.sum(Order.total_price), 0))
-            .filter(Order.created_at >= today, Order.status != "Отменён")
-            .scalar() or 0,
-        "revenue_week": db.query(func.coalesce(func.sum(Order.total_price), 0))
-            .filter(Order.created_at >= week_ago, Order.status != "Отменён")
-            .scalar() or 0,
         "pending_orders": db.query(Order).filter(Order.status == "Новый").count(),
         "new_clients_week": db.query(User).filter(User.created_at >= week_ago).count(),
     }
-    products_total = db.query(Product).count()
-    products = db.query(Product).order_by(Product.name).limit(LIST_LIMIT).all()
+    if is_admin:                       # выручку видит только владелец
+        stats["revenue_today"] = db.query(func.coalesce(func.sum(Order.total_price), 0)) \
+            .filter(Order.created_at >= today, Order.status != "Отменён").scalar() or 0
+        stats["revenue_week"] = db.query(func.coalesce(func.sum(Order.total_price), 0)) \
+            .filter(Order.created_at >= week_ago, Order.status != "Отменён").scalar() or 0
 
-    supplies = (
-        db.query(Supply)
-        .options(
-            selectinload(Supply.items).selectinload(SupplyItem.product)
-        )
-        .filter(Supply.is_service.is_(False))
-        .order_by(Supply.arrival_date.asc())
-        .all()
-    )
+    status_counts = dict(db.query(Order.status, func.count(Order.id)).group_by(Order.status).all())
+    todo = {
+        "new_orders": status_counts.get("Новый", 0),
+        "urgent_orders": db.query(Order).filter(*urgent_filter).count(),
+        "applications": db.query(User).filter(
+            User.is_approved.is_(False), User.is_admin.is_(False),
+            User.anonymized_at.is_(None)).count(),
+        "claims": db.query(Claim).filter(Claim.status.in_(["Новая", "В работе"])).count(),
+    }
+    if is_admin:
+        todo["data_requests"] = legal.open_data_requests(db)
+        todo["waiting_1c"] = (exchange_log.waiting_orders(db)
+                              if api_keys.active_keys_count(db) else 0)
+
     users_total = db.query(User).count()
-    users = db.query(User).order_by(User.created_at.desc()).limit(LIST_LIMIT).all()
-    pending_count = (
-        db.query(User)
-        .filter(User.is_approved.is_(False), User.is_admin.is_(False))
-        .count()
-    )
+    users = (db.query(User).filter(User.anonymized_at.is_(None))
+             .order_by(User.is_approved, User.created_at.desc()).limit(LIST_LIMIT).all())
 
-    active_filter = (SupplyItem.is_active.is_(True), SupplyItem.stock > 0)
-    active_total = db.query(SupplyItem).filter(*active_filter).count()
-    # Раньше грузились ВСЕ позиции: при каталоге из 1С (тысячи товаров)
-    # вкладка «На складе» делала тяжёлый запрос на каждое открытие админки.
-    active_items = (
-        db.query(SupplyItem)
-        .options(
-            joinedload(SupplyItem.product),
-            joinedload(SupplyItem.supply),
-        )
-        .filter(*active_filter)
-        .order_by(SupplyItem.id.desc())
-        .limit(LIST_LIMIT)
-        .all()
-    )
-
-    return render(
-        request, "admin.html", db,
-        user=admin, orders=orders, total_orders=total_orders,
+    ctx = dict(
+        user=staff, orders=orders, total_orders=total_orders,
         orders_page=page, orders_total_pages=orders_total_pages,
-        orders_q=q, orders_status=status, products=products,
-        supplies=supplies, users=users, pending_count=pending_count,
-        active_items=active_items, statuses=ORDER_STATUSES,
+        orders_q=q, orders_status=status, orders_due=due,
+        statuses=ORDER_STATUSES, status_counts=status_counts, todo=todo,
+        today_dt=_day_start(0), soon_dt=_day_start(2),
+        users=users, pending_count=todo["applications"], stats=stats,
+        list_limit=LIST_LIMIT, users_total=users_total,
+        products=[], supplies=[], active_items=[], products_total=0, active_total=0,
         supply_statuses=SUPPLY_STATUSES, categories=PRODUCT_CATEGORIES,
-        stats=stats, list_limit=LIST_LIMIT,
-        products_total=products_total, users_total=users_total,
-        active_total=active_total,
     )
+    if is_admin:
+        active_filter = (SupplyItem.is_active.is_(True), SupplyItem.stock > 0)
+        ctx.update(
+            products_total=db.query(Product).count(),
+            products=db.query(Product).order_by(Product.name).limit(LIST_LIMIT).all(),
+            supplies=(
+                db.query(Supply)
+                .options(selectinload(Supply.items).selectinload(SupplyItem.product))
+                .filter(Supply.is_service.is_(False))
+                .order_by(Supply.arrival_date.asc())
+                .all()
+            ),
+            active_total=db.query(SupplyItem).filter(*active_filter).count(),
+            # Раньше грузились ВСЕ позиции: при каталоге из 1С (тысячи товаров)
+            # вкладка «На складе» делала тяжёлый запрос на каждое открытие админки.
+            active_items=(
+                db.query(SupplyItem)
+                .options(joinedload(SupplyItem.product), joinedload(SupplyItem.supply))
+                .filter(*active_filter)
+                .order_by(SupplyItem.id.desc())
+                .limit(LIST_LIMIT)
+                .all()
+            ),
+        )
+    return render(request, "admin.html", db, **ctx)
+
 
 # ───────────────────────── ЖУРНАЛ ДЕЙСТВИЙ ─────────────────────────
 
@@ -325,7 +353,7 @@ def user_approve(
     user_id: int, request: Request,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_admin=Depends(require_admin),
+    current_admin=Depends(require_staff),
     _csrf: None = Depends(check_csrf),
 ):
     user = db.query(User).filter(User.id == user_id).first()
@@ -364,27 +392,34 @@ def user_reject(
         return RedirectResponse(url=_back(request), status_code=303)
 
     try:
-        order_ids = [r[0] for r in db.query(Order.id).filter(Order.user_id == user.id).all()]
-        if order_ids:
-            db.query(OrderItem).filter(
-                OrderItem.order_id.in_(order_ids)
-            ).update(
-                {OrderItem.product_id: None, OrderItem.supply_item_id: None},
-                synchronize_session=False,
+        name, email = user.full_name, user.email
+        has_orders = db.query(Order.id).filter(Order.user_id == user.id).first() is not None
+        if has_orders:
+            # Заказы нужны для учёта — стираем не клиента вместе с заказами,
+            # а только его личные данные. Заказы остаются привязанными к
+            # «Клиент №N (данные удалены)».
+            if user.consent_at:
+                legal.record_consent(db, user, "pd", False, request,
+                                     source="admin", commit=False)
+            if user.marketing_consent:
+                legal.record_consent(db, user, "marketing", False, request,
+                                     source="admin", commit=False)
+            legal.anonymize_user(db, user)
+            db.commit()
+            log_action(db, request, current_admin, "user_anonymize",
+                       "user", user_id, f"Обезличен клиент {email} ({name})")
+            request.session["flash"] = (
+                f"🗑 «{name}»: личные данные стёрты, заказы сохранены без имени и контактов"
             )
-            db.query(Order).filter(Order.id.in_(order_ids)).update(
-                {Order.user_id: None}, synchronize_session=False
-            )
-        db.query(Preorder).filter(Preorder.user_id == user.id).delete(
-            synchronize_session=False
-        )
-        name = user.full_name
-        email = user.email
-        db.delete(user)
-        db.commit()
-        log_action(db, request, current_admin, "user_reject",
-                   "user", user_id, f"Удалён пользователь {email} ({name})")
-        request.session["flash"] = f"🗑 «{name}» удалён"
+        else:
+            # Заявка без заказов (или тестовый клиент): удаляем целиком, но
+            # сначала убираем ссылки из журналов, рекламаций, запросов и т. п.
+            legal.purge_user_refs(db, user.id)
+            db.delete(user)
+            db.commit()
+            log_action(db, request, current_admin, "user_reject",
+                       "user", user_id, f"Удалён пользователь {email} ({name})")
+            request.session["flash"] = f"🗑 «{name}» удалён"
     except Exception as e:
         db.rollback()
         logger.exception("Ошибка удаления пользователя: %s", e)
@@ -426,7 +461,7 @@ def update_order_status(
     order_id: int = Form(...),
     status: str = Form(...),
     db: Session = Depends(get_db),
-    _a=Depends(require_admin),
+    _a=Depends(require_staff),
     _csrf: None = Depends(check_csrf),
 ):
     if status not in ORDER_STATUSES:
@@ -470,7 +505,7 @@ def order_detail(
     order_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    admin=Depends(require_admin),
+    admin=Depends(require_staff),
 ):
     order = (
         db.query(Order)
@@ -484,17 +519,29 @@ def order_detail(
     if not order:
         raise HTTPException(404, "Заказ не найден")
 
+    # кто и когда менял статус (журнал действий) — чтобы не спрашивать «а кто отменил?»
+    history = (
+        db.query(AuditLog)
+        .options(joinedload(AuditLog.user))
+        .filter(AuditLog.entity == "order", AuditLog.entity_id == order.id,
+                AuditLog.action.in_(["order_status", "order_status_1c"]))
+        .order_by(AuditLog.id.desc()).limit(30).all()
+    )
+    claims = (db.query(Claim).filter(Claim.order_id == order.id)
+              .order_by(Claim.id.desc()).all())
     return render(
         request, "admin_order_detail.html", db,
         user=admin,
         order=order,
         statuses=ORDER_STATUSES,
+        history=history,
+        claims=claims,
     )
 
 # ───────────────────────── EXCEL ─────────────────────────
 
 @router.get("/orders/export")
-def orders_export(db: Session = Depends(get_db), _a=Depends(require_admin)):
+def orders_export(db: Session = Depends(get_db), _a=Depends(require_staff)):
     orders = (
         db.query(Order)
         .options(selectinload(Order.user), selectinload(Order.items))
@@ -506,24 +553,41 @@ def orders_export(db: Session = Depends(get_db), _a=Depends(require_admin)):
 
 @router.get("/customers/export")
 def customers_export(db: Session = Depends(get_db), _a=Depends(require_admin)):
-    stmt = select(Order.user_id).where(Order.user_id.isnot(None)).distinct()
-    users = db.query(User).options(selectinload(User.orders)).filter(User.id.in_(stmt)).all()
+    """Все клиенты (не только с заказами) + согласие на рекламу: для обзвона и рассылок
+    звонить и писать с предложениями можно только тем, у кого согласие «Да»."""
+    # итоги по заказам — одним запросом (отменённые не считаем)
+    agg = {
+        uid: (cnt, total, last)
+        for uid, cnt, total, last in db.query(
+            Order.user_id, func.count(Order.id),
+            func.coalesce(func.sum(Order.total_price), 0), func.max(Order.created_at),
+        ).filter(Order.user_id.isnot(None), Order.status != "Отменён")
+        .group_by(Order.user_id).all()
+    }
+    users = (db.query(User)
+             .filter(User.is_admin.is_(False), User.is_manager.is_(False),
+                     User.anonymized_at.is_(None)).all())
     customers = []
     for u in users:
-        if not u.orders:
-            continue
+        cnt, total, last = agg.get(u.id, (0, 0.0, None))
         customers.append({
             "company_name": u.company_name,
             "full_name": u.full_name,
             "email": u.email,
             "phone": u.phone,
+            "inn": u.inn,
+            "city": u.city,
+            "status": "Активен" if u.is_approved else "Ожидает одобрения",
             "discount_percent": u.discount_percent or 0,
-            "orders_count": len(u.orders),
-            "total_sum": sum(o.total_price for o in u.orders),
-            "last_order_date": fmt_local(
-                max(o.created_at for o in u.orders), DATE_FMT),
+            "orders_count": cnt,
+            "total_sum": float(total or 0),
+            "last_order_date": fmt_local(last, DATE_FMT, empty=""),
+            "last_login": fmt_local(u.last_login_at, DATE_FMT, empty=""),
+            "registered": fmt_local(u.created_at, DATE_FMT, empty=""),
+            "marketing": "Да" if u.marketing_consent else "Нет",
+            "pd_consent": fmt_local(u.consent_at, DATE_FMT, empty="нет"),
         })
-    customers.sort(key=lambda c: c["total_sum"], reverse=True)
+    customers.sort(key=lambda c: (-c["total_sum"], c["company_name"]))
     return _xlsx(export_customers_to_excel(customers), "dianthus_customers.xlsx")
 
 

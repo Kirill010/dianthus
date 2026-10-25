@@ -12,7 +12,7 @@
 {% set stems = item.available_stems %}
 {% set min_packs = product.min_quantity or 1 %}
 {% set min_stems = pack * min_packs %}
-{% set is_out = stems < 1 %}
+{% set is_out = stems < 1 and not preorder_mode %}
 {% set max_stems_valid = (stems // pack) * pack %}
 
 {% set photos = product.all_photos %}
@@ -64,6 +64,9 @@
 
     <div class="product-detail__info mt-4">
         <h1 class="product-detail__name mb-3">{{ product.name }}</h1>
+        {% if preorder_mode %}
+            <span class="badge bg-warning text-dark mb-3"><i class="fas fa-truck-fast me-1"></i>В пути — можно оформить предзаказ</span>
+        {% endif %}
         <div class="product-detail__specs mb-3">
             {% if product.country %}
                 <div class="spec-row d-flex justify-content-between py-2 border-bottom">
@@ -71,23 +74,48 @@
                     <span class="spec-value fw-medium">{{ product.country }}</span>
                 </div>
             {% endif %}
+            {% if product.length_cm %}
+                <div class="spec-row d-flex justify-content-between py-2 border-bottom">
+                    <span class="spec-label text-muted">Длина стебля:</span>
+                    <span class="spec-value fw-medium">{{ product.length_cm }} см</span>
+                </div>
+            {% endif %}
             <div class="spec-row d-flex justify-content-between py-2 border-bottom">
                 <span class="spec-label text-muted">В упаковке:</span>
                 <span class="spec-value fw-medium">{{ pack }} шт</span>
             </div>
-            <div class="spec-row d-flex justify-content-between py-2 border-bottom">
-                <span class="spec-label text-muted">Доступно:</span>
-                <span class="spec-value fw-medium {% if is_out %}text-danger{% else %}text-success{% endif %}">
-                    {{ item.available_stock }} упак. ({{ stems }} шт)
-                </span>
-            </div>
+            {% if preorder_mode %}
+                <div class="spec-row d-flex justify-content-between py-2 border-bottom">
+                    <span class="spec-label text-muted">Откуда:</span>
+                    <span class="spec-value fw-medium">{{ item.supply.location or '—' }}</span>
+                </div>
+                <div class="spec-row d-flex justify-content-between py-2 border-bottom">
+                    <span class="spec-label text-muted">Ожидаем:</span>
+                    <span class="spec-value fw-medium">{{ item.supply.arrival_date.strftime('%d.%m.%Y') if item.supply.arrival_date else 'дата уточняется' }}</span>
+                </div>
+            {% else %}
+                <div class="spec-row d-flex justify-content-between py-2 border-bottom">
+                    <span class="spec-label text-muted">Доступно:</span>
+                    <span class="spec-value fw-medium {% if is_out %}text-danger{% else %}text-success{% endif %}">
+                        {{ item.available_stock }} упак. ({{ stems }} шт)
+                    </span>
+                </div>
+            {% endif %}
             {% if not public %}
             <div class="spec-row d-flex justify-content-between py-2 border-bottom">
-                <span class="spec-label text-muted">Цена:</span>
-                <span class="spec-value fw-bold fs-5">{{ item.price|price }} ₽ / шт</span>
+                <span class="spec-label text-muted">Цена за штуку:</span>
+                <span class="spec-value fw-bold fs-5">{{ item.price|price }} ₽</span>
+            </div>
+            <div class="spec-row d-flex justify-content-between py-2 border-bottom">
+                <span class="spec-label text-muted">Упаковка ({{ pack }} шт):</span>
+                <span class="spec-value fw-medium">{{ (item.price * pack)|price }} ₽</span>
             </div>
             {% endif %}
         </div>
+
+        {% if product.description %}
+            <p class="product-detail__description" style="white-space:pre-line">{{ product.description }}</p>
+        {% endif %}
 
         {% if public %}
             <div class="product-card-v2__price-locked mb-3">
@@ -103,17 +131,43 @@
                 Минимум к заказу: <strong>{{ min_stems }} шт</strong>
                 ({{ min_packs }} упак.)
             </p>
-        {% elif not is_out %}
-            <form action="/add_to_cart" method="post" class="product-detail__form">
+        {% elif preorder_mode %}
+            <form action="/add_to_preorder" method="post" class="product-detail__form" id="buy-form"
+                  data-price="{{ item.price }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="supply_item_id" value="{{ item.id }}">
                 <div class="mb-3">
-                    <label class="form-label fw-medium">Количество (шт):</label>
+                    <label class="form-label fw-medium" for="qty-input">Количество (шт):</label>
+                    <div class="qty-control qty-control--lg d-flex align-items-center" style="max-width: 200px;">
+                        <button type="button" class="btn btn-outline-secondary" data-qty-step="down" aria-label="Меньше">−</button>
+                        <input type="number" name="quantity_stems" id="qty-input"
+                               class="form-control text-center mx-2"
+                               value="{{ min_stems }}" min="{{ min_stems }}"
+                               max="{{ pack * preorder_max_packs }}" step="{{ pack }}" required>
+                        <button type="button" class="btn btn-outline-secondary" data-qty-step="up" aria-label="Больше">+</button>
+                    </div>
+                    <div class="small text-muted mt-1">≈ <strong id="line-total">{{ (item.price * min_stems)|price }}</strong> ₽ без учёта вашей скидки</div>
+                </div>
+                <button type="submit" class="btn btn-warning btn-lg w-100">
+                    <i class="fas fa-clock me-2"></i>Оформить предзаказ
+                </button>
+            </form>
+            <p class="qty-hint text-muted small mt-2">
+                Товар ещё в пути: когда машина прибудет, предзаказ окажется в вашей корзине.
+                Если цветы нужны к конкретной дате, <a href="/deadlines">проверьте, до какого числа заказывать</a>.
+            </p>
+        {% elif not is_out %}
+            <form action="/add_to_cart" method="post" class="product-detail__form" id="buy-form"
+                  data-price="{{ item.price }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="supply_item_id" value="{{ item.id }}">
+                <div class="mb-3">
+                    <label class="form-label fw-medium" for="qty-input">Количество (шт):</label>
                     <div class="qty-control qty-control--lg d-flex align-items-center"
                          style="max-width: 200px;">
                         <button type="button" class="btn btn-outline-secondary"
                                 data-qty-step="down" aria-label="Меньше">−</button>
-                        <input type="number" name="quantity_stems"
+                        <input type="number" name="quantity_stems" id="qty-input"
                                class="form-control text-center mx-2"
                                value="{{ min_stems }}"
                                min="{{ min_stems }}"
@@ -122,6 +176,7 @@
                         <button type="button" class="btn btn-outline-secondary"
                                 data-qty-step="up" aria-label="Больше">+</button>
                     </div>
+                    <div class="small text-muted mt-1">≈ <strong id="line-total">{{ (item.price * min_stems)|price }}</strong> ₽ без учёта вашей скидки</div>
                 </div>
                 <button type="submit" class="btn btn-primary btn-lg w-100">
                     <i class="fas fa-cart-plus me-2"></i>В корзину
@@ -138,4 +193,21 @@
         {% endif %}
     </div>
 </div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+    var form = document.getElementById('buy-form');
+    if (!form) return;
+    var price = parseFloat(form.dataset.price) || 0;
+    var input = document.getElementById('qty-input');
+    var out = document.getElementById('line-total');
+    function fmt(n) {
+        n = Math.round(n * 100) / 100;
+        return (n % 1 === 0 ? n.toFixed(0) : n.toFixed(2)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    }
+    function update() { out.textContent = fmt(price * (parseInt(input.value, 10) || 0)); }
+    input.addEventListener('input', update);
+    input.addEventListener('change', update);
+})();
+</script>
 {% endblock %}

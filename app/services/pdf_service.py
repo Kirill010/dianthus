@@ -10,6 +10,22 @@ from .pdf_fonts import get_font_css, get_font_family, link_callback
 logger = logging.getLogger(__name__)
 
 
+def shop_info_for_invoice(db) -> dict:
+    """Данные поставщика для счёта: реквизиты из настроек + условия оплаты из админки."""
+    from ..config import config
+    from .site_settings import get_setting
+    return {
+        "name": config.SHOP_NAME,
+        "phone": config.SHOP_PHONE,
+        "address": config.SHOP_LEGAL_ADDRESS or config.SHOP_ADDRESS,
+        "requisites": config.SHOP_REQUISITES,
+        "inn": config.SHOP_INN,
+        "ogrn": config.SHOP_OGRN,
+        "payment_terms": get_setting(db, "payment_terms"),
+        "vat_note": config.SHOP_VAT_NOTE,
+    }
+
+
 def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
     # Генерирует PDF-счёт. Возвращает bytes.
     try:
@@ -71,9 +87,29 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
             </p>
         """
 
+    delivery_lines = []
+    if order.desired_date:
+        delivery_lines.append(f"Нужно к: {order.desired_date.strftime(DATE_FMT)}")
+    if order.delivery_method == "delivery":
+        delivery_lines.append(f"Доставка: {order.delivery_address or 'адрес уточняется'}")
+    elif order.delivery_method == "pickup":
+        delivery_lines.append("Самовывоз")
+    terms_lines = []
+    if shop_info.get("payment_terms"):
+        terms_lines.append(f"Условия оплаты: {shop_info['payment_terms']}")
+    if shop_info.get("vat_note"):
+        terms_lines.append(str(shop_info["vat_note"]))
+    extra_block = ""
+    if delivery_lines or terms_lines:
+        extra_block = "<p>" + "<br/>".join(_e(x) for x in delivery_lines + terms_lines) + "</p>"
+
     shop_address = shop_info.get('address') or ''
     shop_phone = shop_info.get('phone') or ''
     supplier_extra = ''
+    ident = [f"{label} {shop_info[key]}" for key, label in (("inn", "ИНН"), ("ogrn", "ОГРН"))
+             if shop_info.get(key)]
+    if ident:
+        supplier_extra += f"<p>{_e(', '.join(ident))}</p>"
     if shop_address:
         supplier_extra += f"<p>Адрес: {_e(shop_address)}</p>"
     if shop_phone:
@@ -212,6 +248,7 @@ def generate_invoice_pdf(order, user, shop_info: dict) -> bytes:
             </tfoot>
         </table>
 
+        {extra_block}
         {comment_block}
 
         <div class="footer">

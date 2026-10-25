@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% set hide_bottom_nav = true %}
+{% block title %}Настройки магазина — админка{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h2 class="mb-0"><i class="fas fa-sliders me-2"></i>Настройки магазина</h2>
+    <a href="/admin" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i>В админку</a>
+</div>
+
+{% if errors %}
+<div class="alert alert-danger py-2 small"><ul class="mb-0 ps-3">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>
+{% endif %}
+
+<form method="post" action="/admin/settings" class="card p-4 mb-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <div class="mb-4">
+        <label class="form-label fw-bold" for="st-pay">Условия оплаты</label>
+        <input type="text" id="st-pay" name="payment_terms" class="form-control" maxlength="300" required
+               value="{{ fields[0].value }}">
+        <div class="form-text">{{ fields[0].hint }} По умолчанию: «{{ fields[0].default }}».</div>
+    </div>
+
+    <div class="mb-4">
+        <label class="form-label fw-bold" for="st-lead">За сколько дней заказывать (по странам)</label>
+        <textarea id="st-lead" name="preorder_lead_days" class="form-control" rows="3" maxlength="600" required>{{ fields[1].value }}</textarea>
+        <div class="form-text">{{ fields[1].hint }}</div>
+        <div class="alert alert-light border small mt-2 mb-0">Сайт прочитал это так: <strong>{{ rules_text }}</strong></div>
+    </div>
+
+    <div><button class="btn btn-primary"><i class="fas fa-save me-1"></i>Сохранить</button></div>
+</form>
+
+<p class="small text-muted">Эти настройки видят клиенты: условия оплаты — при оформлении заказа, в счёте и в «Условиях работы»; сроки — на странице «Сроки заказа». Реквизиты организации (ИНН, адрес и т. д.) задаются в файле <code>.env</code> — см. раздел «Юридическое».</p>
+{% endblock %}

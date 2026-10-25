@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% set hide_bottom_nav = true %}
+{% block title %}{{ client.company_name }} — клиент{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h2 class="mb-0"><i class="fas fa-building me-2"></i>{{ client.company_name }}</h2>
+    <a href="/admin#clients" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i>К списку клиентов</a>
+</div>
+
+{% if temp_password %}
+<div class="card border-success mb-4">
+    <div class="card-body">
+        <h5 class="text-success"><i class="fas fa-key me-2"></i>Новый пароль для клиента</h5>
+        <div class="input-group mb-2" style="max-width:420px">
+            <input type="text" id="tmp-pwd" class="form-control font-monospace fs-5" value="{{ temp_password }}" readonly>
+            <button type="button" class="btn btn-success" id="tmp-copy"><i class="fas fa-copy me-1"></i>Копировать</button>
+        </div>
+        <p class="small text-muted mb-0">Покажется один раз. Продиктуйте клиенту по телефону и попросите сразу сменить его в «Профиле». Старый пароль больше не работает.</p>
+    </div>
+</div>
+<script nonce="{{ csp_nonce }}">
+document.getElementById('tmp-copy').addEventListener('click', function () {
+    var el = document.getElementById('tmp-pwd'); el.select();
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(el.value);
+    else document.execCommand('copy');
+});
+</script>
+{% endif %}
+
+<div class="row g-3 mb-4">
+<div class="col-lg-6">
+    <div class="card p-4 h-100">
+        <h5 class="mb-3">Контакты и статус</h5>
+        <dl class="row mb-0">
+            <dt class="col-sm-4 text-muted fw-normal">Контактное лицо</dt><dd class="col-sm-8">{{ client.full_name }}</dd>
+            <dt class="col-sm-4 text-muted fw-normal">Телефон</dt><dd class="col-sm-8"><a href="tel:{{ client.phone }}">{{ client.phone or '—' }}</a></dd>
+            <dt class="col-sm-4 text-muted fw-normal">Email</dt><dd class="col-sm-8"><a href="mailto:{{ client.email }}">{{ client.email }}</a></dd>
+            <dt class="col-sm-4 text-muted fw-normal">ИНН</dt><dd class="col-sm-8">{{ client.inn or '—' }}</dd>
+            <dt class="col-sm-4 text-muted fw-normal">Город</dt><dd class="col-sm-8">{{ client.city or '—' }}</dd>
+            <dt class="col-sm-4 text-muted fw-normal">Регистрация</dt><dd class="col-sm-8">{{ client.created_at|localdt('%d.%m.%Y') }}</dd>
+            <dt class="col-sm-4 text-muted fw-normal">Был на сайте</dt><dd class="col-sm-8">{{ client.last_login_at|localdt if client.last_login_at else 'ещё не входил' }}</dd>
+            <dt class="col-sm-4 text-muted fw-normal">Статус</dt>
+            <dd class="col-sm-8">
+                {% if client.anonymized_at %}<span class="badge bg-dark">Данные удалены</span>
+                {% elif client.is_admin %}<span class="badge bg-dark">Владелец</span>
+                {% elif client.is_manager %}<span class="badge bg-info text-dark">Менеджер</span>
+                {% elif client.is_approved %}<span class="badge bg-success">Активен</span>
+                {% else %}<span class="badge bg-warning text-dark">Ждёт одобрения</span>{% endif %}
+                {% if client.discount_percent %}<span class="badge bg-warning text-dark ms-1">скидка −{{ client.discount_percent }}%</span>{% endif %}
+            </dd>
+            <dt class="col-sm-4 text-muted fw-normal">Согласие на данные</dt>
+            <dd class="col-sm-8">{% if client.consent_at %}<span class="text-success">да, {{ client.consent_at|localdt('%d.%m.%Y') }} (ред. {{ client.consent_version or '—' }})</span>{% else %}<span class="text-danger">нет отметки</span>{% endif %}</dd>
+            <dt class="col-sm-4 text-muted fw-normal">Реклама, звонки с предложениями</dt>
+            <dd class="col-sm-8">{% if client.marketing_consent %}<span class="text-success">можно (согласие {{ client.marketing_consent_at|localdt('%d.%m.%Y') }})</span>
+                <form action="/admin/clients/{{ client.id }}/marketing_off" method="post" class="d-inline"
+                      data-confirm="Клиент попросил больше не присылать предложения? Мы запишем отзыв согласия и перестанем звонить и писать с рекламой.">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button class="btn btn-sm btn-outline-secondary ms-2">Клиент попросил отписать</button>
+                </form>
+                {% else %}<span class="text-danger">нельзя — только по заказам</span>{% endif %}</dd>
+        </dl>
+    </div>
+</div>
+<div class="col-lg-6">
+    <div class="card p-4 h-100">
+        <h5 class="mb-3">Покупки</h5>
+        <div class="row text-center g-2 mb-3">
+            <div class="col-4"><div class="h4 mb-0">{{ orders_count }}</div><div class="small text-muted">заказов</div></div>
+            <div class="col-4"><div class="h4 mb-0">{{ "%.0f"|format(orders_sum) }} ₽</div><div class="small text-muted">на сумму</div></div>
+            <div class="col-4"><div class="h4 mb-0">{{ "%.0f"|format(average) }} ₽</div><div class="small text-muted">средний заказ</div></div>
+        </div>
+        <p class="small text-muted">Последний заказ: {{ last_order|localdt('%d.%m.%Y') if last_order else '—' }}. Отменённые заказы не считаются.</p>
+
+        <form action="/admin/clients/{{ client.id }}/note" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label class="form-label small fw-bold" for="cl-note">Заметка о клиенте (клиент не видит)</label>
+            <textarea id="cl-note" name="staff_note" class="form-control mb-2" rows="3" maxlength="3000"
+                      placeholder="Например: любит розы 60 см, платит в день заказа, просит звонить после 12">{{ client.staff_note }}</textarea>
+            <button class="btn btn-outline-primary btn-sm">Сохранить заметку</button>
+        </form>
+    </div>
+</div>
+</div>
+
+{# ── Действия ── #}
+<div class="card p-4 mb-4">
+    <h5 class="mb-3">Действия</h5>
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+        {% if not client.is_approved and not client.is_admin and not client.anonymized_at %}
+        <form action="/admin/users/{{ client.id }}/approve" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="btn btn-success"><i class="fas fa-check me-1"></i>Одобрить заявку</button>
+        </form>
+        {% endif %}
+        {% if user.is_admin and not client.anonymized_at %}
+        <form action="/admin/users/{{ client.id }}/discount" method="post" class="d-inline-flex gap-1 align-items-center">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label class="small" for="cd-disc">Скидка, %</label>
+            <input type="number" id="cd-disc" name="discount_percent" min="0" max="100" step="0.5" class="form-control form-control-sm" style="width:90px" value="{{ client.discount_percent or 0 }}">
+            <button class="btn btn-sm btn-outline-warning">Сохранить</button>
+        </form>
+        {% if not client.is_admin %}
+        <form action="/admin/users/{{ client.id }}/manager" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="btn btn-sm btn-outline-info">{% if client.is_manager %}Забрать роль менеджера{% else %}Сделать менеджером{% endif %}</button>
+        </form>
+        {% endif %}
+        <form action="/admin/users/{{ client.id }}/reset_password" method="post"
+              data-confirm="Сбросить пароль клиента? Старый пароль перестанет работать, вы получите новый — его нужно будет передать клиенту.">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="btn btn-sm btn-outline-secondary"><i class="fas fa-key me-1"></i>Сбросить пароль</button>
+        </form>
+        {% if not client.is_admin and client.id != user.id %}
+        <form action="/admin/users/{{ client.id }}/reject" method="post"
+              data-confirm="Удалить клиента? Если у него есть заказы, будут стёрты только личные данные, а заказы сохранятся.">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="btn btn-sm btn-outline-danger"><i class="fas fa-user-slash me-1"></i>Удалить данные клиента</button>
+        </form>
+        {% endif %}
+        {% endif %}
+    </div>
+</div>
+
+<div class="row g-3">
+<div class="col-lg-8">
+<div class="card p-4">
+    <h5 class="mb-3">Заказы</h5>
+    {% if orders %}
+    <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+        <thead><tr><th>№</th><th>Дата</th><th>Нужно к</th><th>Сумма</th><th>Статус</th></tr></thead>
+        <tbody>
+        {% for o in orders %}
+        <tr>
+            <td><a href="/admin/orders/{{ o.id }}"><strong>#{{ o.id }}</strong></a></td>
+            <td>{{ o.created_at|localdt }}</td>
+            <td>{{ o.desired_date.strftime('%d.%m.%Y') if o.desired_date else '—' }}</td>
+            <td>{{ "%.0f"|format(o.total_price) }} ₽</td>
+            <td><span class="badge bg-secondary">{{ o.status }}</span></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}<p class="text-muted mb-0">Заказов пока нет.</p>{% endif %}
+</div>
+</div>
+<div class="col-lg-4">
+<div class="card p-4 h-100">
+    <h5 class="mb-3">Рекламации</h5>
+    {% if claims %}
+        {% for c in claims %}<a class="d-block mb-1" href="/admin/claims/{{ c.id }}">{{ c.number }} · {{ c.product_name }} <span class="badge bg-light text-dark border">{{ c.status }}</span></a>{% endfor %}
+    {% else %}<p class="text-muted mb-0">Нет.</p>{% endif %}
+</div>
+</div>
+</div>
+{% endblock %}

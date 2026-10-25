@@ -22,6 +22,7 @@ import _guard  # noqa: E402,F401 — в ENV=prod отказывается раб
 
 from app.database import SessionLocal
 from app.models import (Notification, Order, OrderItem, User)
+from cleanup_utils import detach_orders_from_claims, purge_users
 from cleanup_utils import print_stock_report, return_stock_for_order_items
 
 
@@ -97,6 +98,10 @@ def clear_clients_return_stock(keep_admins: bool = True) -> None:
                    .filter(Notification.user_id.in_(client_ids))
                    .delete(synchronize_session=False))
         print(f"   ✅ Удалено уведомлений: {n_notif}")
+
+        # ── 2а. Рекламации, согласия, запросы, предзаказы клиентов ──
+        detach_orders_from_claims(db)
+        purge_users(db, client_ids)
 
         # ── 3. Удаляем позиции заказов ──
         print("\n⏳ Удаляем позиции заказов…")

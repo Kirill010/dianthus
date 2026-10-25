@@ -19,7 +19,7 @@
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <link href="/static/vendor/bootstrap.min.css?v=7" rel="stylesheet">
     <link href="/static/vendor/fontawesome/css/all.min.css?v=7" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=8">
+    <link rel="stylesheet" href="/static/style.css?v=10">
     <link rel="manifest" href="/static/manifest.json">
     <meta name="theme-color" content="#4a6741">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -51,7 +51,7 @@
             <span>Диантус</span>
         </a>
         <div class="app-header__right">
-            {% if user.is_admin %}
+            {% if user.is_staff %}
                 <a href="/admin" class="app-header__icon" title="Админка"><i class="fas fa-cog"></i></a>
             {% endif %}
             <a href="/contacts" class="app-header__icon" title="Контакты"><i class="fas fa-phone"></i></a>
@@ -94,6 +94,13 @@
 {% endif %}
 
 <main class="container my-3 my-md-4">
+    {% if user and not user.is_staff and not user.consent_at and request.url.path != '/profile' %}
+        <div class="alert alert-warning small">
+            <i class="fas fa-user-shield me-1"></i>
+            Подтвердите согласие на обработку персональных данных —
+            <a href="/profile#consent">это займёт одну минуту</a>.
+        </div>
+    {% endif %}
     {% if flash %}
         <div class="alert alert-info alert-dismissible fade show">
             <i class="fas fa-info-circle me-2"></i>{{ flash }}
@@ -126,11 +133,18 @@
 {% endif %}
 
 <footer class="app-footer">
-    <p class="mb-0">
-        © 2026 {{ config.SHOP_NAME }}
-        · <a href="/contacts">Контакты</a>
-        · <a href="/privacy">Конфиденциальность</a>
+    <p class="mb-1">
+        © {{ current_year }} {{ config.SHOP_NAME }}
+        {% if config.SHOP_INN %}· ИНН {{ config.SHOP_INN }}{% endif %}
+        {% if config.SHOP_OGRN %}· ОГРН {{ config.SHOP_OGRN }}{% endif %}
         · Оптовые поставки цветов
+    </p>
+    <p class="mb-0">
+        <a href="/contacts">Контакты</a>
+        · <a href="/deadlines">Сроки заказа</a>
+        · <a href="/terms">Условия работы</a>
+        · <a href="/privacy">Конфиденциальность</a>
+        · <a href="/consent">Согласие на обработку данных</a>
     </p>
 </footer>
 
@@ -177,6 +191,31 @@
             if (btn.dataset.qtyStep === 'up') input.stepUp(); else input.stepDown();
             input.dispatchEvent(new Event('input', {bubbles: true}));
         }
+    });
+})();
+
+/* ─── Автоотправка формы: <input data-autosubmit> ───
+   Количество в корзине: после паузы 0,8 с (или при уходе из поля) форма уходит сама. */
+(function() {
+    const timers = new WeakMap();
+    function send(form) {
+        if (form.requestSubmit) form.requestSubmit(); else form.submit();
+    }
+    function target(e) {
+        const el = e.target;
+        return el && el.matches && el.matches('[data-autosubmit]') && el.form ? el : null;
+    }
+    document.addEventListener('input', function(e) {
+        const el = target(e);
+        if (!el) return;
+        clearTimeout(timers.get(el.form));
+        timers.set(el.form, setTimeout(function() { send(el.form); }, 800));
+    });
+    document.addEventListener('change', function(e) {
+        const el = target(e);
+        if (!el) return;
+        clearTimeout(timers.get(el.form));
+        send(el.form);
     });
 })();
 

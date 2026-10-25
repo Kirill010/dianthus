@@ -63,11 +63,17 @@ def export_orders_to_excel(orders: list) -> BytesIO:
     ws.append(["№", "Дата", "Компания", "Контакт", "Email",
                "Товар", "Упак.", "Шт/упак", "Всего шт",
                "Цена/шт", "Сумма позиции",
-               "Подытог", "Скидка %", "Итого", "Статус", "Комментарий"])
+               "Подытог", "Скидка %", "Итого", "Статус", "Комментарий",
+               "Нужно к", "Получение", "Адрес доставки", "Номер в 1С"])
     _header(ws)
     for order in orders:
         user = order.user
         first = True
+        extra = [
+            order.desired_date.strftime("%d.%m.%Y") if order.desired_date else "",
+            {"pickup": "Самовывоз", "delivery": "Доставка"}.get(order.delivery_method or "", ""),
+            order.delivery_address or "", order.onec_number or "",
+        ]
         if not order.items:
             ws.append(_row([order.id,
                        fmt_local(order.created_at),
@@ -76,7 +82,7 @@ def export_orders_to_excel(orders: list) -> BytesIO:
                        user.email if user else "",
                        "—", 0, 0, 0, 0, 0,
                        order.subtotal, order.discount_percent,
-                       order.total_price, order.status, order.comment]))
+                       order.total_price, order.status, order.comment] + extra))
             continue
         for item in order.items:
             pack = item.package_size or 1
@@ -98,7 +104,7 @@ def export_orders_to_excel(orders: list) -> BytesIO:
                 order.total_price if first else "",
                 order.status if first else "",
                 order.comment if first else "",
-            ]))
+            ] + (extra if first else ["", "", "", ""])))
             first = False
     _autosize(ws)
     return _stream(wb)
@@ -108,15 +114,20 @@ def export_customers_to_excel(customers: list[dict]) -> BytesIO:
     wb = Workbook()
     ws = wb.active
     ws.title = "Клиенты"
-    ws.append(["Компания", "Контакт", "Email", "Телефон", "Скидка %",
-               "Заказов", "Сумма, ₽", "Последний заказ"])
+    ws.append(["Компания", "Контакт", "Email", "Телефон", "ИНН", "Город", "Статус",
+               "Скидка %", "Заказов", "Сумма, ₽", "Последний заказ",
+               "Последний вход", "Зарегистрирован",
+               "Согласие на рекламу", "Согласие на обработку данных"])
     _header(ws)
     for c in customers:
         ws.append(_row([c.get("company_name", ""), c.get("full_name", ""),
                         c.get("email", ""), c.get("phone", ""),
+                        c.get("inn", ""), c.get("city", ""), c.get("status", ""),
                         c.get("discount_percent", 0),
                         c.get("orders_count", 0), c.get("total_sum", 0),
-                        c.get("last_order_date", "")]))
+                        c.get("last_order_date", ""), c.get("last_login", ""),
+                        c.get("registered", ""),
+                        c.get("marketing", ""), c.get("pd_consent", "")]))
     _autosize(ws)
     return _stream(wb)
 

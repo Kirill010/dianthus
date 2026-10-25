@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Новый пароль — Диантус{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-7 col-lg-5">
+        <div class="card p-4">
+            <h1 class="h4 mb-3"><i class="fas fa-lock me-2"></i>Новый пароль</h1>
+            {% if token_ok %}
+                {% if errors %}
+                <div class="alert alert-danger py-2 px-3 small"><ul class="mb-0 ps-3">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>
+                {% endif %}
+                <form action="/reset/{{ token }}" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold" for="rs-pass">Новый пароль</label>
+                        <input type="password" id="rs-pass" name="password" class="form-control" minlength="8" maxlength="72" required autocomplete="new-password">
+                        <div class="form-text">Минимум 8 символов, буква и цифра</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold" for="rs-pass2">Повторите пароль</label>
+                        <input type="password" id="rs-pass2" name="password2" class="form-control" minlength="8" maxlength="72" required autocomplete="new-password">
+                    </div>
+                    <button class="btn btn-primary w-100"><i class="fas fa-check me-2"></i>Сохранить пароль</button>
+                </form>
+            {% else %}
+                <div class="alert alert-warning">Ссылка недействительна или устарела (она живёт 60 минут и работает один раз).</div>
+                <a href="/forgot" class="btn btn-primary">Запросить новую ссылку</a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

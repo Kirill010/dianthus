@@ -19,7 +19,9 @@ import _guard  # noqa: E402,F401 — в ENV=prod отказывается раб
 from app.database import SessionLocal
 from app.models import (Notification, Order, OrderItem, Product,
                         Supply, SupplyItem, User)
-from cleanup_utils import print_stock_report, return_stock_for_order_items
+from cleanup_utils import (detach_orders_from_claims, drop_preorders,
+                           print_stock_report, purge_users,
+                           return_stock_for_order_items)
 
 
 def clear_all_safe() -> None:

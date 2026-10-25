@@ -6,6 +6,11 @@ from ..models import Preorder, SupplyItem, Supply, User
 
 logger = logging.getLogger(__name__)
 
+# Потолок одной заявки на предзаказ (в упаковках). Без него в форму можно было
+# отправить любое число: переполнение INTEGER в базе, абсурдные «резервы» и
+# цифры в значке корзины.
+MAX_PREORDER_PACKS = 2000
+
 
 def _calc_preorder_totals(preorder, item, product, user_discount: float):
     pack = max(1, product.package_size or 1)
@@ -45,8 +50,9 @@ def add_preorder_to_db(
         .first()
     )
 
+    quantity_packs = max(1, min(int(quantity_packs), MAX_PREORDER_PACKS))
     if preorder:
-        preorder.quantity += quantity_packs
+        preorder.quantity = min(preorder.quantity + quantity_packs, MAX_PREORDER_PACKS)
         preorder.supply_item_id = item.id
     else:
         preorder = Preorder(

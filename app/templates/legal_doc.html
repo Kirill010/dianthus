@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}{{ doc.title }} — Диантус{% endblock %}
+{% block description %}{{ doc.title }}: {{ config.SHOP_NAME }}, оптовый магазин цветов.{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-9">
+        <h1 class="catalog-title mb-3">{{ doc.title }}</h1>
+
+        <article class="card p-4 mb-3 legal-text">
+            {{ body_html }}
+        </article>
+
+        <p class="text-muted small mb-2">
+            Версия {{ doc.version }} · обновлено {{ doc.updated_at|localdt('%d.%m.%Y') }}
+        </p>
+        <p class="small mb-4">
+            Другие документы:
+            {% for slug, url in other_docs %}
+                <a href="{{ url }}">{{ doc_titles.get(slug, slug) }}</a>{% if not loop.last %} · {% endif %}
+            {% endfor %}
+        </p>
+    </div>
+</div>
+{% endblock %}

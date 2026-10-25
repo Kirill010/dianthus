@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}Сроки заказа цветов оптом — Диантус{% endblock %}
+{% block description %}До какого числа заказать цветы оптом к нужной дате и к праздникам: 14 февраля, 8 марта, 1 сентября, Дня матери. Сроки по странам происхождения.{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+<div class="col-lg-9">
+
+<h1 class="catalog-title mb-2"><i class="fas fa-calendar-check me-2"></i>Сроки заказа</h1>
+<p class="text-muted">
+    Цветы едут к нам из других стран, поэтому заказывать их нужно заранее. Срок считается
+    <strong>от даты, когда цветы нужны вам</strong>. Заказы принимаются каждый день,
+    включая выходные.
+</p>
+
+{# ── Калькулятор ── #}
+<div class="card p-4 mb-4">
+    <h5 class="mb-3">Когда нужно заказать?</h5>
+    <form method="get" action="/deadlines" class="d-flex gap-2 flex-wrap align-items-end">
+        <div>
+            <label class="form-label small fw-bold" for="dl-date">Цветы нужны к дате</label>
+            <input type="date" id="dl-date" name="date" class="form-control" min="{{ min_date }}"
+                   value="{{ chosen.isoformat() if chosen else '' }}" required>
+        </div>
+        <button class="btn btn-primary"><i class="fas fa-calculator me-1"></i>Рассчитать</button>
+    </form>
+    {% if error %}<div class="alert alert-warning small mt-3 mb-0">{{ error }}</div>{% endif %}
+
+    {% if table %}
+    <h6 class="mt-4">К {{ chosen_text }}:</h6>
+    <div class="table-responsive">
+    <table class="table align-middle mb-2">
+        <thead><tr><th>Откуда цветы</th><th>Нужно заказать до</th><th>Статус</th></tr></thead>
+        <tbody>
+        {% for r in table %}
+        <tr>
+            <td><strong>{{ r.origins }}</strong><br><small class="text-muted">за {{ r.days }} дн.</small></td>
+            <td>{{ r.last_text }}{% if r.weekend %}<br><small class="text-muted">выходной — заказы принимаем и в выходные</small>{% endif %}</td>
+            <td>
+                {% if r.state == 'ok' %}
+                    <span class="badge bg-success">Успеваете</span>
+                    <div class="small text-muted">осталось дней: {{ r.left }}</div>
+                {% elif r.state == 'today' %}
+                    <span class="badge bg-warning text-dark">Последний день — сегодня</span>
+                {% else %}
+                    <span class="badge bg-danger">Срок прошёл</span>
+                    <div class="small text-muted">если заказать сегодня, цветы будут к {{ r.earliest_text }}</div>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    <p class="small text-muted mb-0">Если срок прошёл или сомневаетесь — позвоните менеджеру: иногда есть варианты.</p>
+    {% endif %}
+</div>
+
+{# ── Правила ── #}
+{% if rules %}
+<div class="card p-4 mb-4">
+    <h5 class="mb-3">Сколько дней нужно</h5>
+    <ul class="mb-0">
+        {% for days, names in rules %}
+        <li><strong>{{ names|join(', ') }}</strong> — заказывать за <strong>{{ days }} дн.</strong> до нужной даты</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+{# ── Праздники ── #}
+{% if peaks %}
+<h5 class="mb-3">Ближайшие праздники и сроки заказа</h5>
+<p class="small text-muted">Показано для случая, когда цветы нужны <em>в сам день</em> праздника. Обычно их нужно раньше — тогда считайте от своей даты в калькуляторе выше.</p>
+<div class="row g-3 mb-4">
+    {% for p in peaks %}
+    <div class="col-md-6">
+        <div class="card p-3 h-100">
+            <div class="d-flex justify-content-between align-items-start gap-2">
+                <div><strong>{{ p.name }}</strong><div class="small text-muted">{{ p.date_text }}</div></div>
+                <span class="badge bg-light text-dark border">через {{ p.in_days }} дн.</span>
+            </div>
+            <ul class="list-unstyled small mt-2 mb-0">
+                {% for r in p.rows %}
+                <li class="d-flex justify-content-between gap-2 py-1 border-top">
+                    <span>{{ r.origins }}</span>
+                    <span class="text-end">
+                        до <strong>{{ r.last.strftime('%d.%m') }}</strong>
+                        {% if r.state == 'passed' %}<span class="text-danger">· срок прошёл</span>
+                        {% elif r.state == 'today' %}<span class="text-warning">· сегодня последний день</span>
+                        {% else %}<span class="text-success">· осталось {{ r.left }} дн.</span>{% endif %}
+                    </span>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="d-flex gap-2 flex-wrap mb-4">
+    <a href="/catalog" class="btn btn-primary"><i class="fas fa-store me-1"></i>В каталог</a>
+    {% if not user %}<a href="/register" class="btn btn-outline-primary">Стать оптовиком</a>{% endif %}
+    <a href="/contacts" class="btn btn-outline-secondary">Позвонить менеджеру</a>
+</div>
+<p class="small text-muted">Даты прилёта машин ориентировочные: на них влияют погода, таможня и транспорт. Условия — в разделе <a href="/terms">«Условия работы»</a>.</p>
+
+</div>
+</div>
+{% endblock %}

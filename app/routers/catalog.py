@@ -15,6 +15,7 @@ from ..models import (
     QUANTITY_MEDIUM_MIN, QUANTITY_SMALL_MIN, Product, Supply, SupplyItem,
 )
 from ..security import check_rate_limit
+from ..services.preorder_service import MAX_PREORDER_PACKS
 from ..templating import render
 from ..web import LIKE_ESCAPE, contains_pattern
 
@@ -259,6 +260,7 @@ def catalog(
             min_length, max_length, level != "available",
         ]),
         active_supplies=active_supplies,
+        preorder_max_packs=MAX_PREORDER_PACKS,
         category_url=lambda c: _category_url(current_filters, c),
         level_url=lambda l: _level_url(current_filters, l),
     )
@@ -307,16 +309,28 @@ def product_detail(
 
     item = (
         db.query(SupplyItem)
-        .options(joinedload(SupplyItem.product))
+        .options(joinedload(SupplyItem.product), joinedload(SupplyItem.supply))
         .join(Product, SupplyItem.product_id == Product.id)
-        .filter(SupplyItem.id == item_id, SupplyItem.is_active.is_(True))
+        .filter(SupplyItem.id == item_id)
         .first()
     )
     if not item:
         raise HTTPException(status_code=404, detail="Товар не найден")
 
+    # Товар «в пути» (позиция ещё не на полке) тоже можно открыть — каталог сам
+    # ведёт на него из блока предзаказов. Раньше такая ссылка давала «404».
+    preorder_mode = False
+    if not item.is_active:
+        supply = item.supply
+        if supply is not None and not supply.is_service and supply.status in (
+                "Ожидается", "В пути"):
+            preorder_mode = True
+        else:
+            raise HTTPException(status_code=404, detail="Товар не найден")
+
     return render(
         request, "product_detail.html", db,
         user=user, public=public, item=item, product=item.product,
-        quantity_levels=QUANTITY_LEVELS,
+        quantity_levels=QUANTITY_LEVELS, preorder_mode=preorder_mode,
+        preorder_max_packs=MAX_PREORDER_PACKS,
     )

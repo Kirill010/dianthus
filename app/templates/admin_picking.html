@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% set hide_bottom_nav = true %}
+{% block title %}Сводный лист сборки{% endblock %}
+{% block content %}
+<div class="no-print d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <h2 class="mb-0"><i class="fas fa-boxes-packing me-2"></i>Сводный лист сборки</h2>
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-primary" id="print-btn"><i class="fas fa-print me-1"></i>Печать</button>
+        <a href="/admin" class="btn btn-outline-secondary">В админку</a>
+    </div>
+</div>
+
+<form method="get" action="/admin/picking" class="no-print card p-3 mb-3 d-flex flex-row gap-2 flex-wrap align-items-end">
+    <div>
+        <label class="form-label small fw-bold" for="pk-date">Только заказы на дату</label>
+        <input type="date" id="pk-date" name="date" class="form-control" value="{{ chosen.isoformat() if chosen else '' }}">
+    </div>
+    <button class="btn btn-outline-primary">Показать</button>
+    {% if chosen %}<a href="/admin/picking" class="btn btn-link">Все активные заказы</a>{% endif %}
+    <span class="small text-muted ms-auto">В листе: заказы в статусах «Новый», «Подтверждён», «В работе».</span>
+</form>
+
+<div class="card p-4">
+    <h5>{% if chosen %}Заказы на {{ chosen.strftime('%d.%m.%Y') }}{% else %}Все активные заказы{% endif %}
+        <span class="text-muted fw-normal">· {{ orders|length }} зак., {{ total_packs }} упак., {{ total_stems }} шт</span></h5>
+    {% if rows %}
+    <table class="table table-bordered align-middle">
+        <thead><tr><th style="width:36px">✓</th><th>Товар</th><th class="text-end">Упаковок</th><th class="text-end">Шт в упак.</th><th class="text-end">Всего шт</th><th class="text-end">В заказах</th></tr></thead>
+        <tbody>
+        {% for r in rows %}
+        <tr>
+            <td class="text-center">☐</td>
+            <td><strong>{{ r.name }}</strong></td>
+            <td class="text-end h5 mb-0">{{ r.packs }}</td>
+            <td class="text-end">{{ r.pack }}</td>
+            <td class="text-end">{{ r.packs * r.pack }}</td>
+            <td class="text-end">{{ r.orders }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <h6 class="mt-4">По заказам</h6>
+    <table class="table table-sm">
+        <thead><tr><th>№</th><th>Клиент</th><th>Нужно к</th><th>Получение</th><th>Состав</th></tr></thead>
+        <tbody>
+        {% for o in orders %}
+        <tr>
+            <td><a href="/admin/orders/{{ o.id }}">{{ o.id }}</a></td>
+            <td>{{ o.user.company_name if o.user else 'Гость' }}</td>
+            <td>{{ o.desired_date.strftime('%d.%m') if o.desired_date else '—' }}</td>
+            <td>{% if o.delivery_method == 'delivery' %}доставка{% elif o.delivery_method == 'pickup' %}самовывоз{% else %}—{% endif %}</td>
+            <td class="small">{% for i in o.items %}{{ i.product_name }} × {{ i.quantity }}{% if not loop.last %}; {% endif %}{% endfor %}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+        <p class="text-muted mb-0">Нет заказов для сборки.</p>
+    {% endif %}
+</div>
+<script nonce="{{ csp_nonce }}">
+document.getElementById('print-btn').addEventListener('click', function () { window.print(); });
+</script>
+{% endblock %}

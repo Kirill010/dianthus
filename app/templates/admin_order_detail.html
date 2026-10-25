@@ -1,14 +1,23 @@
 {% extends "base.html" %}
 {% set hide_bottom_nav = true %}
+{% block title %}Заказ №{{ order.id }} — админка{% endblock %}
 {% block content %}
 
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <h2 class="mb-0">
         <i class="fas fa-file-invoice me-2"></i>Заказ №{{ order.id }}
     </h2>
-    <a href="/admin" class="btn btn-outline-secondary btn-sm">
-        <i class="fas fa-arrow-left me-1"></i>Назад к списку
-    </a>
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="/admin/orders/{{ order.id }}/print" target="_blank" rel="noopener" class="btn btn-outline-primary btn-sm">
+            <i class="fas fa-print me-1"></i>Лист сборки
+        </a>
+        <a href="/admin/orders/{{ order.id }}/invoice" target="_blank" rel="noopener" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-file-pdf me-1"></i>Счёт PDF
+        </a>
+        <a href="/admin" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-arrow-left me-1"></i>Назад к списку
+        </a>
+    </div>
 </div>
 
 <!-- Статус заказа -->
@@ -30,6 +39,8 @@
         </div>
         <div class="text-muted small">
             Создан: {{ order.created_at|localdt }}
+            {% if order.onec_number %}· документ в 1С: <strong>{{ order.onec_number }}</strong>
+            {% elif order.exported_at %}· передан в 1С {{ order.exported_at|localdt }}{% endif %}
         </div>
     </div>
 
@@ -40,8 +51,8 @@
           class="d-flex gap-2 flex-wrap align-items-center">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="order_id" value="{{ order.id }}">
-        <label class="form-label mb-0 fw-bold">Изменить статус:</label>
-        <select name="status" class="form-select" style="max-width: 220px;">
+        <label class="form-label mb-0 fw-bold" for="od-status">Изменить статус:</label>
+        <select name="status" id="od-status" class="form-select" style="max-width: 220px;">
             {% for s in statuses %}
                 <option value="{{ s }}" {% if order.status == s %}selected{% endif %}>
                     {{ s }}
@@ -52,53 +63,78 @@
             <i class="fas fa-save me-1"></i>Сохранить
         </button>
     </form>
+    <p class="small text-muted mt-2 mb-0">Клиент получит уведомление на сайте и письмо. «Отменён» возвращает товар на склад.</p>
 </div>
 
+<div class="row g-3 mb-4">
+<div class="col-lg-6">
 <!-- Клиент -->
-<div class="card p-4 mb-4">
+<div class="card p-4 h-100">
     <h5 class="mb-3"><i class="fas fa-user me-2"></i>Клиент</h5>
     {% if order.user %}
         <div class="row g-3">
-            <div class="col-md-6">
+            <div class="col-12">
                 <div class="text-muted small">Компания</div>
-                <div class="fw-bold">{{ order.user.company_name }}</div>
+                <div class="fw-bold"><a href="/admin/clients/{{ order.user.id }}">{{ order.user.company_name }}</a></div>
             </div>
-            <div class="col-md-6">
+            <div class="col-sm-6">
                 <div class="text-muted small">Контактное лицо</div>
                 <div class="fw-bold">{{ order.user.full_name }}</div>
             </div>
-            <div class="col-md-6">
+            <div class="col-sm-6">
+                <div class="text-muted small">Телефон</div>
+                <div><a href="tel:{{ order.user.phone }}">{{ order.user.phone or '—' }}</a></div>
+            </div>
+            <div class="col-sm-6">
                 <div class="text-muted small">Email</div>
                 <div><a href="mailto:{{ order.user.email }}">{{ order.user.email }}</a></div>
             </div>
-            <div class="col-md-6">
-                <div class="text-muted small">Телефон</div>
-                <div>
-                    <a href="tel:{{ order.user.phone }}">{{ order.user.phone or '—' }}</a>
-                </div>
-            </div>
-            <div class="col-md-6">
+            <div class="col-sm-3">
                 <div class="text-muted small">ИНН</div>
                 <div>{{ order.user.inn or '—' }}</div>
             </div>
-            <div class="col-md-6">
+            <div class="col-sm-3">
                 <div class="text-muted small">Город</div>
                 <div>{{ order.user.city or '—' }}</div>
             </div>
             {% if order.user.discount_percent and order.user.discount_percent > 0 %}
-            <div class="col-md-6">
-                <div class="text-muted small">Персональная скидка</div>
-                <div>
-                    <span class="badge bg-warning text-dark">
-                        −{{ order.user.discount_percent }}%
-                    </span>
-                </div>
+            <div class="col-12">
+                <span class="badge bg-warning text-dark">Персональная скидка −{{ order.user.discount_percent }}%</span>
             </div>
+            {% endif %}
+            {% if order.user.staff_note %}
+            <div class="col-12"><div class="alert alert-warning small mb-0"><strong>Заметка о клиенте:</strong> {{ order.user.staff_note }}</div></div>
             {% endif %}
         </div>
     {% else %}
         <p class="text-muted mb-0">Заказ оформлен гостем (без регистрации).</p>
     {% endif %}
+</div>
+</div>
+
+<div class="col-lg-6">
+<div class="card p-4 h-100">
+    <h5 class="mb-3"><i class="fas fa-truck me-2"></i>Получение</h5>
+    <dl class="row mb-0">
+        <dt class="col-sm-4 text-muted fw-normal">Нужно к</dt>
+        <dd class="col-sm-8">
+            {% if order.desired_date %}
+                <strong>{{ order.desired_date.strftime('%d.%m.%Y') }}</strong>
+            {% else %}не указано{% endif %}
+        </dd>
+        <dt class="col-sm-4 text-muted fw-normal">Способ</dt>
+        <dd class="col-sm-8">
+            {% if order.delivery_method == 'delivery' %}Доставка{% elif order.delivery_method == 'pickup' %}Самовывоз{% else %}не указано{% endif %}
+        </dd>
+        {% if order.delivery_method == 'delivery' %}
+        <dt class="col-sm-4 text-muted fw-normal">Адрес</dt>
+        <dd class="col-sm-8">{{ order.delivery_address }}</dd>
+        {% endif %}
+        <dt class="col-sm-4 text-muted fw-normal">Комментарий клиента</dt>
+        <dd class="col-sm-8">{{ order.comment or '—' }}</dd>
+    </dl>
+</div>
+</div>
 </div>
 
 <!-- Состав заказа -->
@@ -152,12 +188,39 @@
             </tfoot>
         </table>
     </div>
-    {% if order.comment %}
-        <div class="alert alert-info mt-3 mb-0">
-            <strong>Комментарий клиента:</strong><br>
-            {{ order.comment }}
-        </div>
-    {% endif %}
+</div>
+
+<div class="row g-3 mb-4">
+<div class="col-lg-6">
+    <form action="/admin/orders/{{ order.id }}/note" method="post" class="card p-4 h-100">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <h5 class="mb-2"><i class="fas fa-note-sticky me-2"></i>Заметка сотрудников</h5>
+        <p class="small text-muted">Клиент её не видит. Например: «позвонить за час», «заменить на похожий сорт».</p>
+        <textarea name="staff_note" class="form-control mb-3" rows="4" maxlength="2000" aria-label="Заметка к заказу">{{ order.staff_note }}</textarea>
+        <div><button class="btn btn-outline-primary btn-sm">Сохранить заметку</button></div>
+    </form>
+</div>
+<div class="col-lg-6">
+    <div class="card p-4 h-100">
+        <h5 class="mb-3"><i class="fas fa-clock-rotate-left me-2"></i>История статусов</h5>
+        {% if history %}
+        <ul class="list-unstyled small mb-0">
+            {% for h in history %}
+            <li class="py-1 border-bottom">
+                <span class="text-muted">{{ h.created_at|localdt }}</span> —
+                {{ h.details }}
+                <span class="text-muted">({{ h.user.full_name if h.user else '1С/система' }})</span>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}<p class="text-muted small mb-0">Статус ещё не менялся.</p>{% endif %}
+        {% if claims %}
+        <hr>
+        <h6>Рекламации по заказу</h6>
+        {% for c in claims %}<a class="d-block small" href="/admin/claims/{{ c.id }}">{{ c.number }} · {{ c.status }}</a>{% endfor %}
+        {% endif %}
+    </div>
+</div>
 </div>
 
 {% endblock %}

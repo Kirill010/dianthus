@@ -59,6 +59,27 @@ class Config:
     # Банковские реквизиты для PDF-счёта. Строки разделяются знаком «|», например:
     #   ИНН 7720965534 | КПП 772001001 | р/с 40702810… | БИК 044525225 | Банк «…»
     SHOP_REQUISITES: str = _str_env("SHOP_REQUISITES", "")
+    # Реквизиты оператора персональных данных: подставляются в юридические
+    # документы (политика, согласие, условия) и в подвал сайта.
+    SHOP_INN: str = _str_env("SHOP_INN", "")
+    SHOP_OGRN: str = _str_env("SHOP_OGRN", "")
+    SHOP_LEGAL_ADDRESS: str = _str_env("SHOP_LEGAL_ADDRESS", "")   # пусто = SHOP_ADDRESS
+    # Ответственный за организацию обработки персональных данных (ФИО, должность)
+    SHOP_PD_RESPONSIBLE: str = _str_env("SHOP_PD_RESPONSIBLE", "")
+    # Строка про НДС в счёте, например «НДС не облагается (УСН)». Пусто = не печатать:
+    # налоговый режим знает только бухгалтер, сайт его не угадывает.
+    SHOP_VAT_NOTE: str = _str_env("SHOP_VAT_NOTE", "")
+    # Условия оплаты: показываются при оформлении заказа и в условиях работы
+    SHOP_PAYMENT_TERMS: str = _str_env("SHOP_PAYMENT_TERMS", "Предоплата 100% по выставленному счёту")
+    # За сколько дней до нужной даты получения принимается предзаказ — по
+    # происхождению цветов. Формат: «Страна=дней, Страна=дней». Правило бизнеса:
+    # срок считается от даты, когда цветы нужны клиенту.
+    PREORDER_LEAD_DAYS: str = _str_env(
+        "PREORDER_LEAD_DAYS",
+        "Эквадор=10, Голландия=10, Китай=10, Кения=10, Колумбия=7, Россия=3",
+    )
+    # Сколько фото можно приложить к рекламации
+    CLAIMS_MAX_PHOTOS: int = _int_env("CLAIMS_MAX_PHOTOS", 8)
     SHOP_WORKING_HOURS: str = _str_env("SHOP_WORKING_HOURS", "")
     SHOP_MAX_LINK: str = _str_env("SHOP_MAX_LINK", "")
     SHOP_MAP_URL: str = _str_env("SHOP_MAP_URL", "")
@@ -110,8 +131,11 @@ if config.ENV == "prod":
         )
 
     if not config.INTEGRATION_PASSWORD:
-        logger.warning(
-            "⚠️ INTEGRATION_PASSWORD не задан — 1С-интеграция вернёт 503"
+        # Это нормально: 1С входит по ключам из админки («Интеграция»).
+        # Если ключей тоже нет, обмен ответит 503 — об этом скажет та же страница.
+        logger.info(
+            "1С: старый пароль INTEGRATION_PASSWORD не задан — доступ только по ключам "
+            "(админка → «Интеграция»)"
         )
 
     if config.APP_URL.startswith("http://127.0.0.1"):

@@ -1981,3 +1981,65 @@ a.landing-contacts__value:hover {
     background: var(--primary-dark);
     color: #fff;
 }
+
+/* ── Юридические тексты и памятки (markdown_lite) ── */
+.legal-text { line-height: 1.65; }
+.legal-text h2 { font-size: 1.15rem; margin: 1.6rem 0 .6rem; color: #35492f; }
+.legal-text h3 { font-size: 1rem; margin: 1.2rem 0 .5rem; color: #35492f; }
+.legal-text p, .legal-text li { margin-bottom: .45rem; }
+.legal-text ul, .legal-text ol { padding-left: 1.3rem; }
+.legal-text pre {
+    background: #f4f1ea; border: 1px solid #e5dcc9; border-radius: 10px;
+    padding: 12px 14px; overflow-x: auto; font-size: .82rem; line-height: 1.5;
+}
+.legal-text code { background: #f4f1ea; padding: 1px 5px; border-radius: 5px; font-size: .88em; }
+.legal-text pre code { background: none; padding: 0; }
+.legal-text table { font-size: .9rem; }
+.legal-text th { background: #ecf1e8; }
+@media print {
+    .no-print, .app-header, .app-footer, .bottom-nav, .supply-banner { display: none !important; }
+    .legal-text pre { white-space: pre-wrap; }
+}
+
+/* ── Корзина: количество прямо в строке ── */
+.cart-qty { display: flex; align-items: center; gap: 8px; margin: 8px 0 4px; flex-wrap: wrap; }
+.cart-qty__control { display: inline-flex; align-items: center; gap: 4px; }
+.cart-qty__input {
+    width: 64px; text-align: center; border: 1px solid var(--border, #e5dcc9);
+    border-radius: 10px; padding: 6px 4px; font-weight: 600; background: #fff;
+}
+.cart-qty__unit { color: #8a857a; font-size: .85rem; }
+.cart-qty .qty-btn { width: 34px; height: 34px; }
+
+/* ── Заказы клиента: этапы, состав, кнопки ── */
+.order-steps {
+    display: flex; list-style: none; padding: 0; margin: 10px 0 6px;
+    gap: 4px; font-size: .72rem; color: #8a857a;
+}
+.order-steps li {
+    flex: 1; text-align: center; padding: 6px 2px; border-radius: 8px;
+    background: #f4f1ea; border-bottom: 3px solid #e5dcc9;
+}
+.order-steps li.done { background: #ecf1e8; border-bottom-color: #8ba38c; color: #35492f; }
+.order-steps li.current { background: #4a6741; border-bottom-color: #35492f; color: #fff; font-weight: 700; }
+.order-card__items { margin-top: 10px; }
+.order-card__items summary { cursor: pointer; color: var(--primary, #4a6741); font-size: .9rem; }
+.order-card__actions {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px;
+    padding-top: 12px; border-top: 1px dashed var(--border, #e5dcc9);
+}
+.order-card__actions .btn { font-size: .8rem; padding: 5px 12px; }
+@media (max-width: 420px) { .order-steps { font-size: .62rem; } }
+
+/* ── Админка: «Что сделать сегодня» ── */
+.todo-tile {
+    display: flex; flex-direction: column; gap: 2px; height: 100%;
+    padding: 12px 14px; border-radius: 12px; text-decoration: none;
+    background: #f4f1ea; color: #35492f; border: 1px solid #e5dcc9;
+    transition: transform .12s ease, box-shadow .12s ease;
+}
+.todo-tile:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,.08); color: #35492f; }
+.todo-tile strong { font-size: 1.6rem; line-height: 1.1; }
+.todo-tile span { font-size: .8rem; color: #6d675c; }
+.todo-tile--hot { background: #fff4e5; border-color: #f0b46c; }
+.todo-tile--hot strong { color: #b4571b; }

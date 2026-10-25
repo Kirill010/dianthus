@@ -218,6 +218,11 @@ def _auto_unload_overdue_sync() -> None:
         db.close()
 
 
+async def _prune_exchange_log() -> None:
+    from .services.exchange_log import prune_job
+    await asyncio.to_thread(prune_job)
+
+
 def start_scheduler() -> None:
     global _scheduler
     if not _acquire_scheduler_lock():
@@ -228,6 +233,14 @@ def start_scheduler() -> None:
             auto_unload_overdue,
             trigger=CronTrigger(minute=0),
             id="auto_unload_overdue",
+            replace_existing=True,
+            max_instances=1,
+        )
+        # Раз в сутки чистим журнал обмена с 1С (храним 60 дней)
+        _scheduler.add_job(
+            _prune_exchange_log,
+            trigger=CronTrigger(hour=3, minute=30),
+            id="prune_exchange_log",
             replace_existing=True,
             max_instances=1,
         )

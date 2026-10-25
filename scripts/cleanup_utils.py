@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # корень
 
 from sqlalchemy.orm import Session
 
-from app.models import OrderItem, SupplyItem
+from app.models import Claim, OrderItem, PasswordReset, Preorder, SupplyItem
 
 
 def return_stock_for_order_items(
@@ -77,3 +77,27 @@ def print_stock_report(report: dict) -> None:
     if report["supply_item_missing"]:
         print(f"   ⚠️  Позиция склада удалена: {report['supply_item_missing']} "
               f"(вернуть некуда)")
+
+def drop_preorders(db: Session) -> int:
+    """Предзаказы ссылаются на товары и позиции склада: пока они есть, PostgreSQL
+    не даст удалить ни товар, ни партию. Если справочник очищают — предзаказы
+    теряют смысл, поэтому удаляем и их."""
+    return db.query(Preorder).delete(synchronize_session=False)
+
+
+def detach_orders_from_claims(db: Session) -> int:
+    """Рекламации хранят ссылку на заказ; перед удалением заказов её обнуляем
+    (сами рекламации остаются)."""
+    return (db.query(Claim).filter(Claim.order_id.isnot(None))
+            .update({Claim.order_id: None}, synchronize_session=False))
+
+
+def purge_users(db: Session, user_ids: list[int]) -> None:
+    """Убирает всё, что ссылается на указанных клиентов (согласия, запросы,
+    рекламации с фото, журнал, предзаказы, ссылки сброса пароля)."""
+    from app.services.legal import purge_user_refs
+    for uid in user_ids:
+        purge_user_refs(db, uid)
+    if user_ids:
+        db.query(PasswordReset).filter(PasswordReset.user_id.in_(user_ids)).delete(
+            synchronize_session=False)

@@ -51,10 +51,19 @@ def profile_page(request: Request, db: Session = Depends(get_db)):
         totp_url = totp.provisioning_url(totp_pending, user.email)
         totp_qr = totp.qr_data_uri(totp_url)
 
+    delete_requested = (
+        db.query(models.DataRequest.id)
+        .filter(models.DataRequest.user_id == user.id,
+                models.DataRequest.kind == "delete",
+                models.DataRequest.status == "Новая")
+        .first() is not None
+    )
+
     return render(request, "profile.html", db,
                   user=user,
                   orders_count=orders_count,
                   total_sum=total_sum,
+                  delete_requested=delete_requested,
                   profile_errors=request.session.pop("profile_errors", None),
                   profile_ok=request.session.pop("profile_ok", None),
                   password_errors=request.session.pop("password_errors", None),

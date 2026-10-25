@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% set hide_bottom_nav = true %}
+{% block title %}Запросы о данных — админка{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h2 class="mb-0"><i class="fas fa-user-shield me-2"></i>Запросы клиентов о данных</h2>
+    <a href="/admin/legal" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-arrow-left me-1"></i>Юридическое
+    </a>
+</div>
+
+<div class="alert alert-info small">
+    Клиент может попросить удалить его данные. На ответ по закону даётся до 10 рабочих дней.
+    Кнопка «Выполнить» <strong>обезличивает</strong> клиента: имя, телефон, почта, ИНН и пароль стираются,
+    вход закрывается, а заказы остаются (они нужны для бухгалтерии) — но без личных данных.
+</div>
+
+{% if rows %}
+<div class="table-responsive">
+<table class="table align-middle">
+    <thead><tr><th>№</th><th>Клиент</th><th>Что просит</th><th>Срок ответа</th><th>Статус</th><th></th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+    {% set u = users.get(r.user_id) %}
+    <tr>
+        <td>{{ r.id }}</td>
+        <td>
+            {% if u %}<strong>{{ u.company_name }}</strong><br>{% endif %}
+            <small class="text-muted">{{ r.email_snapshot }}</small>
+            <div class="small text-muted">подан {{ r.created_at|localdt }}</div>
+        </td>
+        <td>{{ kinds.get(r.kind, r.kind) }}</td>
+        <td>до {{ deadline(r).strftime('%d.%m.%Y') }}</td>
+        <td>
+            {% if r.status == 'Новая' %}<span class="badge bg-danger">Новая</span>
+            {% elif r.status == 'Выполнена' %}<span class="badge bg-success">Выполнена</span>
+            {% else %}<span class="badge bg-secondary">{{ r.status }}</span>{% endif %}
+            {% if r.note %}<div class="small text-muted">{{ r.note }}</div>{% endif %}
+        </td>
+        <td class="text-end">
+            {% if r.status == 'Новая' %}
+            <form action="/admin/data-requests/{{ r.id }}/done" method="post" class="d-inline"
+                  data-confirm="Обезличить клиента? Имя, телефон, почта и ИНН будут стёрты, вход закроется. Это нельзя отменить.">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button class="btn btn-sm btn-danger"><i class="fas fa-check me-1"></i>Выполнить</button>
+            </form>
+            <form action="/admin/data-requests/{{ r.id }}/reject" method="post" class="d-inline"
+                  data-confirm="Отклонить запрос? Клиенту нужно будет объяснить причину письмом.">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button class="btn btn-sm btn-outline-secondary">Отклонить</button>
+            </form>
+            {% endif %}
+        </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+{% else %}
+<div class="empty-state"><i class="fas fa-inbox"></i><h4>Запросов нет</h4></div>
+{% endif %}
+{% endblock %}

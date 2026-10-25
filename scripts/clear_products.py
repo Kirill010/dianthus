@@ -13,6 +13,7 @@ import _guard  # noqa: E402,F401 — в ENV=prod отказывается раб
 
 from app.database import SessionLocal
 from app.models import OrderItem, Product, SupplyItem
+from cleanup_utils import drop_preorders
 
 
 def clear_products() -> None:
@@ -51,6 +52,8 @@ def clear_products() -> None:
                        synchronize_session=False))
         print(f"🔗 Обнулено FK в позициях заказов: "
               f"supply_item={n_si}, product={n_p}")
+
+        print(f"🗑  Предзаказов: {drop_preorders(db)}")
 
         # 2. Удаляем партии
         n_items = db.query(SupplyItem).delete(synchronize_session=False)

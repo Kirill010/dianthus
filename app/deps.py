@@ -41,3 +41,19 @@ def require_admin(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_303_SEE_OTHER,
                             headers={"Location": "/catalog"})
     return user
+
+
+def require_staff(request: Request, db: Session = Depends(get_db)):
+    """Администратор ИЛИ менеджер: заказы, клиенты, рекламации.
+
+    Менеджер не видит ключи 1С, юридические тексты, справочник и поставки —
+    для этого нужен require_admin.
+    """
+    user = get_current_user(request, db)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_303_SEE_OTHER,
+                            headers={"Location": "/login"})
+    if not user.is_staff:
+        raise HTTPException(status_code=status.HTTP_303_SEE_OTHER,
+                            headers={"Location": "/catalog"})
+    return user

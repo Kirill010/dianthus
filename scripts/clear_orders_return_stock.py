@@ -21,7 +21,7 @@ import _guard  # noqa: E402,F401 — в ENV=prod отказывается раб
 
 from app.database import SessionLocal
 from app.models import Notification, Order, OrderItem
-from cleanup_utils import print_stock_report, return_stock_for_order_items
+from cleanup_utils import detach_orders_from_claims, print_stock_report, return_stock_for_order_items
 
 
 def clear_orders_return_stock() -> None:

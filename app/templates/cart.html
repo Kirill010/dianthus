@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block title %}Корзина — Диантус{% endblock %}
 {% block content %}
 <h1 class="catalog-title mb-4">Корзина</h1>
 
@@ -10,6 +11,7 @@
     {% set pack = item.package_size or 1 %}
     {% set stems = item.quantity * pack %}
     {% set line_total = item.price * pack * item.quantity %}
+    {% set key = item.supply_item_id ~ ':' ~ (1 if item.from_preorder else 0) %}
     <div class="cart-item">
         <div class="cart-item__image">
             {% if item.image_url %}<img src="{{ item.image_url }}" alt="">{% endif %}
@@ -25,15 +27,30 @@
                 {% endif %}
             </div>
             <div class="cart-item__price">
-                {{ item.price|price }} ₽/шт × {{ pack }} шт × {{ item.quantity }} упак.
-                <span class="cart-item__stems">= {{ stems }} шт</span>
+                {{ item.price|price }} ₽/шт × {{ pack }} шт в упаковке
             </div>
-            <div class="cart-item__sum">{{ "%.0f"|format(line_total) }} ₽</div>
+
+            {# Количество в упаковках: меняется прямо здесь, страница обновится сама #}
+            <form action="/cart/update" method="post" class="cart-qty" data-autosubmit-form>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="item_key" value="{{ key }}">
+                <div class="cart-qty__control">
+                    <button type="button" class="qty-btn" data-qty-step="down" aria-label="Уменьшить количество">−</button>
+                    <input type="number" name="quantity_packs" value="{{ item.quantity }}"
+                           min="0" step="1" inputmode="numeric" class="cart-qty__input"
+                           aria-label="Количество упаковок: {{ item.name }}" data-autosubmit>
+                    <button type="button" class="qty-btn" data-qty-step="up" aria-label="Увеличить количество">+</button>
+                </div>
+                <span class="cart-qty__unit">упак. = {{ stems }} шт</span>
+                <noscript><button class="btn btn-sm btn-outline-primary">Обновить</button></noscript>
+            </form>
+
+            <div class="cart-item__sum">{{ line_total|price }} ₽</div>
         </div>
         <form action="/remove_from_cart" method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <input type="hidden" name="item_index" value="{{ loop.index0 }}">
-            <button type="submit" class="cart-item__remove">
+            <input type="hidden" name="item_key" value="{{ key }}">
+            <button type="submit" class="cart-item__remove" aria-label="Убрать из корзины: {{ item.name }}">
                 <i class="fas fa-times"></i>
             </button>
         </form>
@@ -63,7 +80,8 @@
     <a href="/catalog" class="btn btn-outline-primary">Продолжить</a>
     <a href="/checkout" class="btn btn-primary btn-lg">Оформить</a>
 </div>
-<form action="/clear_cart" method="post" class="text-center mt-3">
+<form action="/clear_cart" method="post" class="text-center mt-3"
+      data-confirm="Очистить корзину?">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <button type="submit" class="btn btn-link text-danger">Очистить корзину</button>
 </form>
@@ -115,7 +133,7 @@
         <form action="/remove_from_preorder" method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="preorder_id" value="{{ p.id }}">
-            <button type="submit" class="cart-item__remove">
+            <button type="submit" class="cart-item__remove" aria-label="Отменить предзаказ: {{ p.name }}">
                 <i class="fas fa-times"></i>
             </button>
         </form>
@@ -126,6 +144,7 @@
     <i class="fas fa-info-circle me-1"></i>
     Эти товары перейдут в основную корзину автоматически,
     когда машина прибудет. Скидка учтена в итоговой сумме.
+    <a href="/deadlines">До какого числа заказывать к нужной дате →</a>
 </div>
 {% endif %}
 

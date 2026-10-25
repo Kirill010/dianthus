@@ -200,6 +200,78 @@
 </div>
 {% endif %}
 
+<div class="card p-4 mb-4" id="consent">
+    <h5 class="mb-3"><i class="fas fa-user-shield me-2"></i>Мои данные и согласия</h5>
+
+    <div class="mb-3">
+        <div class="fw-bold small mb-1">Обработка персональных данных</div>
+        {% if user.consent_at %}
+            <p class="small mb-0 text-success">
+                <i class="fas fa-check me-1"></i>Согласие дано {{ user.consent_at|localdt }}
+                (редакция {{ user.consent_version or '—' }}).
+                <a href="/consent" target="_blank" rel="noopener">Текст согласия</a>
+            </p>
+        {% elif not user.is_staff %}
+            <form action="/profile/consent/pd" method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <div class="alert alert-warning small py-2">
+                    Мы не нашли вашей отметки о согласии на обработку персональных данных.
+                    Подтвердите её, пожалуйста.
+                </div>
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" name="consent" id="pf-consent" value="1" required>
+                    <label class="form-check-label small" for="pf-consent">
+                        Я даю <a href="/consent" target="_blank" rel="noopener">согласие на обработку персональных данных</a>
+                        и ознакомился с <a href="/privacy" target="_blank" rel="noopener">политикой</a>
+                    </label>
+                </div>
+                <button class="btn btn-sm btn-primary">Подтвердить согласие</button>
+            </form>
+        {% else %}
+            <p class="small text-muted mb-0">Для сотрудников согласие клиента не требуется.</p>
+        {% endif %}
+    </div>
+
+    <div class="mb-3">
+        <div class="fw-bold small mb-1">Рекламные сообщения</div>
+        <form action="/profile/consent/marketing" method="post" class="d-flex align-items-center gap-3 flex-wrap">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {% if user.marketing_consent %}
+                <span class="small text-success"><i class="fas fa-check me-1"></i>Включены с {{ user.marketing_consent_at|localdt('%d.%m.%Y') }}</span>
+                <input type="hidden" name="grant" value="0">
+                <button class="btn btn-sm btn-outline-secondary">Отключить</button>
+            {% else %}
+                <span class="small text-muted">Отключены — звонить и писать с предложениями мы не будем. Сообщения по заказам приходят всегда.</span>
+                <input type="hidden" name="grant" value="1">
+                <button class="btn btn-sm btn-outline-primary">Включить</button>
+            {% endif %}
+            <a class="small" href="/marketing-consent" target="_blank" rel="noopener">Текст согласия</a>
+        </form>
+    </div>
+
+    <div class="d-flex flex-column flex-sm-row gap-2">
+        <a href="/profile/data.json" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-download me-1"></i>Скачать мои данные
+        </a>
+        {% if not user.is_staff %}
+            {% if delete_requested %}
+                <span class="small text-muted align-self-center">Запрос на удаление данных принят и обрабатывается.</span>
+            {% else %}
+            <form action="/profile/data/delete-request" method="post"
+                  data-confirm="Подать запрос на удаление данных? После его выполнения вход в кабинет закроется, а ваши личные данные будут стёрты. Заказы останутся в учёте без личных данных.">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button class="btn btn-outline-danger btn-sm">
+                    <i class="fas fa-user-slash me-1"></i>Удалить мои данные
+                </button>
+            </form>
+            {% endif %}
+        {% endif %}
+    </div>
+    <p class="text-muted small mt-3 mb-0">
+        Подробнее — в <a href="/privacy">политике обработки персональных данных</a>.
+    </p>
+</div>
+
 <div class="card p-4 mb-4">
     <h5 class="mb-3"><i class="fas fa-cog me-2"></i>Дополнительно</h5>
     <div class="d-flex flex-column gap-2">

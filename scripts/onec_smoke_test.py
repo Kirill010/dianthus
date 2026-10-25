@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 """Проверка связи с обменом 1С. Нужен только Python 3.10+ (внешние пакеты не нужны).
 
-    python scripts/onec_smoke_test.py https://dianthus-opt.ru 1c_dianthus ПАРОЛЬ
-    python scripts/onec_smoke_test.py http://127.0.0.1:8000 1c_dianthus dev-1c-password --write
+    python scripts/onec_smoke_test.py https://dianthus-opt.ru dnt_ВАШ_КЛЮЧ
+    python scripts/onec_smoke_test.py http://127.0.0.1:8000 dnt_ВАШ_КЛЮЧ --write
+    (старый вариант тоже работает: ... https://dianthus-opt.ru 1c_dianthus ПАРОЛЬ)
+
+Ключ создаёт владелец в админке: «Интеграция» → «Создать ключ».
 
 По умолчанию ТОЛЬКО ЧТЕНИЕ: связь и пароль, число товаров, новых заказов, клиентов.
 С ключом --write дополнительно отправляется один служебный товар
@@ -19,13 +22,18 @@ import urllib.error
 import urllib.request
 
 
-def make_caller(base: str, user: str, password: str):
-    token = base64.b64encode(f"{user}:{password}".encode("utf-8")).decode("ascii")
+def make_caller(base: str, *credentials: str):
+    """credentials: (ключ,) или (логин, пароль)."""
     base = base.rstrip("/") + "/api/1c"
+    if len(credentials) == 1:
+        auth_headers = {"X-API-Key": credentials[0]}
+    else:
+        token = base64.b64encode(f"{credentials[0]}:{credentials[1]}".encode("utf-8")).decode("ascii")
+        auth_headers = {"Authorization": f"Basic {token}"}
 
     def call(method: str, path: str, body=None):
         data = None
-        headers = {"Authorization": f"Basic {token}"}
+        headers = dict(auth_headers)
         if body is not None:
             # JSON в UTF-8 (кириллица как есть) и БЕЗ лишних преобразований
             data = json.dumps(body, ensure_ascii=False).encode("utf-8")
@@ -44,13 +52,19 @@ def make_caller(base: str, user: str, password: str):
 
 
 def main(argv: list[str]) -> int:
+    # Консоль Windows часто не знает UTF-8 и падала на значках ✅/❌ — не падаем.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:                                    # noqa: BLE001
+            pass
     args = [a for a in argv if not a.startswith("--")]
-    if len(args) != 3:
+    if len(args) not in (2, 3):
         print(__doc__)
         return 2
-    base, user, password = args
+    base, credentials = args[0], args[1:]
     write = "--write" in argv
-    call = make_caller(base, user, password)
+    call = make_caller(base, *credentials)
 
     print(f"Проверяю {base} ...")
     try:
@@ -60,10 +74,15 @@ def main(argv: list[str]) -> int:
         print("   Проверьте адрес, интернет, сертификат (https) и что сайт запущен.")
         return 1
     if status == 401:
-        print("❌ 401: неверный логин или пароль (INTEGRATION_USER / INTEGRATION_PASSWORD в .env).")
+        print("❌ 401: неверный или отключённый ключ. Проверьте ключ или попросите владельца "
+              "создать новый (админка → «Интеграция»).")
+        return 1
+    if status == 403:
+        print("❌ 403: этот ключ нельзя использовать с адреса, с которого вы запускаете проверку "
+              "(у ключа задан список разрешённых адресов).")
         return 1
     if status == 503:
-        print("❌ 503: в .env сервера не задан INTEGRATION_PASSWORD — обмен отключён.")
+        print("❌ 503: на сайте не создан ни один ключ — обмен выключен (админка → «Интеграция»).")
         return 1
     if status != 200:
         print(f"❌ Неожиданный ответ {status}: {data}")

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Забыли пароль — Диантус{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-7 col-lg-5">
+        <div class="card p-4">
+            <h1 class="h4 mb-3"><i class="fas fa-key me-2"></i>Забыли пароль?</h1>
+
+            {% if sent %}
+                <div class="alert alert-success">
+                    <i class="fas fa-envelope-circle-check me-1"></i>
+                    Если такой адрес зарегистрирован, мы отправили на него письмо со ссылкой для нового пароля.
+                    Проверьте почту (и папку «Спам»). Ссылка действует 60 минут.
+                </div>
+            {% elif not mail_ok %}
+                <div class="alert alert-info">
+                    Восстановление по почте пока не подключено. Позвоните менеджеру — он выдаст временный пароль:
+                    {% if config.SHOP_PHONE %}<strong>{{ config.SHOP_PHONE }}</strong>{% else %}телефон — на странице <a href="/contacts">«Контакты»</a>{% endif %}.
+                </div>
+            {% endif %}
+
+            {% if mail_ok %}
+            <p class="text-muted small">Введите почту, на которую вы регистрировались. Мы пришлём ссылку для создания нового пароля.</p>
+            <form action="/forgot" method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <div class="mb-3">
+                    <label class="form-label small fw-bold" for="fg-email">Email</label>
+                    <input type="email" id="fg-email" name="email" class="form-control" maxlength="120" required autocomplete="email">
+                </div>
+                <button class="btn btn-primary w-100"><i class="fas fa-paper-plane me-2"></i>Прислать ссылку</button>
+            </form>
+            {% endif %}
+            <hr class="my-4">
+            <p class="text-center small mb-0"><a href="/login">← Вернуться ко входу</a></p>
+        </div>
+    </div>
+</div>
+{% endblock %}

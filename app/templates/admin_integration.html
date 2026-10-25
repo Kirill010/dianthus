@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+{% set hide_bottom_nav = true %}
+{% block title %}Интеграция с 1С — админка{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h2 class="mb-0"><i class="fas fa-plug me-2"></i>Интеграция с 1С</h2>
+    <a href="/admin" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-arrow-left me-1"></i>В админку
+    </a>
+</div>
+
+{# ═════════ Состояние обмена ═════════ #}
+{% set tone = {'ok': 'success', 'failing': 'danger', 'idle': 'warning', 'never': 'info', 'no_keys': 'secondary'}[ov.state] %}
+{% set icon = {'ok': 'circle-check', 'failing': 'circle-exclamation', 'idle': 'clock', 'never': 'hourglass-half', 'no_keys': 'key'}[ov.state] %}
+<div class="alert alert-{{ tone }} d-flex align-items-start gap-3">
+    <i class="fas fa-{{ icon }} fa-2x"></i>
+    <div>
+        <div class="fw-bold">{{ ov.message }}</div>
+        <div class="small mt-2 d-flex flex-wrap gap-4">
+            <span>Последняя связь с 1С:
+                <strong>{% if ov.last_ok %}{{ ov.last_ok.created_at|localdt }}{% else %}—{% endif %}</strong></span>
+            <span>Последняя загрузка каталога:
+                <strong>{% if ov.last_sync %}{{ ov.last_sync.created_at|localdt }}{% else %}—{% endif %}</strong>
+                {% if ov.last_sync and ov.last_sync.summary %}<span class="text-muted">({{ ov.last_sync.summary }})</span>{% endif %}</span>
+            <span>Заказов ждут загрузки в 1С: <strong>{{ ov.waiting_orders }}</strong></span>
+            <span>За сутки: <strong class="text-success">{{ ov.ok_24h }}</strong> успешных,
+                <strong class="{% if ov.err_24h %}text-danger{% endif %}">{{ ov.err_24h }}</strong> с ошибкой</span>
+        </div>
+    </div>
+</div>
+
+{# ═════════ Только что созданный ключ ═════════ #}
+{% if new_key %}
+<div class="card border-success mb-4">
+    <div class="card-body">
+        <h5 class="text-success"><i class="fas fa-check-circle me-2"></i>Ключ «{{ new_key_name }}» создан</h5>
+        <div class="alert alert-warning small">
+            <strong>Скопируйте ключ прямо сейчас.</strong> Целиком он показывается только один раз:
+            на сайте хранится лишь его «отпечаток», поэтому потом показать ключ не получится.
+            Если потеряете — создайте новый, а этот отключите.
+        </div>
+        <label class="form-label fw-bold" for="newkey">Ключ доступа</label>
+        <div class="input-group mb-3">
+            <input type="text" id="newkey" class="form-control font-monospace" value="{{ new_key }}" readonly>
+            <button type="button" class="btn btn-success" data-copy-target="newkey">
+                <i class="fas fa-copy me-1"></i>Скопировать
+            </button>
+        </div>
+        <label class="form-label fw-bold" for="newmsg">Готовое сообщение для программиста 1С (уже с ключом)</label>
+        <textarea id="newmsg" class="form-control small" rows="11" readonly>{{ message }}</textarea>
+        <button type="button" class="btn btn-outline-success btn-sm mt-2" data-copy-target="newmsg">
+            <i class="fas fa-copy me-1"></i>Скопировать сообщение
+        </button>
+        <p class="text-muted small mt-3 mb-0">
+            Отправьте сообщение программисту <strong>личным сообщением</strong> (не в общий чат и не на публичную почту).
+        </p>
+    </div>
+</div>
+{% endif %}
+
+{# ═════════ Как это работает ═════════ #}
+<details class="card p-3 mb-4" {% if ov.state == 'no_keys' %}open{% endif %}>
+    <summary class="fw-bold"><i class="fas fa-circle-question me-2"></i>Что такое «ключ» и что с ним делать (за одну минуту)</summary>
+    <ol class="mt-3 mb-2">
+        <li><strong>Создайте ключ</strong> ниже (кнопка «Создать ключ»). Ключ — это длинный пароль не для человека, а для программы: по нему сайт понимает, что к нему обращается именно ваша 1С.</li>
+        <li><strong>Отправьте программисту</strong> готовое сообщение (оно появится сразу после создания ключа). В нём адрес, ключ и ссылка на подробную памятку — больше ничего объяснять не нужно.</li>
+        <li><strong>Следите за плашкой выше.</strong> Когда программист закончит, она станет зелёной, а в журнале внизу появятся обращения 1С.</li>
+        <li>Когда работа закончена или ключ попал не туда — нажмите «Отключить». 1С с этим ключом сразу перестанет входить; для работы можно создать новый.</li>
+    </ol>
+    <p class="small text-muted mb-0">Если из вашей 1С нельзя ходить в интернет (облако, запреты) — есть запасной путь через файлы, см. блок «Загрузка из файла» ниже.</p>
+</details>
+
+{# ═════════ Ключи ═════════ #}
+<div class="card p-4 mb-4">
+    <h5 class="mb-3"><i class="fas fa-key me-2"></i>Ключи доступа</h5>
+
+    {% if legacy_enabled %}
+    <div class="alert alert-warning small">
+        <i class="fas fa-triangle-exclamation me-1"></i>
+        В настройках сервера (<code>.env</code>) задан старый пароль <code>INTEGRATION_PASSWORD</code> — он работает наравне с ключами.
+        Когда обмен по ключу заработает, пароль из <code>.env</code> лучше удалить: ключи удобнее — их можно отключать по одному.
+    </div>
+    {% endif %}
+
+    {% if keys %}
+    <div class="table-responsive mb-3">
+        <table class="table table-sm align-middle">
+            <thead><tr><th>Название</th><th>Ключ</th><th>Создан</th><th>Последнее использование</th><th>Разрешённые адреса</th><th></th></tr></thead>
+            <tbody>
+            {% for k in keys %}
+            <tr class="{% if not k.is_active %}text-muted{% endif %}">
+                <td><strong>{{ k.name }}</strong>
+                    {% if k.is_active %}<span class="badge bg-success ms-1">действует</span>
+                    {% else %}<span class="badge bg-secondary ms-1">отключён</span>{% endif %}</td>
+                <td><code>{{ k.key_prefix }}…</code></td>
+                <td class="small">{{ k.created_at|localdt('%d.%m.%Y') }}</td>
+                <td class="small">{% if k.last_used_at %}{{ k.last_used_at|localdt }}<br><span class="text-muted">с адреса {{ k.last_used_ip }}</span>{% else %}ещё не использовался{% endif %}</td>
+                <td class="small">{{ k.allowed_ips or 'любые' }}</td>
+                <td class="text-end">
+                    <form action="/admin/integration/keys/{{ k.id }}/toggle" method="post" class="d-inline"
+                          {% if k.is_active %}data-confirm="Отключить ключ «{{ k.name }}»? 1С с этим ключом сразу перестанет входить на сайт."{% endif %}>
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <button class="btn btn-sm {% if k.is_active %}btn-outline-danger{% else %}btn-outline-success{% endif %}">
+                            {% if k.is_active %}Отключить{% else %}Включить снова{% endif %}</button>
+                    </form>
+                    {% if not k.is_active %}
+                    <form action="/admin/integration/keys/{{ k.id }}/delete" method="post" class="d-inline"
+                          data-confirm="Удалить ключ «{{ k.name }}» навсегда?">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <button class="btn btn-sm btn-outline-secondary" title="Удалить"><i class="fas fa-trash"></i></button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <form action="/admin/integration/keys" method="post" class="row g-2 align-items-end">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="col-md-4">
+            <label class="form-label small fw-bold" for="key-name">Название (кому выдаёте)</label>
+            <input type="text" id="key-name" name="name" class="form-control" maxlength="100"
+                   placeholder="Например: Программист Иван" required>
+        </div>
+        <div class="col-md-5">
+            <label class="form-label small fw-bold" for="key-ips">Адреса, с которых можно (необязательно)</label>
+            <input type="text" id="key-ips" name="allowed_ips" class="form-control" maxlength="400"
+                   placeholder="Пусто = с любого. Или: 203.0.113.5, 203.0.113.0/24">
+        </div>
+        <div class="col-md-3">
+            <button class="btn btn-primary w-100"><i class="fas fa-plus me-1"></i>Создать ключ</button>
+        </div>
+    </form>
+    <p class="text-muted small mt-2 mb-0">Адрес сервера 1С можно узнать у программиста или в облаке 1С. Если не уверены — оставьте пустым.</p>
+</div>
+
+{# ═════════ Что отправить программисту ═════════ #}
+<div class="card p-4 mb-4">
+    <h5 class="mb-3"><i class="fas fa-paper-plane me-2"></i>Для программиста 1С</h5>
+    <div class="row g-3">
+        <div class="col-md-6">
+            <div class="text-muted small">Адрес обмена</div>
+            <div class="font-monospace">{{ base_url }}/api/1c/</div>
+            <div class="text-muted small mt-3">Памятка с форматами и примерами кода</div>
+            <div class="d-flex gap-2 flex-wrap mt-1">
+                <a class="btn btn-outline-primary btn-sm" href="/1c-docs" target="_blank" rel="noopener">
+                    <i class="fas fa-book me-1"></i>Открыть памятку</a>
+                <a class="btn btn-outline-secondary btn-sm" href="/1c-docs.md">
+                    <i class="fas fa-download me-1"></i>Скачать файлом</a>
+            </div>
+            <p class="small text-muted mt-3 mb-0">Ссылка <code>{{ base_url }}/1c-docs</code> открывается без входа — её можно прислать программисту. Ключа в памятке нет.</p>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label small fw-bold" for="plainmsg">Сообщение (без ключа — его отправьте отдельно)</label>
+            <textarea id="plainmsg" class="form-control small" rows="9" readonly>{{ message }}</textarea>
+            <button type="button" class="btn btn-outline-secondary btn-sm mt-2" data-copy-target="plainmsg">
+                <i class="fas fa-copy me-1"></i>Скопировать</button>
+        </div>
+    </div>
+</div>
+
+{# ═════════ Загрузка из файла ═════════ #}
+<div class="card p-4 mb-4" id="import">
+    <h5 class="mb-1"><i class="fas fa-file-import me-2"></i>Загрузка из файла (запасной путь)</h5>
+    <p class="text-muted small">Если обмен по сети ещё не настроен или из 1С нельзя выходить в интернет: выгрузите прайс-лист из 1С в Excel или CSV и загрузите здесь. Правила те же, что у обмена по сети.</p>
+
+    {% if import_report %}
+    <div class="alert alert-{% if import_report.errors_total %}warning{% else %}success{% endif %} small">
+        <strong>Файл «{{ import_report.filename }}»:</strong> {{ import_report.summary }}.
+        <div class="mt-1">Распознанные колонки:
+            {% for field, header in import_report.columns.items() %}<code>{{ header }}</code> → {{ field }}{% if not loop.last %}; {% endif %}{% endfor %}.</div>
+        {% if import_report.other_price_columns %}
+        <div class="mt-1">Цена взята из выбранной колонки. Другие колонки цен не использованы:
+            {% for c in import_report.other_price_columns %}«{{ c }}»{% if not loop.last %}, {% endif %}{% endfor %}.
+            Нужна другая — впишите её название в поле «Колонка с ценой» и загрузите файл ещё раз.</div>
+        {% endif %}
+        {% for w in import_report.warnings %}<div class="mt-1">⚠️ {{ w }}</div>{% endfor %}
+        {% if import_report.errors %}
+        <div class="mt-2"><strong>Не загружено ({{ import_report.errors_total }}):</strong>
+            <ul class="mb-0">{% for e in import_report.errors %}<li>{{ e }}</li>{% endfor %}</ul></div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <form action="/admin/integration/import" method="post" enctype="multipart/form-data" class="row g-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="col-12">
+            <label class="form-label small fw-bold" for="imp-file">Файл .xlsx, .xls или .csv</label>
+            <input type="file" id="imp-file" name="file" class="form-control" accept=".xlsx,.xls,.csv,.txt" required>
+            <div class="form-text">Нужна строка с названиями колонок, например: Артикул · Наименование · Цена · Остаток · В пач.</div>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label small fw-bold" for="imp-stock">Остаток в файле указан</label>
+            <select name="stock_unit" id="imp-stock" class="form-select">
+                <option value="stems">в штуках (стеблях)</option>
+                <option value="packs">в упаковках (пачках)</option>
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label small fw-bold" for="imp-price">Цена в файле указана</label>
+            <select name="price_unit" id="imp-price" class="form-select">
+                <option value="stem">за одну штуку</option>
+                <option value="pack">за упаковку (пачку)</option>
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label small fw-bold" for="imp-col">Колонка с ценой (если их несколько)</label>
+            <input type="text" id="imp-col" name="price_column" class="form-control" maxlength="80" placeholder="Например: Цена опт.">
+        </div>
+        <div class="col-12 d-flex gap-2 flex-wrap">
+            <button class="btn btn-primary"><i class="fas fa-upload me-1"></i>Загрузить</button>
+            <button class="btn btn-outline-danger" name="full" value="1"
+                    data-confirm="Загрузить как ПОЛНЫЙ каталог? Все товары сайта, которых нет в этом файле, будут сняты с продажи.">
+                Загрузить как полный каталог</button>
+        </div>
+        <p class="text-muted small mb-0">«Полный каталог» — когда файл содержит ВСЕ товары. Тогда то, чего в файле нет, исчезает с витрины. Если не уверены — нажимайте обычную «Загрузить».</p>
+    </form>
+
+    <hr class="my-4" id="orders">
+    <h6><i class="fas fa-box me-2"></i>Заказы для 1С вручную</h6>
+    {% if waiting_count %}
+        <p class="small">Новых заказов, которые 1С ещё не получила: <strong>{{ waiting_count }}</strong>.</p>
+        <div class="d-flex gap-2 flex-wrap">
+            <a class="btn btn-outline-primary btn-sm" href="/admin/integration/orders.csv?up_to={{ waiting_up_to }}">
+                <i class="fas fa-download me-1"></i>Скачать (CSV, UTF-8)</a>
+            <a class="btn btn-outline-primary btn-sm" href="/admin/integration/orders.csv?up_to={{ waiting_up_to }}&encoding=cp1251">
+                <i class="fas fa-download me-1"></i>Скачать (CSV, Windows-1251)</a>
+            <form action="/admin/integration/orders/mark" method="post"
+                  data-confirm="Отметить эти заказы как загруженные в 1С? Они перестанут считаться ожидающими.">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="up_to" value="{{ waiting_up_to }}">
+                <button class="btn btn-success btn-sm"><i class="fas fa-check me-1"></i>Я загрузил их в 1С</button>
+            </form>
+        </div>
+        <p class="text-muted small mt-2 mb-0">Файл: одна строка = одна позиция заказа. После загрузки в 1С нажмите «Я загрузил их в 1С», чтобы заказы не выгружались повторно.</p>
+    {% else %}
+        <p class="small text-muted mb-0">Новых заказов для 1С нет.</p>
+    {% endif %}
+    <p class="small mt-3 mb-0"><a href="/admin/integration/products.csv">Скачать каталог сайта (CSV)</a> — чтобы сверить с 1С.</p>
+</div>
+
+{# ═════════ Журнал ═════════ #}
+<div class="card p-4 mb-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+        <h5 class="mb-0"><i class="fas fa-clipboard-list me-2"></i>Журнал обращений 1С</h5>
+        <div class="btn-group btn-group-sm">
+            <a class="btn {% if not errors_only %}btn-primary{% else %}btn-outline-primary{% endif %}" href="/admin/integration">Все</a>
+            <a class="btn {% if errors_only %}btn-danger{% else %}btn-outline-danger{% endif %}" href="/admin/integration?errors=1">Только ошибки</a>
+        </div>
+    </div>
+    {% if log_rows %}
+    <div class="table-responsive">
+        <table class="table table-sm align-middle small">
+            <thead><tr><th>Время</th><th>Кто</th><th>Что</th><th>Результат</th><th>Адрес</th></tr></thead>
+            <tbody>
+            {% for r in log_rows %}
+            <tr>
+                <td class="text-nowrap">{{ r.created_at|localdt }}</td>
+                <td>{% if r.key_id %}{{ key_names.get(r.key_id, 'ключ удалён') }}
+                    {% elif r.auth_kind == 'password' %}старый пароль
+                    {% elif r.auth_kind == 'file' %}файл из админки
+                    {% else %}—{% endif %}</td>
+                <td><code>{{ r.method }} {{ r.endpoint }}</code></td>
+                <td>
+                    {% if r.ok %}<span class="badge bg-success">{{ r.status_code }}</span>
+                    {% else %}<span class="badge bg-danger">{{ r.status_code }}</span>{% endif %}
+                    {% if r.repeat_count and r.repeat_count > 1 %}<span class="badge bg-secondary">×{{ r.repeat_count }}</span>{% endif %}
+                    {% if r.summary %}<span class="text-muted">{{ r.summary }}</span>{% endif %}
+                    {% if not r.ok and status_help.get(r.status_code) %}<div class="text-danger">{{ status_help[r.status_code] }}</div>{% endif %}
+                </td>
+                <td class="text-nowrap">{{ r.ip }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p class="text-muted small mb-0">Показаны последние 100 записей; записи старше 60 дней удаляются сами. Одинаковые ошибки подряд объединяются в одну строку со счётчиком (×N).</p>
+    {% else %}
+        <p class="text-muted mb-0">{% if errors_only %}Ошибок нет.{% else %}Пока ни одного обращения.{% endif %}</p>
+    {% endif %}
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+    document.querySelectorAll('[data-copy-target]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var el = document.getElementById(btn.dataset.copyTarget);
+            if (!el) return;
+            var text = el.value;
+            var done = function () {
+                var old = btn.innerHTML;
+                btn.innerHTML = '<i class="fas fa-check me-1"></i>Скопировано';
+                setTimeout(function () { btn.innerHTML = old; }, 1800);
+            };
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text).then(done);
+            } else {
+                el.select();
+                try { document.execCommand('copy'); done(); } catch (e) {}
+            }
+        });
+    });
+})();
+</script>
+{% endblock %}

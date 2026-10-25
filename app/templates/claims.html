@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Обращения по качеству — Диантус{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <h1 class="catalog-title mb-0"><i class="fas fa-triangle-exclamation me-2"></i>Обращения по качеству</h1>
+    <a href="/claims/new" class="btn btn-primary"><i class="fas fa-plus me-1"></i>Сообщить о проблеме</a>
+</div>
+
+{% if claims %}
+<div class="orders-list">
+    {% for c in claims %}
+    <a href="/claims/{{ c.id }}" class="order-card text-decoration-none text-reset d-block">
+        <div class="order-card__head">
+            <strong>{{ c.number }} · {{ c.product_name or 'Товар' }}</strong>
+            <span class="badge {% if c.status == 'Решена' %}bg-success{% elif c.status == 'Отклонена' %}bg-secondary{% elif c.status == 'В работе' %}bg-warning text-dark{% else %}bg-primary{% endif %}">{{ c.status }}</span>
+        </div>
+        <div class="order-card__meta">{{ c.created_at|localdt }}{% if c.order_id %} · заказ №{{ c.order_id }}{% endif %}</div>
+        {% if c.reply_to_client %}<div class="order-card__comment"><i class="fas fa-reply me-1"></i>{{ c.reply_to_client }}</div>{% endif %}
+    </a>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <i class="fas fa-smile"></i>
+    <h4>Обращений нет</h4>
+    <p class="text-muted">Если с цветами что-то не так, нажмите «Сообщить о проблеме» — приложите фото, и мы разберёмся.</p>
+</div>
+{% endif %}
+{% endblock %}

@@ -30,8 +30,9 @@ from .scheduler import start_scheduler, stop_scheduler
 from .sentry_config import init_sentry
 from . import models, security
 from .security import CsrfError, init_rate_limiter, close_rate_limiter
+from .services.legal import ensure_default_legal_docs
 from .templating import render
-from .middleware import SecurityHeadersMiddleware
+from .middleware import ExchangeLogMiddleware, SecurityHeadersMiddleware
 from .session import ServerSessionMiddleware
 from .web import safe_back
 
@@ -48,7 +49,9 @@ init_sentry()
 
 def _safe_load_routers() -> dict:
     out = {}
-    for name in ("admin", "cart", "catalog", "profile", "integration_1c"):
+    for name in ("admin", "cart", "catalog", "profile", "integration_1c",
+                 "integration_admin", "legal", "deadlines", "claims", "staff",
+                 "password_reset"):
         try:
             mod = import_module(f".routers.{name}", package="app")
             if not hasattr(mod, "router"):
@@ -100,7 +103,7 @@ async def lifespan(app: FastAPI):
         # (см. prepare_database): на пустой базе админ создаётся ПОСЛЕ таблиц,
         # а два воркера не дерутся за CREATE TABLE. Движок внутри берётся через
         # current_bind(): в тестах SessionLocal перепривязан к in-memory БД.
-        prepare_database(ensure_default_admin)
+        prepare_database(ensure_default_admin, ensure_default_legal_docs)
         check_cyrillic_search()
         db_name = (
             config.DATABASE_URL.split("@")[-1]
@@ -141,6 +144,8 @@ app = FastAPI(
 )
 
 app.add_middleware(SecurityHeadersMiddleware)
+# Журнал обращений 1С (/api/1c/*): владелец видит его на странице «Интеграция»
+app.add_middleware(ExchangeLogMiddleware)
 app.add_middleware(
     ServerSessionMiddleware,
     secret_key=config.SECRET_KEY,
@@ -335,6 +340,8 @@ def sitemap(db: Session = Depends(get_db)):
         ("/catalog", today, "daily", "0.9"),
         ("/contacts", today, "monthly", "0.6"),
         ("/register", today, "monthly", "0.5"),
+        ("/deadlines", today, "monthly", "0.6"),
+        ("/terms", today, "yearly", "0.3"),
         ("/privacy", today, "yearly", "0.2"),
     ]
     rows = (
@@ -389,11 +396,6 @@ def login_page(request: Request, db: Session = Depends(get_db)):
         login_error=request.session.pop("login_error", None),
         show_totp=request.session.pop("show_totp", False),
     )
-
-
-@app.get("/privacy", response_class=HTMLResponse)
-def privacy_page(request: Request, db: Session = Depends(get_db)):
-    return render(request, "privacy.html", db)
 
 
 @app.get("/registration_pending", response_class=HTMLResponse)

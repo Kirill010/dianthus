@@ -23,8 +23,8 @@
                     <i class="fas fa-exclamation-circle me-1"></i>{{ login_error }}
                 </div>
                 {% endif %}
-                <div class="mb-3"><input type="email" name="email" class="form-control" placeholder="Email" required></div>
-                <div class="mb-3"><input type="password" name="password" class="form-control" placeholder="Пароль" required></div>
+                <div class="mb-3"><input type="email" name="email" class="form-control" placeholder="Email" aria-label="Email" required autocomplete="username"></div>
+                <div class="mb-3"><input type="password" name="password" class="form-control" placeholder="Пароль" aria-label="Пароль" required autocomplete="current-password"></div>
                 <div class="mb-3" id="totp-row" {% if not show_totp %}hidden{% endif %}>
                     <label class="form-label small fw-bold">Код из приложения (2FA, для администратора)</label>
                     <input type="text" name="totp_code" class="form-control" inputmode="numeric"
@@ -33,6 +33,7 @@
                 <button type="submit" class="btn btn-primary w-100">
                     <i class="fas fa-sign-in-alt me-2"></i>Войти
                 </button>
+                <p class="text-center small mt-3 mb-0"><a href="/forgot">Забыли пароль?</a></p>
             </form>
             <hr class="my-4">
             <p class="text-center text-muted small mb-0">

@@ -2,6 +2,8 @@
 """Корзина и оформление заказа с атомарной блокировкой стока."""
 import logging
 import secrets
+from datetime import datetime, timedelta
+
 from fastapi import (APIRouter, BackgroundTasks, Depends, Form,
                      HTTPException, Request)
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -17,18 +19,22 @@ from ..security import check_csrf, check_rate_limit, safe_equal
 from ..services.notifier import (notify_admin_new_order,
                                  notify_client_order_created)
 from ..services.preorder_service import (
-    add_preorder_to_db, get_user_preorders, remove_preorder_db,
-    get_all_user_preorders, move_fulfilled_preorder_to_cart,
-    remove_fulfilled_preorder_db,
+    MAX_PREORDER_PACKS, add_preorder_to_db, get_user_preorders,
+    remove_preorder_db, get_all_user_preorders,
+    move_fulfilled_preorder_to_cart, remove_fulfilled_preorder_db,
 )
+from ..services import preorder_rules
 from ..services.pricing import apply_discount, line_total, money
+from ..services.site_settings import get_setting
 from ..templating import render
+from ..timeutils import shop_tz
 from ..web import safe_back
 from .. import models
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 MAX_COMMENT_LENGTH = 1000
+MAX_DESIRED_DAYS = 365          # на сколько вперёд можно указать дату получения
 
 
 def _cart_subtotal(cart: list[dict]) -> float:
@@ -211,7 +217,7 @@ def add_to_preorder_route(
     if quantity_stems < min_stems:
         quantity_stems = min_stems
     quantity_stems = (quantity_stems // pack) * pack
-    packs = quantity_stems // pack
+    packs = min(quantity_stems // pack, MAX_PREORDER_PACKS)
 
     if add_preorder_to_db(db, user.id, item.id, packs):
         arrival = item.supply.arrival_date if item.supply else None
@@ -411,17 +417,96 @@ def cart_page(request: Request, db: Session = Depends(get_db)):
     )
 
 
+def cart_key(entry: dict) -> str:
+    """Устойчивый «адрес» позиции корзины: товар + из предзаказа или нет.
+
+    По номеру в списке удалять нельзя: в двух вкладках браузера номера
+    расходятся, и клиент удалял не ту позицию.
+    """
+    return f"{entry.get('supply_item_id')}:{1 if entry.get('from_preorder') else 0}"
+
+
+def _find_cart_index(cart: list, key: str) -> int | None:
+    for i, entry in enumerate(cart):
+        if isinstance(entry, dict) and cart_key(entry) == key:
+            return i
+    return None
+
+
 @router.post("/remove_from_cart")
 def remove_from_cart(
     request: Request,
-    item_index: int = Form(...),
+    item_key: str = Form(""),
+    item_index: int = Form(-1),
     _csrf: None = Depends(check_csrf),
 ):
     cart = request.session.get("cart", [])
-    if 0 <= item_index < len(cart):
-        cart.pop(item_index)
+    idx = _find_cart_index(cart, item_key) if item_key else None
+    if idx is None and not item_key and 0 <= item_index < len(cart):
+        idx = item_index                                  # старые формы без ключа
+    if idx is not None:
+        cart.pop(idx)
     request.session["cart"] = cart
     return RedirectResponse(url=_back(request, "/cart"), status_code=303)
+
+
+@router.post("/cart/update")
+def update_cart_item(
+    request: Request,
+    item_key: str = Form(...),
+    quantity_packs: int = Form(...),
+    db: Session = Depends(get_db),
+    _csrf: None = Depends(check_csrf),
+):
+    """Изменить количество (в упаковках) прямо в корзине."""
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+    cart = request.session.get("cart", [])
+    idx = _find_cart_index(cart, item_key)
+    if idx is None:
+        request.session["flash"] = "Эта позиция уже убрана из корзины"
+        return RedirectResponse(url="/cart", status_code=303)
+    entry = cart[idx]
+
+    if quantity_packs <= 0:
+        cart.pop(idx)
+        request.session["cart"] = cart
+        request.session["flash"] = f"«{entry.get('name', 'Товар')}» убран из корзины"
+        return RedirectResponse(url="/cart", status_code=303)
+
+    item = (
+        db.query(SupplyItem)
+        .options(joinedload(SupplyItem.product))
+        .filter(SupplyItem.id == entry["supply_item_id"])
+        .first()
+    )
+    if item is None or item.product is None:
+        cart.pop(idx)
+        request.session["cart"] = cart
+        request.session["flash"] = f"«{entry.get('name', 'Товар')}» больше недоступен"
+        return RedirectResponse(url="/cart", status_code=303)
+
+    min_packs = max(1, item.product.min_quantity or 1)
+    # из предзаказа остаток уже «зарезервирован» за клиентом — смотрим на склад целиком
+    limit = (item.stock or 0) if entry.get("from_preorder") else item.available_stock
+    if limit <= 0:
+        cart.pop(idx)
+        request.session["cart"] = cart
+        request.session["flash"] = f"«{entry.get('name', 'Товар')}» закончился"
+        return RedirectResponse(url="/cart", status_code=303)
+
+    wanted = quantity_packs
+    quantity_packs = min(max(quantity_packs, min_packs), limit)
+    if quantity_packs != wanted:
+        reason = (f"минимум {min_packs} упак." if wanted < min_packs
+                  else f"на складе только {limit} упак.")
+        request.session["flash"] = (
+            f"«{entry.get('name', 'Товар')}»: {reason} — количество исправлено"
+        )
+    entry["quantity"] = quantity_packs
+    request.session["cart"] = cart
+    return RedirectResponse(url="/cart", status_code=303)
 
 
 @router.post("/remove_from_preorder")
@@ -466,6 +551,13 @@ def checkout_page(request: Request, db: Session = Depends(get_db)):
     discount_amount, total = _apply_discount(subtotal, discount_percent)
     if not request.session.get("order_token"):
         request.session["order_token"] = secrets.token_urlsafe(24)
+    today = datetime.now(shop_tz()).date()
+    previous = (
+        db.query(Order.delivery_method, Order.delivery_address)
+        .filter(Order.user_id == user.id, Order.delivery_method != "",
+                Order.delivery_method.isnot(None))
+        .order_by(Order.id.desc()).first()
+    )
     return render(
         request, "checkout.html", db,
         user=user, cart=cart,
@@ -474,7 +566,41 @@ def checkout_page(request: Request, db: Session = Depends(get_db)):
         discount_amount=discount_amount,
         total=total,
         order_token=request.session["order_token"],
+        min_date=today.isoformat(),
+        max_date=(today + timedelta(days=MAX_DESIRED_DAYS)).isoformat(),
+        payment_terms=get_setting(db, "payment_terms"),
+        last_method=previous[0] if previous else "",
+        last_address=previous[1] if previous else "",
+        checkout_errors=request.session.pop("checkout_errors", None),
+        checkout_form=request.session.pop("checkout_form", {}),
     )
+
+
+def _parse_checkout_extras(desired_date: str, delivery_method: str,
+                           delivery_address: str):
+    """Проверка необязательных полей оформления. → (дата, способ, адрес, ошибки)."""
+    errors: list[str] = []
+    desired = None
+    if (desired_date or "").strip():
+        d = preorder_rules.parse_user_date(desired_date)
+        today = datetime.now(shop_tz()).date()
+        if d is None:
+            errors.append("Дата получения указана неверно")
+        elif d < today:
+            errors.append("Дата получения не может быть в прошлом")
+        elif d > today + timedelta(days=MAX_DESIRED_DAYS):
+            errors.append("Дата получения слишком далеко — выберите дату в пределах года")
+        else:
+            desired = datetime(d.year, d.month, d.day)
+    method = delivery_method if delivery_method in ("pickup", "delivery") else ""
+    address = " ".join((delivery_address or "").split())
+    if len(address) > 500:
+        errors.append("Адрес доставки слишком длинный")
+    if method == "delivery" and len(address) < 5:
+        errors.append("Для доставки укажите адрес")
+    if method != "delivery":
+        address = ""
+    return desired, method, address[:500], errors
 
 
 async def _rate_place_order(request: Request) -> None:
@@ -488,6 +614,9 @@ def place_order(
     background_tasks: BackgroundTasks,
     order_token: str = Form(""),
     comment: str = Form(""),
+    desired_date: str = Form(""),
+    delivery_method: str = Form(""),
+    delivery_address: str = Form(""),
     db: Session = Depends(get_db),
     _csrf: None = Depends(check_csrf),
     _rate: None = Depends(_rate_place_order),
@@ -515,6 +644,16 @@ def place_order(
     comment = (comment or "").strip()
     if len(comment) > MAX_COMMENT_LENGTH:
         request.session["flash"] = "Комментарий слишком длинный"
+        return RedirectResponse(url="/checkout", status_code=303)
+
+    desired, method, address, extra_errors = _parse_checkout_extras(
+        desired_date, delivery_method, delivery_address)
+    if extra_errors:
+        request.session["checkout_errors"] = extra_errors
+        request.session["checkout_form"] = {
+            "desired_date": desired_date, "delivery_method": delivery_method,
+            "delivery_address": delivery_address, "comment": comment,
+        }
         return RedirectResponse(url="/checkout", status_code=303)
 
     cart_ids = [c["supply_item_id"] for c in cart]
@@ -633,6 +772,9 @@ def place_order(
             status="Новый",
             comment=comment,
             order_token=order_token[:64] or None,
+            desired_date=desired,
+            delivery_method=method,
+            delivery_address=address,
         )
         db.add(order)
         db.flush()
@@ -720,7 +862,16 @@ def order_history(request: Request, db: Session = Depends(get_db)):
         .limit(100)          # у постоянного клиента заказов тысячи — страницу не раздуваем
         .all()
     )
-    return render(request, "orders.html", db, user=user, orders=orders)
+    # обращения по качеству, уже заведённые по этим заказам (одним запросом)
+    claims_by_order: dict[int, list] = {}
+    if orders:
+        for claim in (db.query(models.Claim)
+                      .filter(models.Claim.user_id == user.id,
+                              models.Claim.order_id.in_([o.id for o in orders]))
+                      .order_by(models.Claim.id).all()):
+            claims_by_order.setdefault(claim.order_id, []).append(claim)
+    return render(request, "orders.html", db, user=user, orders=orders,
+                  claims_by_order=claims_by_order)
 
 
 @router.post("/orders/{order_id}/repeat")
@@ -762,6 +913,7 @@ def repeat_order(
                     SupplyItem.reserved_stock, 0
                 ),
             )
+            .order_by(SupplyItem.id.desc())      # самая свежая партия, а не «любая»
             .first()
         )
         if not si:
@@ -816,14 +968,8 @@ def download_invoice(
         raise HTTPException(404, "Заказ не найден")
 
     try:
-        from ..services.pdf_service import generate_invoice_pdf
-        shop_info = {
-            "name": config.SHOP_NAME,
-            "phone": config.SHOP_PHONE,
-            "address": config.SHOP_ADDRESS,
-            "requisites": config.SHOP_REQUISITES,
-        }
-        pdf_bytes = generate_invoice_pdf(order, user, shop_info)
+        from ..services.pdf_service import generate_invoice_pdf, shop_info_for_invoice
+        pdf_bytes = generate_invoice_pdf(order, user, shop_info_for_invoice(db))
     except ImportError:
         request.session["flash"] = "PDF-генерация недоступна"
         return RedirectResponse(url="/orders", status_code=303)

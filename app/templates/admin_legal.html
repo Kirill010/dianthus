@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% set hide_bottom_nav = true %}
+{% block title %}Юридическое — админка{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h2 class="mb-0"><i class="fas fa-scale-balanced me-2"></i>Юридическое</h2>
+    <a href="/admin" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-arrow-left me-1"></i>В админку
+    </a>
+</div>
+
+<div class="alert alert-info small">
+    <i class="fas fa-circle-info me-1"></i>
+    Здесь всё, что нужно по закону о персональных данных (152-ФЗ) и о рекламе.
+    Тексты на сайте — <strong>качественные черновики, а не заключение юриста</strong>:
+    один раз покажите их юристу (обычно хватает часовой консультации), поправьте здесь —
+    и отметьте «проверено юристом». Подробная памятка: файл <code>docs/ВЛАДЕЛЬЦУ.md</code>.
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card p-3 text-center h-100">
+            <div class="h3 mb-0">{{ consents_given }} / {{ consents_total }}</div>
+            <div class="text-muted small">клиентов дали согласие на обработку данных</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card p-3 text-center h-100">
+            <div class="h3 mb-0">{{ marketing_yes }}</div>
+            <div class="text-muted small">разрешили присылать рекламу — только им можно звонить с предложениями</div>
+        </div>
+    </div>
+    <div class="col-12 col-md-6">
+        <a href="/admin/data-requests" class="card p-3 h-100 text-decoration-none">
+            <div class="h3 mb-0 {% if open_requests %}text-danger{% endif %}">{{ open_requests }}</div>
+            <div class="text-muted small">новых запросов клиентов на удаление данных (ответить нужно до 10 рабочих дней) →</div>
+        </a>
+    </div>
+</div>
+
+<div class="card p-4 mb-4">
+    <h5 class="mb-3"><i class="fas fa-id-card me-2"></i>Реквизиты организации</h5>
+    {% if state.missing %}
+        <p class="mb-2">Эти данные подставляются в политику, согласие и условия, но пока не заполнены:</p>
+        <ul class="mb-2">
+            {% for key, hint in state.missing %}
+                <li><code>{{ key }}</code> — {{ hint }}</li>
+            {% endfor %}
+        </ul>
+        <p class="text-muted small mb-0">
+            Как заполнить: откройте на сервере файл <code>.env</code>, впишите значения после знака «=»
+            и перезапустите сайт (пошагово — <code>docs/ВЛАДЕЛЬЦУ.md</code>, раздел «Реквизиты»).
+            Пока не заполнено, в текстах на сайте видна пометка <strong>[укажите: …]</strong>.
+        </p>
+    {% else %}
+        <p class="mb-0 text-success"><i class="fas fa-check me-1"></i>Все реквизиты заполнены.</p>
+    {% endif %}
+</div>
+
+<div class="card p-4 mb-4" id="docs">
+    <h5 class="mb-3"><i class="fas fa-file-lines me-2"></i>Документы на сайте</h5>
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead><tr><th>Документ</th><th>Версия</th><th>Состояние</th><th></th></tr></thead>
+            <tbody>
+            {% for row in state.docs %}
+                <tr>
+                    <td>
+                        <strong>{{ row.doc.title }}</strong><br>
+                        <a href="{{ row.url }}" target="_blank" rel="noopener" class="small">{{ row.url }}</a>
+                    </td>
+                    <td>{{ row.doc.version }}<br>
+                        <small class="text-muted">{{ row.doc.updated_at|localdt('%d.%m.%Y') }}</small></td>
+                    <td class="small">
+                        {% if row.reviewed %}
+                            <span class="badge bg-success">проверен юристом</span>
+                        {% else %}
+                            <span class="badge bg-warning text-dark">не проверен юристом</span>
+                        {% endif %}
+                        {% if row.unfilled %}
+                            <div class="text-danger mt-1">не заполнено: {{ row.unfilled|join(', ') }}</div>
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        <a href="/admin/legal/{{ row.doc.slug }}/edit" class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-pen me-1"></i>Править
+                        </a>
+                        <form action="/admin/legal/reviewed/{{ row.doc.slug }}" method="post" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <button class="btn btn-sm btn-outline-secondary" title="Отметить, что текст проверил юрист">
+                                {% if row.reviewed %}Снять отметку{% else %}Проверен юристом{% endif %}
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card p-4 mb-4" id="todo">
+    <h5 class="mb-1"><i class="fas fa-list-check me-2"></i>Что нужно сделать вне сайта
+        {% if state.todo_left %}<span class="badge bg-warning text-dark ms-1">осталось: {{ state.todo_left }}</span>
+        {% else %}<span class="badge bg-success ms-1">всё сделано</span>{% endif %}
+    </h5>
+    <p class="text-muted small">Сайт не может сделать это за вас. Отмечайте пункты по мере выполнения.</p>
+    <ul class="list-group list-group-flush">
+        {% for t in state.todo %}
+        <li class="list-group-item px-0 d-flex justify-content-between align-items-start gap-3">
+            <div>
+                <div class="{% if t.done %}text-decoration-line-through text-muted{% else %}fw-bold{% endif %}">{{ t.title }}</div>
+                <div class="small text-muted">{{ t.text }}</div>
+            </div>
+            <form action="/admin/legal/todo/{{ t.key }}" method="post" class="flex-shrink-0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button class="btn btn-sm {% if t.done %}btn-success{% else %}btn-outline-secondary{% endif %}">
+                    {% if t.done %}<i class="fas fa-check me-1"></i>Сделано{% else %}Отметить{% endif %}
+                </button>
+            </form>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+
+{% endblock %}

@@ -1,21 +1,70 @@
 {% extends "base.html" %}
+{% block title %}Оформление заказа — Диантус{% endblock %}
 {% block content %}
-<h1 class="catalog-title mb-4">Оформление</h1>
+<h1 class="catalog-title mb-4">Оформление заказа</h1>
+
+{% if checkout_errors %}
+<div class="alert alert-danger py-2 px-3 small">
+    <ul class="mb-0 ps-3">{% for e in checkout_errors %}<li>{{ e }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
 <div class="card p-4">
-    <p class="text-muted">Менеджер свяжется с вами для подтверждения.</p>
-    <form action="/place_order" method="post">
+    <form action="/place_order" method="post" id="checkout-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="order_token" value="{{ order_token }}">
-        <div class="mb-3">
-            <label class="form-label fw-bold">Комментарий</label>
-            <textarea name="comment" class="form-control" rows="3" maxlength="1000"
-                      placeholder="Например: нужна досрочная отгрузка"></textarea>
+
+        {# ── К какой дате нужны цветы ── #}
+        <div class="mb-4">
+            <label class="form-label fw-bold" for="co-date">К какой дате нужны цветы <span class="text-muted fw-normal">(необязательно)</span></label>
+            <input type="date" id="co-date" name="desired_date" class="form-control" style="max-width:220px"
+                   min="{{ min_date }}" max="{{ max_date }}" value="{{ checkout_form.desired_date or '' }}">
+            <div class="form-text">
+                Менеджер учтёт дату при подтверждении. Для товаров из других стран заказывать нужно заранее —
+                <a href="/deadlines" target="_blank" rel="noopener">сколько дней нужно на каждую страну</a>.
+            </div>
         </div>
+
+        {# ── Как получить ── #}
+        {% set method = checkout_form.delivery_method or last_method or '' %}
+        <div class="mb-4">
+            <div class="form-label fw-bold">Как получить заказ <span class="text-muted fw-normal">(необязательно)</span></div>
+            <div class="form-check">
+                <input class="form-check-input" type="radio" name="delivery_method" id="co-pickup" value="pickup"
+                       {% if method == 'pickup' %}checked{% endif %}>
+                <label class="form-check-label" for="co-pickup">Самовывоз{% if config.SHOP_ADDRESS %} — {{ config.SHOP_ADDRESS }}{% endif %}</label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="radio" name="delivery_method" id="co-delivery" value="delivery"
+                       {% if method == 'delivery' %}checked{% endif %}>
+                <label class="form-check-label" for="co-delivery">Доставка по адресу</label>
+            </div>
+            <div class="mt-2" id="co-address-row" {% if method != 'delivery' %}hidden{% endif %}>
+                <label class="form-label small fw-bold" for="co-address">Адрес доставки</label>
+                <textarea id="co-address" name="delivery_address" class="form-control" rows="2" maxlength="500"
+                          placeholder="Город, улица, дом, этаж, как проехать">{{ checkout_form.delivery_address or last_address or '' }}</textarea>
+            </div>
+        </div>
+
+        <div class="mb-4">
+            <label class="form-label fw-bold" for="co-comment">Комментарий <span class="text-muted fw-normal">(необязательно)</span></label>
+            <textarea id="co-comment" name="comment" class="form-control" rows="3" maxlength="1000"
+                      placeholder="Например: нужна досрочная отгрузка, позвоните за час до доставки">{{ checkout_form.comment or '' }}</textarea>
+        </div>
+
+        <div class="alert alert-light border small mb-4">
+            <div><i class="fas fa-credit-card me-1"></i><strong>Оплата:</strong> {{ payment_terms }}.</div>
+            <div class="mt-1"><i class="fas fa-phone me-1"></i>Менеджер свяжется с вами, подтвердит заказ и выставит счёт.
+                Договор считается заключённым после подтверждения —
+                <a href="/terms" target="_blank" rel="noopener">условия работы</a>.</div>
+        </div>
+
         <button type="submit" class="btn btn-primary btn-lg w-100">
-            <i class="fas fa-check me-2"></i>Подтвердить заказ
+            <i class="fas fa-check me-2"></i>Подтвердить заказ на {{ total|price }} ₽
         </button>
     </form>
 </div>
+
 <div class="cart-summary mt-3">
     {% for item in cart %}
     {% set pack = item.package_size or 1 %}
@@ -41,4 +90,19 @@
         <span>Итого:</span><strong>{{ total|price }} ₽</strong>
     </div>
 </div>
+<p class="text-center mt-3"><a href="/cart">← Вернуться в корзину и изменить количество</a></p>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+    var row = document.getElementById('co-address-row');
+    var area = document.getElementById('co-address');
+    document.querySelectorAll('input[name="delivery_method"]').forEach(function (r) {
+        r.addEventListener('change', function () {
+            var show = document.getElementById('co-delivery').checked;
+            row.hidden = !show;
+            if (show) area.focus();
+        });
+    });
+})();
+</script>
 {% endblock %}

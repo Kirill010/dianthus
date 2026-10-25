@@ -74,8 +74,27 @@ class User(Base):
     notifications = relationship("Notification", back_populates="user",
                                  cascade="all, delete-orphan")
     totp_secret = Column(String(64), default="", nullable=False)
-    # Когда клиент дал согласие на обработку персональных данных (152-ФЗ)
+    # Когда клиент дал согласие на обработку персональных данных (152-ФЗ),
+    # какой редакции документа и с какого IP. Полная история — в consent_log.
     consent_at = Column(DateTime, nullable=True)
+    consent_version = Column(String(32), default="")
+    consent_ip = Column(String(45), default="")
+    # Отдельное, необязательное согласие на рекламу (ст. 18 закона «О рекламе»):
+    # без него клиенту нельзя звонить и писать с предложениями — только по заказам.
+    marketing_consent = Column(Boolean, default=False, nullable=False)
+    marketing_consent_at = Column(DateTime, nullable=True)
+    # Сотрудник без полных прав: заказы, клиенты, рекламации (но не ключи 1С,
+    # не юридические тексты, не справочник и поставки)
+    is_manager = Column(Boolean, default=False, nullable=False)
+    # Внутренняя заметка менеджеров о клиенте (клиент её не видит)
+    staff_note = Column(Text, default="")
+    last_login_at = Column(DateTime, nullable=True)
+    # Когда данные клиента обезличены по его запросу (удаление/отзыв согласия)
+    anonymized_at = Column(DateTime, nullable=True)
+
+    @property
+    def is_staff(self) -> bool:
+        return bool(self.is_admin or self.is_manager)
 
 
 class Product(Base):
@@ -222,6 +241,14 @@ class Order(Base):
     # двойная отправка формы (два быстрых клика, повтор запроса на плохой
     # сети) создаст только ОДИН заказ — вторая вставка упадёт на уникальности.
     order_token = Column(String(64), nullable=True)
+    # К какой дате клиенту нужны цветы (необязательно). От неё считаются
+    # сроки предзаказа и планируется сборка.
+    desired_date = Column(DateTime, nullable=True)
+    # Как клиент получит заказ: pickup — самовывоз, delivery — доставка по адресу
+    delivery_method = Column(String(16), default="")
+    delivery_address = Column(String(500), default="")
+    # Внутренняя заметка сотрудников (клиент её не видит)
+    staff_note = Column(Text, default="")
     __table_args__ = (Index("uq_orders_order_token", "order_token", unique=True),)
     user = relationship("User", back_populates="orders")
     items = relationship("OrderItem", back_populates="order",
@@ -292,3 +319,189 @@ class AuditLog(Base):
     ip = Column(String(45), default="")
     created_at = Column(DateTime, default=_utcnow, index=True)
     user = relationship("User")
+
+
+# ═══════════════════════════════════════════════════════════
+# Согласия, юридические документы, запросы на удаление данных (152-ФЗ)
+# ═══════════════════════════════════════════════════════════
+
+class ConsentLog(Base):
+    """Неизменяемый журнал согласий и отзывов: кто, когда, на какую редакцию
+    документа и с какого адреса. Нужен, чтобы доказать согласие проверяющим."""
+    __tablename__ = "consent_log"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    kind = Column(String(16), nullable=False)          # pd | marketing
+    granted = Column(Boolean, nullable=False)          # True — дал, False — отозвал
+    doc_version = Column(String(32), default="")
+    source = Column(String(40), default="")            # registration | profile | admin
+    ip = Column(String(45), default="")
+    user_agent = Column(String(255), default="")
+    created_at = Column(DateTime, default=_utcnow, index=True)
+    user = relationship("User")
+
+
+class LegalDocument(Base):
+    """Юридический текст сайта (политика, согласия, условия) — правится в админке."""
+    __tablename__ = "legal_documents"
+    id = Column(Integer, primary_key=True, index=True)
+    slug = Column(String(40), unique=True, nullable=False, index=True)
+    title = Column(String(200), nullable=False)
+    body = Column(Text, nullable=False, default="")
+    version = Column(Integer, nullable=False, default=1)
+    updated_at = Column(DateTime, default=_utcnow)
+    updated_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    revisions = relationship("LegalDocumentRevision", back_populates="document",
+                             cascade="all, delete-orphan",
+                             order_by="LegalDocumentRevision.version.desc()")
+
+
+class LegalDocumentRevision(Base):
+    """Прежние редакции: по версии, на которую согласился клиент, всегда можно
+    восстановить, какой текст он видел."""
+    __tablename__ = "legal_document_revisions"
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, ForeignKey("legal_documents.id"), nullable=False, index=True)
+    version = Column(Integer, nullable=False)
+    title = Column(String(200), default="")
+    body = Column(Text, default="")
+    saved_at = Column(DateTime, default=_utcnow)
+    saved_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    document = relationship("LegalDocument", back_populates="revisions")
+
+
+class SiteSetting(Base):
+    """Настройки, которые владелец меняет в админке, а не в файле .env
+    (условия оплаты, сроки предзаказа, отметки юридического списка дел)."""
+    __tablename__ = "site_settings"
+    key = Column(String(80), primary_key=True)
+    value = Column(Text, default="")
+    updated_at = Column(DateTime, default=_utcnow)
+    updated_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+
+class PasswordReset(Base):
+    """Одноразовая ссылка «забыли пароль». В базе — только хэш токена."""
+    __tablename__ = "password_resets"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    token_hash = Column(String(64), unique=True, nullable=False, index=True)
+    created_at = Column(DateTime, default=_utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    ip = Column(String(45), default="")
+
+
+DATA_REQUEST_KINDS = {"delete": "Удаление данных / отзыв согласия", "export": "Выгрузка данных"}
+DATA_REQUEST_STATUSES = ["Новая", "Выполнена", "Отклонена"]
+
+
+class DataRequest(Base):
+    """Обращение клиента о его персональных данных: закон даёт на ответ 10 рабочих дней."""
+    __tablename__ = "data_requests"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    email_snapshot = Column(String(120), default="")   # кто обращался — даже после обезличивания
+    kind = Column(String(16), nullable=False)          # delete | export
+    status = Column(String(16), nullable=False, default="Новая", index=True)
+    note = Column(Text, default="")
+    created_at = Column(DateTime, default=_utcnow, index=True)
+    handled_at = Column(DateTime, nullable=True)
+    handled_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    user = relationship("User", foreign_keys=[user_id])
+
+
+# ═══════════════════════════════════════════════════════════
+# Обмен с 1С: ключи доступа и журнал
+# ═══════════════════════════════════════════════════════════
+
+class ApiKey(Base):
+    """Ключ доступа для 1С. В базе — только хэш: сам ключ показывается один раз."""
+    __tablename__ = "api_keys"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    key_prefix = Column(String(16), default="")        # первые символы — чтобы узнать ключ в списке
+    key_hash = Column(String(64), unique=True, nullable=False, index=True)
+    allowed_ips = Column(String(500), default="")      # пусто = с любого адреса
+    created_at = Column(DateTime, default=_utcnow)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    last_used_at = Column(DateTime, nullable=True)
+    last_used_ip = Column(String(45), default="")
+    is_active = Column(Boolean, default=True, nullable=False)
+
+
+class ExchangeLog(Base):
+    """Журнал обращений 1С к сайту: владелец видит, работает ли обмен."""
+    __tablename__ = "exchange_log"
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime, default=_utcnow, index=True)
+    key_id = Column(Integer, ForeignKey("api_keys.id"), nullable=True)
+    auth_kind = Column(String(16), default="")         # key | password | none
+    method = Column(String(8), default="")
+    endpoint = Column(String(120), default="", index=True)
+    status_code = Column(Integer, default=0)
+    ok = Column(Boolean, default=False, index=True)
+    ip = Column(String(45), default="")
+    duration_ms = Column(Integer, default=0)
+    summary = Column(String(500), default="")
+    repeat_count = Column(Integer, default=1)          # одинаковые неудачи за час схлопываются
+
+
+# ═══════════════════════════════════════════════════════════
+# Рекламации (жалобы на качество)
+# ═══════════════════════════════════════════════════════════
+
+CLAIM_STATUSES = ["Новая", "В работе", "Решена", "Отклонена"]
+CLAIM_URGENCY = ["обычная", "высокая"]
+
+
+class Claim(Base):
+    """Жалоба клиента на качество. Поля повторяют карточку рекламации владельца."""
+    __tablename__ = "claims"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=True, index=True)
+    product_name = Column(String(200), default="")
+    country = Column(String(100), default="")
+    affected_qty = Column(Integer, default=0)           # сколько испорчено
+    total_qty = Column(Integer, default=0)              # из скольких
+    unit = Column(String(20), default="шт")
+    received_at = Column(DateTime, nullable=True)       # когда получили товар
+    opened_at = Column(DateTime, nullable=True)         # когда вскрыли коробку
+    storage_notes = Column(Text, default="")            # вода, температура, как хранили
+    description = Column(Text, default="")              # слова клиента как есть
+    expectation = Column(Text, default="")              # чего хочет клиент
+    status = Column(String(20), nullable=False, default="Новая", index=True)
+    urgency = Column(String(16), default="обычная")
+    staff_comment = Column(Text, default="")            # внутреннее; предположения помечать
+    owner_decision = Column(Text, default="")           # решение владельца
+    reply_to_client = Column(Text, default="")          # ответ, который видит клиент
+    created_at = Column(DateTime, default=_utcnow, index=True)
+    updated_at = Column(DateTime, default=_utcnow)
+    resolved_at = Column(DateTime, nullable=True)
+    user = relationship("User")
+    order = relationship("Order")
+    photos = relationship("ClaimPhoto", back_populates="claim",
+                          cascade="all, delete-orphan",
+                          order_by="ClaimPhoto.id")
+
+    @property
+    def number(self) -> str:
+        return f"РЕК-{self.id:04d}" if self.id else "РЕК-—"
+
+    @property
+    def is_late(self) -> bool:
+        """С момента получения прошло больше суток — по правилам не отказываем,
+        а передаём владельцу с пометкой."""
+        if not (self.received_at and self.created_at):
+            return False
+        return (self.created_at - self.received_at).total_seconds() > 24 * 3600
+
+
+class ClaimPhoto(Base):
+    __tablename__ = "claim_photos"
+    id = Column(Integer, primary_key=True, index=True)
+    claim_id = Column(Integer, ForeignKey("claims.id"), nullable=False, index=True)
+    url = Column(String(500), nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
+    claim = relationship("Claim", back_populates="photos")

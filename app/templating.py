@@ -4,6 +4,7 @@ import logging
 import os
 import tempfile
 import time
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import Request
@@ -16,7 +17,7 @@ from .config import config
 from .deps import get_current_user
 from .security import ensure_csrf_token
 from .services.preorder_service import preorder_count_db
-from .timeutils import DATETIME_FMT, fmt_local
+from .timeutils import DATETIME_FMT, fmt_local, shop_tz
 from . import models
 
 logger = logging.getLogger(__name__)
@@ -165,6 +166,7 @@ def render(request: Request, template: str, db: Session, **context):
         "csrf_token": csrf_token,
         "config": config,
         "unread_count": unread_count,
+        "current_year": datetime.now(shop_tz()).year,
         # CSP nonce из SecurityHeadersMiddleware — для встроенных <script>.
         "csp_nonce": getattr(request.state, "csp_nonce", ""),
     })

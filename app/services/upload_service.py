@@ -31,7 +31,7 @@ def _read_file(file: UploadFile) -> bytes:
     except Exception:
         return b""
 
-def save_product_image(file: UploadFile) -> str:
+def save_product_image(file: UploadFile, max_size: int | None = None) -> str:
     if file is None or not file.filename:
         return ""
     ext = Path(file.filename).suffix.lower()
@@ -41,8 +41,9 @@ def save_product_image(file: UploadFile) -> str:
     content = _read_file(file)
     if not content:
         raise HTTPException(400, "Файл пустой")
-    if len(content) > MAX_SIZE:
-        raise HTTPException(400, f"Файл больше {MAX_SIZE // (1024 * 1024)} МБ")
+    limit = max_size or MAX_SIZE
+    if len(content) > limit:
+        raise HTTPException(400, f"Файл больше {limit // (1024 * 1024)} МБ")
 
     try:
         img = Image.open(BytesIO(content))          # читает только заголовок
@@ -63,18 +64,23 @@ def save_product_image(file: UploadFile) -> str:
     img.save(UPLOAD_DIR / f"{name}.webp", "WEBP", quality=88, method=6)
     return f"/static/uploads/{name}.webp"
 
-def save_uploads(files: List[UploadFile] | None) -> List[str]:
+def save_uploads(files: List[UploadFile] | None, max_size: int | None = None,
+                 skipped: list | None = None) -> List[str]:
+    """Сохраняет картинки. Непринятые файлы не роняют загрузку: они попадают
+    в лог и (если передан список skipped) — в него, чтобы сказать человеку."""
     if not files:
         return []
     urls = []
     for f in files:
         if f and f.filename:
             try:
-                urls.append(save_product_image(f))
+                urls.append(save_product_image(f, max_size=max_size))
             except HTTPException as e:
                 # Раньше здесь был print() — в проде он уходил в никуда,
                 # и причина «фото не загрузилось» терялась.
                 logger.warning("Загрузка %s пропущена: %s", f.filename, e.detail)
+                if skipped is not None:
+                    skipped.append(f"{f.filename[:40]}: {e.detail}")
     return urls
 
 def delete_upload(url: str) -> bool:

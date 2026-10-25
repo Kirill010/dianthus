@@ -98,6 +98,18 @@ def mem_db():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+
+    # В боевой PostgreSQL внешние ключи СТРОГИЕ, а SQLite по умолчанию их не
+    # проверяет — поэтому удаление записи, на которую ещё кто-то ссылается,
+    # «работало» в тестах и падало в проде. Включаем проверку и здесь.
+    from sqlalchemy import event
+
+    @event.listens_for(eng, "connect")
+    def _fk_on(dbapi_conn, _record):
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA foreign_keys=ON")
+        cur.close()
+
     Base.metadata.create_all(bind=eng)
     session = sessionmaker(
         bind=eng, autocommit=False, autoflush=False, expire_on_commit=False

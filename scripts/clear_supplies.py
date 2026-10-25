@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # корень
 import _guard  # noqa: E402,F401 — в ENV=prod отказывается работать без явного подтверждения
 
 from app.database import SessionLocal
-from app.models import OrderItem, Supply, SupplyItem
+from app.models import OrderItem, Preorder, Supply, SupplyItem
 
 
 def clear_supplies() -> None:
@@ -38,6 +38,9 @@ def clear_supplies() -> None:
                          synchronize_session=False))
         print(f"🔗 Обнулено supply_item в позициях заказов: {n_ref}")
 
+        n_pre = (db.query(Preorder).filter(Preorder.supply_item_id.isnot(None))
+                 .update({Preorder.supply_item_id: None}, synchronize_session=False))
+        print(f"🔗 Обнулено supply_item в предзаказах: {n_pre}")
         n_items = db.query(SupplyItem).delete(synchronize_session=False)
         print(f"🗑  Партий: {n_items}")
 

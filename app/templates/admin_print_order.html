@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% set hide_bottom_nav = true %}
+{% block title %}Лист сборки — заказ №{{ order.id }}{% endblock %}
+{% block content %}
+<div class="no-print d-flex gap-2 mb-3">
+    <button type="button" class="btn btn-primary" id="print-btn"><i class="fas fa-print me-1"></i>Печать</button>
+    <a href="/admin/orders/{{ order.id }}" class="btn btn-outline-secondary">К заказу</a>
+</div>
+
+<div class="card p-4 pick-sheet">
+    <div class="d-flex justify-content-between flex-wrap gap-2 mb-3">
+        <h1 class="h3 mb-0">Лист сборки · заказ №{{ order.id }}</h1>
+        <div class="text-end">
+            <div class="h5 mb-0">{% if order.desired_date %}Нужно к {{ order.desired_date.strftime('%d.%m.%Y') }}{% else %}Дата не указана{% endif %}</div>
+            <div class="small text-muted">Статус: {{ order.status }}</div>
+        </div>
+    </div>
+    <div class="row mb-3">
+        <div class="col-sm-6">
+            <strong>{{ order.user.company_name if order.user else 'Гость' }}</strong><br>
+            {% if order.user %}{{ order.user.full_name }}, {{ order.user.phone }}{% endif %}
+        </div>
+        <div class="col-sm-6">
+            {% if order.delivery_method == 'delivery' %}<strong>Доставка:</strong> {{ order.delivery_address }}
+            {% elif order.delivery_method == 'pickup' %}<strong>Самовывоз</strong>
+            {% else %}Способ получения не указан{% endif %}
+        </div>
+    </div>
+    <table class="table table-bordered align-middle">
+        <thead><tr><th style="width:36px">✓</th><th>Товар</th><th class="text-end">Упаковок</th><th class="text-end">Шт в упак.</th><th class="text-end">Всего шт</th></tr></thead>
+        <tbody>
+        {% for i in order.items %}
+        <tr>
+            <td class="text-center">☐</td>
+            <td><strong>{{ i.product_name }}</strong></td>
+            <td class="text-end h5 mb-0">{{ i.quantity }}</td>
+            <td class="text-end">{{ i.package_size or 1 }}</td>
+            <td class="text-end">{{ i.total_stems }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+        <tfoot><tr><td colspan="4" class="text-end"><strong>Итого штук:</strong></td><td class="text-end"><strong>{{ total_stems }}</strong></td></tr></tfoot>
+    </table>
+    {% if order.comment %}<p><strong>Комментарий клиента:</strong> {{ order.comment }}</p>{% endif %}
+    {% if order.staff_note %}<p><strong>Заметка сотрудников:</strong> {{ order.staff_note }}</p>{% endif %}
+    <p class="mt-4 mb-0">Собрал: ____________________ &nbsp; Проверил: ____________________ &nbsp; Время: ________</p>
+</div>
+<script nonce="{{ csp_nonce }}">
+document.getElementById('print-btn').addEventListener('click', function () { window.print(); });
+</script>
+{% endblock %}

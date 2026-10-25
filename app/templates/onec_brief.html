@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% set hide_bottom_nav = true %}
+
+{% block title %}Памятка программисту 1С — Диантус{% endblock %}
+{% block description %}Как настроить обмен 1С с сайтом Диантус: форматы данных, примеры, проверка.{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-xl-10">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2 no-print">
+            <span class="text-muted small">Документ для программиста. Ключ доступа в нём не указан — его передаёт владелец сайта.</span>
+            <a class="btn btn-outline-secondary btn-sm" href="/1c-docs.md"><i class="fas fa-download me-1"></i>Скачать файлом (.md)</a>
+        </div>
+        <article class="card p-4 legal-text onec-brief">
+            {{ body_html }}
+        </article>
+    </div>
+</div>
+{% endblock %}

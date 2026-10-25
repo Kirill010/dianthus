@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Сообщить о проблеме — Диантус{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+<div class="col-lg-8">
+<h1 class="catalog-title mb-2"><i class="fas fa-triangle-exclamation me-2"></i>Сообщить о проблеме с товаром</h1>
+<p class="text-muted">Расскажите, что случилось, и приложите фото — так мы разберёмся быстрее.
+Цветы — скоропортящийся товар, поэтому лучше написать <strong>в течение суток</strong> после получения. Решение по обращению принимает руководитель после проверки.</p>
+
+{% if errors %}
+<div class="alert alert-danger py-2 px-3 small"><ul class="mb-0 ps-3">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>
+{% endif %}
+
+<form action="/claims" method="post" enctype="multipart/form-data" class="card p-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <div class="mb-3">
+        <label class="form-label fw-bold" for="cl-order">Из какого заказа</label>
+        {% set chosen = (order.id if order else (form.order_id or 0))|string %}
+        <select name="order_id" id="cl-order" class="form-select">
+            <option value="0">Не из заказа / не помню</option>
+            {% for o in orders %}
+            <option value="{{ o.id }}" {% if chosen == o.id|string %}selected{% endif %}>
+                №{{ o.id }} от {{ o.created_at|localdt('%d.%m.%Y') }} — {{ o.items|length }} поз.
+            </option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label fw-bold" for="cl-product">Какой товар *</label>
+        <input type="text" name="product_name" id="cl-product" class="form-control" maxlength="200" required
+               list="items-{{ chosen }}" value="{{ form.product_name or '' }}" placeholder="Начните вводить — подскажем из заказа">
+        {% for o in orders %}
+        <datalist id="items-{{ o.id }}">{% for i in o.items %}<option value="{{ i.product_name }}">{% endfor %}</datalist>
+        {% endfor %}
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-sm-4">
+            <label class="form-label fw-bold" for="cl-aff">Сколько испорчено</label>
+            <input type="number" name="affected_qty" id="cl-aff" class="form-control" min="0" value="{{ form.affected_qty if form.affected_qty is not none else '' }}">
+        </div>
+        <div class="col-sm-4">
+            <label class="form-label fw-bold" for="cl-total">Из скольких</label>
+            <input type="number" name="total_qty" id="cl-total" class="form-control" min="0" value="{{ form.total_qty if form.total_qty is not none else '' }}">
+        </div>
+        <div class="col-sm-4">
+            <label class="form-label fw-bold" for="cl-unit">В чём считаем</label>
+            <select name="unit" id="cl-unit" class="form-select">
+                <option value="шт" {% if form.unit != 'упак.' %}selected{% endif %}>штуки</option>
+                <option value="упак." {% if form.unit == 'упак.' %}selected{% endif %}>упаковки</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-sm-6">
+            <label class="form-label fw-bold" for="cl-recv">Когда получили</label>
+            <input type="date" name="received_at" id="cl-recv" class="form-control" max="{{ today }}" value="{{ form.received_at or '' }}">
+        </div>
+        <div class="col-sm-6">
+            <label class="form-label fw-bold" for="cl-open">Когда вскрыли коробку</label>
+            <input type="date" name="opened_at" id="cl-open" class="form-control" max="{{ today }}" value="{{ form.opened_at or '' }}">
+        </div>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label fw-bold" for="cl-desc">Что случилось *</label>
+        <textarea name="description" id="cl-desc" class="form-control" rows="4" maxlength="3000" required
+                  placeholder="Например: бутоны гнилые, стебли вялые, не раскрылись, меньше, чем заказывали…">{{ form.description or '' }}</textarea>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label fw-bold" for="cl-store">Как хранили</label>
+        <textarea name="storage_notes" id="cl-store" class="form-control" rows="2" maxlength="3000"
+                  placeholder="Вода (чистая? сменили?), температура в помещении, сколько стояли до осмотра">{{ form.storage_notes or '' }}</textarea>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label fw-bold" for="cl-exp">Что вы хотели бы получить</label>
+        <textarea name="expectation" id="cl-exp" class="form-control" rows="2" maxlength="3000"
+                  placeholder="Например: замену, возврат денег, скидку на следующий заказ">{{ form.expectation or '' }}</textarea>
+        <div class="form-text">Это пожелание, а не договорённость: решение примет руководитель.</div>
+    </div>
+
+    <div class="mb-4">
+        <label class="form-label fw-bold" for="cl-photos">Фото (до {{ max_photos }} штук)</label>
+        <input type="file" name="photos" id="cl-photos" class="form-control" accept="image/*" multiple>
+        <div class="form-text">Покажите коробку целиком, затем крупно проблемные цветы и накладную, если есть.</div>
+    </div>
+
+    <button class="btn btn-primary btn-lg"><i class="fas fa-paper-plane me-2"></i>Отправить обращение</button>
+</form>
+</div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+    var order = document.getElementById('cl-order');
+    var product = document.getElementById('cl-product');
+    order.addEventListener('change', function () {
+        product.setAttribute('list', 'items-' + order.value);
+    });
+})();
+</script>
+{% endblock %}

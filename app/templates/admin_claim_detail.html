@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% set hide_bottom_nav = true %}
+{% block title %}{{ claim.number }} — админка{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h2 class="mb-0">{{ claim.number }} · {{ claim.product_name or 'Товар' }}</h2>
+    <a href="/admin/claims" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i>К списку</a>
+</div>
+
+{% if claim.is_late %}
+<div class="alert alert-danger"><i class="fas fa-clock me-1"></i><strong>С момента получения прошло больше суток.</strong>
+    По правилам не отказываем сами — передайте владельцу с этой пометкой.</div>
+{% endif %}
+<div class="alert alert-light border small">
+    <strong>Правила ответа:</strong> клиенту ничего не обещаем (ни замену, ни деньги) — решение принимает владелец;
+    не спорим и не обвиняем; предположения в комментарии помечаем словом «предположение».
+</div>
+
+<div class="row g-3">
+<div class="col-lg-6">
+    <div class="card p-4 h-100">
+        <h5>От клиента</h5>
+        <dl class="row mb-0 small">
+            <dt class="col-sm-4">Клиент</dt>
+            <dd class="col-sm-8">{{ claim.user.company_name if claim.user else '—' }}<br>
+                {{ claim.user.full_name if claim.user else '' }}
+                {% if claim.user %}<br><a href="tel:{{ claim.user.phone }}">{{ claim.user.phone }}</a> · <a href="mailto:{{ claim.user.email }}">{{ claim.user.email }}</a>{% endif %}</dd>
+            {% if claim.order_id %}<dt class="col-sm-4">Заказ</dt><dd class="col-sm-8"><a href="/admin/orders/{{ claim.order_id }}">№{{ claim.order_id }}</a></dd>{% endif %}
+            <dt class="col-sm-4">Товар</dt><dd class="col-sm-8">{{ claim.product_name }}{% if claim.country %} ({{ claim.country }}){% endif %}</dd>
+            <dt class="col-sm-4">Испорчено</dt><dd class="col-sm-8">{{ claim.affected_qty }} из {{ claim.total_qty }} {{ claim.unit }}</dd>
+            <dt class="col-sm-4">Получено</dt><dd class="col-sm-8">{{ claim.received_at.strftime('%d.%m.%Y') if claim.received_at else 'не указано' }}</dd>
+            <dt class="col-sm-4">Вскрыто</dt><dd class="col-sm-8">{{ claim.opened_at.strftime('%d.%m.%Y') if claim.opened_at else 'не указано' }}</dd>
+            <dt class="col-sm-4">Как хранили</dt><dd class="col-sm-8" style="white-space:pre-line">{{ claim.storage_notes or '—' }}</dd>
+            <dt class="col-sm-4">Слова клиента</dt><dd class="col-sm-8" style="white-space:pre-line">{{ claim.description }}</dd>
+            <dt class="col-sm-4">Чего хочет</dt><dd class="col-sm-8" style="white-space:pre-line">{{ claim.expectation or '—' }}</dd>
+            <dt class="col-sm-4">Подано</dt><dd class="col-sm-8">{{ claim.created_at|localdt }}</dd>
+        </dl>
+        {% if claim.photos %}
+        <div class="d-flex flex-wrap gap-2 mt-3">
+            {% for p in claim.photos %}<a href="{{ p.url }}" target="_blank" rel="noopener"><img src="{{ p.url }}" alt="Фото {{ loop.index }}" style="width:100px;height:100px;object-fit:cover;border-radius:10px"></a>{% endfor %}
+        </div>
+        {% else %}<p class="small text-muted mt-3 mb-0">Фото не приложены — попросите клиента прислать.</p>{% endif %}
+    </div>
+</div>
+<div class="col-lg-6">
+    <form method="post" action="/admin/claims/{{ claim.id }}" class="card p-4 h-100">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="row g-2 mb-3">
+            <div class="col-7">
+                <label class="form-label small fw-bold" for="ac-status">Статус</label>
+                <select name="status" id="ac-status" class="form-select">
+                    {% for s in statuses %}<option {% if claim.status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-5">
+                <label class="form-label small fw-bold" for="ac-urg">Срочность</label>
+                <select name="urgency" id="ac-urg" class="form-select">
+                    {% for u in urgencies %}<option {% if claim.urgency == u %}selected{% endif %}>{{ u }}</option>{% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label small fw-bold" for="ac-comment">Комментарий сотрудников (клиент не видит)</label>
+            <textarea name="staff_comment" id="ac-comment" class="form-control" rows="3" maxlength="3000">{{ claim.staff_comment }}</textarea>
+        </div>
+        <div class="mb-3">
+            <label class="form-label small fw-bold" for="ac-owner">Решение владельца (клиент не видит)</label>
+            <textarea name="owner_decision" id="ac-owner" class="form-control" rows="2" maxlength="3000"
+                      {% if not user.is_admin %}disabled placeholder="Заполняет владелец"{% endif %}>{{ claim.owner_decision }}</textarea>
+        </div>
+        <div class="mb-3">
+            <label class="form-label small fw-bold" for="ac-reply">Ответ клиенту (он увидит его на сайте и получит письмо)</label>
+            <textarea name="reply_to_client" id="ac-reply" class="form-control" rows="4" maxlength="3000">{{ claim.reply_to_client }}</textarea>
+        </div>
+        <button class="btn btn-primary"><i class="fas fa-save me-1"></i>Сохранить</button>
+    </form>
+</div>
+</div>
+{% endblock %}

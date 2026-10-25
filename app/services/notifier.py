@@ -250,6 +250,19 @@ _BASE_STYLE = """
 """
 
 
+def _delivery_lines(order) -> list[str]:
+    """Строки «нужно к … / доставка …» для писем (уже экранированные)."""
+    lines = []
+    if getattr(order, "desired_date", None):
+        lines.append(f"Нужно к: <b>{order.desired_date.strftime('%d.%m.%Y')}</b>")
+    method = getattr(order, "delivery_method", "")
+    if method == "delivery":
+        lines.append(f"Доставка: {_e(order.delivery_address)}")
+    elif method == "pickup":
+        lines.append("Самовывоз")
+    return lines
+
+
 def notify_admin_new_order(order, user) -> None:
     """Уведомление о новом заказе на email админам."""
     if not user:
@@ -296,6 +309,12 @@ def notify_admin_new_order(order, user) -> None:
             </p>
         """
 
+    delivery_html = ""
+    if _delivery_lines(order):
+        delivery_html = ('<p style="background:#fff4e5; padding:12px; border-radius:8px; '
+                         'border-left:3px solid #f0b46c;">'
+                         + "<br>".join(_delivery_lines(order)) + "</p>")
+
     body = f"""
     <!DOCTYPE html>
     <html><head><meta charset="UTF-8">{_BASE_STYLE}</head>
@@ -340,6 +359,7 @@ def notify_admin_new_order(order, user) -> None:
         </table>
 
         {comment_html}
+        {delivery_html}
 
         <a href="{config.APP_URL}/admin/orders/{order.id}"
            class="btn">Открыть заказ в админке</a>
@@ -546,6 +566,8 @@ def notify_client_order_created(order, user) -> None:
             f"<td>−{order.discount_amount:.2f} ₽</td></tr>"
         )
 
+    extra = "".join(f"<p>{line}</p>" for line in _delivery_lines(order))
+
     body = f"""
     <!DOCTYPE html>
     <html><head><meta charset="UTF-8">{_BASE_STYLE}</head>
@@ -555,6 +577,7 @@ def notify_client_order_created(order, user) -> None:
         <p style="font-size:16px;">Здравствуйте, <b>{_e(user.full_name)}</b>!</p>
         <p>Мы получили ваш заказ от {fmt_local(order.created_at)}.
            Менеджер свяжется с вами для подтверждения и уточнения доставки.</p>
+        {extra}
         <table>
           {rows}
           {discount}

@@ -14,7 +14,7 @@ from .security import (check_csrf, check_rate_limit, reset_rate_limit,
                        ensure_csrf_token, _client_ip, consume_once,
                        check_login_lock, record_login_failure,
                        reset_login_failures)
-from .services import totp
+from .services import legal, totp
 from .services.passwords import hash_password, verify_password
 from .validators import (validate_company_name, validate_email,
                          validate_full_name, validate_password,
@@ -55,6 +55,7 @@ async def register(
     inn: str = Form(""),
     city: str = Form(""),
     consent: str = Form(""),
+    marketing_consent: str = Form(""),
     db: Session = Depends(get_db),
 ):
     email = email.strip().lower()
@@ -78,7 +79,8 @@ async def register(
         if msg:
             errors.append(msg)
 
-    # 152-ФЗ: персональные данные обрабатываются только с согласием субъекта
+    # 152-ФЗ: персональные данные обрабатываются только с согласием субъекта.
+    # Согласие на рекламу — отдельное и необязательное (ст. 18 закона «О рекламе»).
     if not consent:
         errors.append("Нужно согласие на обработку персональных данных")
 
@@ -92,6 +94,7 @@ async def register(
             "email": email, "full_name": full_name,
             "phone": phone, "company_name": company_name,
             "inn": inn, "city": city, "consent": bool(consent),
+            "marketing_consent": bool(marketing_consent),
         }
         return RedirectResponse(url="/register", status_code=303)
 
@@ -106,11 +109,17 @@ async def register(
         full_name=full_name, phone=phone,
         company_name=company_name, inn=inn, city=city,
         is_approved=False,
-        # фиксируем момент согласия — подтверждение на случай запроса проверяющих
-        consent_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
     try:
         db.add(user)
+        db.flush()                       # нужен id клиента для журнала согласий
+        # Фиксируем согласия: дата, версия текста, IP — доказательство на случай
+        # проверки. Рекламное согласие записывается только если клиент его отметил.
+        legal.record_consent(db, user, "pd", True, request,
+                             source="registration", commit=False)
+        if marketing_consent:
+            legal.record_consent(db, user, "marketing", True, request,
+                                 source="registration", commit=False)
         db.commit()
         db.refresh(user)
     except IntegrityError:
@@ -211,6 +220,13 @@ async def login(
 
     await reset_login_failures(email)
     await reset_rate_limit(request, "login")
+
+    try:                                  # «когда клиент заходил в последний раз»
+        user.last_login_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        db.commit()
+    except Exception as e:                # не мешаем входу из-за служебной отметки
+        db.rollback()
+        logger.warning("last_login_at: %s", e)
 
     request.session["user_id"] = user.id
     request.session["flash"] = f"Добро пожаловать, {user.company_name}!"

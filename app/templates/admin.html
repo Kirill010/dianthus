@@ -11,6 +11,7 @@
             <div class="text-muted small">Заказов сегодня</div>
         </div>
     </div>
+    {% if user.is_admin %}
     <div class="col-6 col-md-3">
         <div class="card p-3 text-center h-100">
             <i class="fas fa-ruble-sign fa-2x text-warning mb-2"></i>
@@ -25,31 +26,59 @@
             <div class="text-muted small">Выручка за неделю</div>
         </div>
     </div>
+    {% else %}
+    <div class="col-6 col-md-3">
+        <div class="card p-3 text-center h-100">
+            <i class="fas fa-calendar-week fa-2x mb-2" style="color:#c97b4a"></i>
+            <div style="font-size:1.6rem;font-weight:700;color:#35492f">{{ stats.orders_week }}</div>
+            <div class="text-muted small">Заказов за неделю</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card p-3 text-center h-100">
+            <i class="fas fa-hourglass-half fa-2x text-warning mb-2"></i>
+            <div style="font-size:1.6rem;font-weight:700;color:#35492f">{{ stats.pending_orders }}</div>
+            <div class="text-muted small">Ждут подтверждения</div>
+        </div>
+    </div>
+    {% endif %}
     <div class="col-6 col-md-3">
         <div class="card p-3 text-center h-100">
             <i class="fas fa-user-plus fa-2x mb-2" style="color:#8ba38c"></i>
             <div style="font-size:1.6rem;font-weight:700;color:#35492f">{{ stats.new_clients_week }}</div>
-            <div class="text-muted small">Новых клиентов</div>
+            <div class="text-muted small">Новых клиентов за неделю</div>
         </div>
     </div>
 </div>
 
-<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-    <h2 class="mb-0"><i class="fas fa-cog me-2"></i>Админка</h2>
-    <a href="/admin/audit" class="btn btn-outline-secondary btn-sm">
-        <i class="fas fa-clipboard-list me-1"></i>Журнал действий
-    </a>
-</div>
-
-{% if pending_count %}
-<div class="alert alert-warning d-flex align-items-center mb-4">
-    <i class="fas fa-user-clock fa-2x me-3"></i>
-    <div class="flex-grow-1">
-        <strong>Новых заявок: {{ pending_count }}</strong>
-        <div class="small">Их нужно одобрить.</div>
+<!-- ЧТО СДЕЛАТЬ СЕГОДНЯ -->
+<div class="card p-3 mb-4">
+    <h5 class="mb-3"><i class="fas fa-list-check me-2"></i>Что сделать сегодня</h5>
+    <div class="row g-2 todo-grid">
+        <div class="col-6 col-md-3"><a class="todo-tile {% if todo.new_orders %}todo-tile--hot{% endif %}" href="/admin?status=Новый"><strong>{{ todo.new_orders }}</strong><span>новых заказов — подтвердить</span></a></div>
+        <div class="col-6 col-md-3"><a class="todo-tile {% if todo.urgent_orders %}todo-tile--hot{% endif %}" href="/admin?due=1"><strong>{{ todo.urgent_orders }}</strong><span>срочных (нужны сегодня–завтра)</span></a></div>
+        <div class="col-6 col-md-3"><a class="todo-tile {% if todo.applications %}todo-tile--hot{% endif %}" href="/admin#clients"><strong>{{ todo.applications }}</strong><span>заявок клиентов — одобрить</span></a></div>
+        <div class="col-6 col-md-3"><a class="todo-tile {% if todo.claims %}todo-tile--hot{% endif %}" href="/admin/claims"><strong>{{ todo.claims }}</strong><span>рекламаций в работе</span></a></div>
+        {% if user.is_admin %}
+        <div class="col-6 col-md-3"><a class="todo-tile {% if todo.data_requests %}todo-tile--hot{% endif %}" href="/admin/data-requests"><strong>{{ todo.data_requests }}</strong><span>запросов на удаление данных</span></a></div>
+        <div class="col-6 col-md-3"><a class="todo-tile" href="/admin/integration"><strong>{{ todo.waiting_1c }}</strong><span>заказов ждут загрузки в 1С</span></a></div>
+        {% endif %}
     </div>
 </div>
-{% endif %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h2 class="mb-0"><i class="fas fa-cog me-2"></i>Админка{% if not user.is_admin %} <small class="text-muted fs-6">(менеджер)</small>{% endif %}</h2>
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="/admin/picking" class="btn btn-outline-primary btn-sm"><i class="fas fa-boxes-packing me-1"></i>Лист сборки</a>
+        <a href="/admin/claims" class="btn btn-outline-secondary btn-sm"><i class="fas fa-triangle-exclamation me-1"></i>Рекламации</a>
+        {% if user.is_admin %}
+        <a href="/admin/integration" class="btn btn-outline-secondary btn-sm"><i class="fas fa-plug me-1"></i>Интеграция с 1С</a>
+        <a href="/admin/legal" class="btn btn-outline-secondary btn-sm"><i class="fas fa-scale-balanced me-1"></i>Юридическое</a>
+        <a href="/admin/settings" class="btn btn-outline-secondary btn-sm"><i class="fas fa-sliders me-1"></i>Настройки</a>
+        <a href="/admin/audit" class="btn btn-outline-secondary btn-sm"><i class="fas fa-clipboard-list me-1"></i>Журнал</a>
+        {% endif %}
+    </div>
+</div>
 
 <ul class="nav nav-tabs" role="tablist">
     <li class="nav-item">
@@ -68,6 +97,7 @@
             {% endif %}
         </a>
     </li>
+    {% if user.is_admin %}
     <li class="nav-item">
         <a class="nav-link" data-bs-toggle="tab" href="#products">
             <i class="fas fa-seedling me-1"></i>Справочник
@@ -86,6 +116,7 @@
             <span class="badge bg-success ms-1">{{ active_total }}</span>
         </a>
     </li>
+    {% endif %}
 </ul>
 
 <div class="tab-content mt-3">
@@ -93,39 +124,43 @@
     <div class="tab-pane fade show active" id="orders">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h5 class="mb-0">Заказы</h5>
-            <div class="d-flex gap-2">
+            <div class="d-flex gap-2 flex-wrap">
                 <a href="/admin/orders/export" class="btn btn-outline-success btn-sm">
-                    <i class="fas fa-file-excel me-1"></i>Экспорт
+                    <i class="fas fa-file-excel me-1"></i>Заказы (Excel)
                 </a>
+                {% if user.is_admin %}
                 <a href="/admin/customers/export" class="btn btn-outline-success btn-sm">
-                    <i class="fas fa-users me-1"></i>Клиенты
+                    <i class="fas fa-users me-1"></i>Клиенты (Excel)
                 </a>
+                {% endif %}
             </div>
         </div>
 
+        <div class="d-flex gap-2 flex-wrap mb-3">
+            <a class="btn btn-sm {% if not orders_status and not orders_due %}btn-primary{% else %}btn-outline-primary{% endif %}" href="/admin">Все</a>
+            <a class="btn btn-sm {% if orders_due %}btn-danger{% else %}btn-outline-danger{% endif %}" href="/admin?due=1">Срочные ({{ todo.urgent_orders }})</a>
+            {% for s in statuses %}
+            <a class="btn btn-sm {% if orders_status == s %}btn-primary{% else %}btn-outline-primary{% endif %}"
+               href="/admin?status={{ s|urlencode }}">{{ s }} ({{ status_counts.get(s, 0) }})</a>
+            {% endfor %}
+        </div>
+
         <form action="/admin" method="get" class="row g-2 mb-3">
-            <div class="col-md-6">
+            {% if orders_status %}<input type="hidden" name="status" value="{{ orders_status }}">{% endif %}
+            {% if orders_due %}<input type="hidden" name="due" value="1">{% endif %}
+            <div class="col-md-8">
                 <div class="input-group">
                     <span class="input-group-text"><i class="fas fa-search"></i></span>
                     <input type="text" name="q" class="form-control"
-                           placeholder="Номер заказа, компания, email…"
+                           placeholder="Номер заказа, компания, телефон, email…"
+                           aria-label="Поиск заказов"
                            value="{{ orders_q }}">
                 </div>
             </div>
-            <div class="col-md-4">
-                <select name="status" class="form-select">
-                    <option value="">— Все статусы —</option>
-                    {% for s in statuses %}
-                        <option value="{{ s }}" {% if orders_status == s %}selected{% endif %}>
-                            {{ s }}
-                        </option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-2 d-flex gap-2">
+            <div class="col-md-4 d-flex gap-2">
                 <button class="btn btn-primary w-100"><i class="fas fa-filter me-1"></i>Найти</button>
-                {% if orders_q or orders_status %}
-                    <a href="/admin" class="btn btn-outline-secondary" title="Сбросить">
+                {% if orders_q or orders_status or orders_due %}
+                    <a href="/admin" class="btn btn-outline-secondary" title="Сбросить" aria-label="Сбросить фильтры">
                         <i class="fas fa-times"></i>
                     </a>
                 {% endif %}
@@ -139,8 +174,9 @@
                     <tr>
                         <th>№</th>
                         <th>Клиент</th>
+                        <th>Нужно к</th>
                         <th>Сумма</th>
-                        <th>Дата</th>
+                        <th>Создан</th>
                         <th>Статус</th>
                         <th>Изменить</th>
                     </tr>
@@ -152,14 +188,26 @@
                             <a href="/admin/orders/{{ o.id }}" class="text-decoration-none">
                                 <strong>#{{ o.id }}</strong>
                             </a>
+                            {% if o.staff_note %}<i class="fas fa-note-sticky text-warning ms-1" title="{{ o.staff_note }}"></i>{% endif %}
                         </td>
                         <td>
                             {% if o.user %}
-                                {{ o.user.company_name }}<br>
-                                <small class="text-muted">{{ o.user.email }}</small>
+                                <a href="/admin/clients/{{ o.user.id }}" class="text-decoration-none">{{ o.user.company_name }}</a><br>
+                                <small class="text-muted">{{ o.user.phone or o.user.email }}</small>
                             {% else %}
                                 <span class="text-muted">Гость</span>
                             {% endif %}
+                        </td>
+                        <td>
+                            {% if o.desired_date %}
+                                {% set active = o.status not in ['Выполнен', 'Отменён'] %}
+                                <span class="{% if active and o.desired_date < today_dt %}text-danger fw-bold{% elif active and o.desired_date < soon_dt %}text-warning fw-bold{% endif %}">
+                                    {{ o.desired_date.strftime('%d.%m') }}
+                                </span>
+                                {% if active and o.desired_date < today_dt %}<div class="small text-danger">просрочен</div>{% endif %}
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                            {% if o.delivery_method == 'delivery' %}<div class="small text-muted"><i class="fas fa-truck"></i> доставка</div>
+                            {% elif o.delivery_method == 'pickup' %}<div class="small text-muted"><i class="fas fa-store"></i> самовывоз</div>{% endif %}
                         </td>
                         <td><strong>{{ "%.0f"|format(o.total_price) }} ₽</strong></td>
                         <td>{{ o.created_at|localdt }}</td>
@@ -180,7 +228,7 @@
                             <div class="d-flex gap-1">
                                 <a href="/admin/orders/{{ o.id }}"
                                    class="btn btn-sm btn-outline-primary"
-                                   title="Подробнее о заказе">
+                                   title="Подробнее о заказе" aria-label="Открыть заказ {{ o.id }}">
                                     <i class="fas fa-eye"></i>
                                 </a>
                                 <form action="/admin/update_order_status" method="post"
@@ -188,7 +236,7 @@
                                       class="d-flex">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                     <input type="hidden" name="order_id" value="{{ o.id }}">
-                                    <select name="status" class="form-select form-select-sm me-1">
+                                    <select name="status" class="form-select form-select-sm me-1" aria-label="Статус заказа {{ o.id }}">
                                         {% for s in statuses %}
                                             <option value="{{ s }}" {% if o.status == s %}selected{% endif %}>
                                                 {{ s }}
@@ -206,10 +254,11 @@
         </div>
 
         {% if orders_total_pages > 1 %}
+        {% set qs = '&q=' ~ (orders_q|urlencode) ~ '&status=' ~ (orders_status|urlencode) ~ ('&due=1' if orders_due else '') %}
         <nav class="d-flex justify-content-center align-items-center gap-2 mt-3">
             {% if orders_page > 1 %}
-                <a href="?q={{ orders_q|urlencode }}&status={{ orders_status|urlencode }}&page={{ orders_page - 1 }}"
-                class="btn btn-sm btn-outline-secondary">
+                <a href="?page={{ orders_page - 1 }}{{ qs }}"
+                class="btn btn-sm btn-outline-secondary" aria-label="Предыдущая страница">
                     <i class="fas fa-chevron-left"></i>
                 </a>
             {% endif %}
@@ -218,8 +267,8 @@
                 (всего: {{ total_orders }})
             </span>
             {% if orders_page < orders_total_pages %}
-                <a href="?q={{ orders_q|urlencode }}&status={{ orders_status|urlencode }}&page={{ orders_page + 1 }}"
-                class="btn btn-sm btn-outline-secondary">
+                <a href="?page={{ orders_page + 1 }}{{ qs }}"
+                class="btn btn-sm btn-outline-secondary" aria-label="Следующая страница">
                     <i class="fas fa-chevron-right"></i>
                 </a>
             {% endif %}
@@ -228,7 +277,7 @@
 
         {% else %}
             <p class="text-muted py-4 text-center">
-                {% if orders_q or orders_status %}
+                {% if orders_q or orders_status or orders_due %}
                     По вашему запросу ничего не найдено.
                 {% else %}
                     Заказов нет.
@@ -242,7 +291,7 @@
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h5 class="mb-0">Клиенты и заявки</h5>
             <input type="search" id="client-search" class="form-control form-control-sm"
-                   style="max-width: 320px"
+                   style="max-width: 320px" aria-label="Поиск клиентов"
                    placeholder="Поиск: компания, email, имя…">
         </div>
         {% if users_total > list_limit %}
@@ -255,25 +304,26 @@
             <table class="table table-hover align-middle">
                 <thead>
                     <tr>
-                        <th>ID</th><th>Компания</th><th>Контакт</th>
+                        <th>Компания</th><th>Контакт</th>
                         <th>Статус</th><th>Действия</th>
                     </tr>
                 </thead>
                 <tbody id="clients-tbody">
                 {% for u in users %}
-                    <tr data-search="{{ (u.company_name ~ ' ' ~ u.email ~ ' ' ~ (u.full_name or ''))|lower|e }}">
-                        <td>{{ u.id }}</td>
-                        <td><strong>{{ u.company_name }}</strong></td>
+                    <tr data-search="{{ (u.company_name ~ ' ' ~ u.email ~ ' ' ~ (u.full_name or '') ~ ' ' ~ (u.phone or ''))|lower|e }}">
+                        <td>
+                            <a href="/admin/clients/{{ u.id }}" class="text-decoration-none"><strong>{{ u.company_name }}</strong></a>
+                            {% if u.city %}<br><small class="text-muted">г. {{ u.city }}</small>{% endif %}
+                        </td>
                         <td>
                             {{ u.full_name }}<br>
-                            <small class="text-muted">{{ u.email }}</small>
-                            {% if u.city %}
-                                <br><small class="text-muted">г. {{ u.city }}</small>
-                            {% endif %}
+                            <small class="text-muted">{{ u.phone }} · {{ u.email }}</small>
                         </td>
                         <td>
                             {% if u.is_admin %}
                                 <span class="badge bg-dark">Админ</span>
+                            {% elif u.is_manager %}
+                                <span class="badge bg-info text-dark">Менеджер</span>
                             {% elif u.is_approved %}
                                 <span class="badge bg-success">Активен</span>
                             {% else %}
@@ -284,66 +334,81 @@
                                     −{{ u.discount_percent }}%
                                 </span>
                             {% endif %}
+                            {% if not u.is_admin and not u.is_manager %}
+                            <div class="small mt-1">
+                                <i class="fas fa-user-shield {% if u.consent_at %}text-success{% else %}text-danger{% endif %}"
+                                   title="{% if u.consent_at %}Согласие на обработку данных есть{% else %}Нет отметки о согласии на обработку данных{% endif %}"></i>
+                                <i class="fas fa-bullhorn {% if u.marketing_consent %}text-success{% else %}text-muted{% endif %}"
+                                   title="{% if u.marketing_consent %}Можно звонить и писать с предложениями{% else %}Рекламу не разрешал — только по заказам{% endif %}"></i>
+                            </div>
+                            {% endif %}
                         </td>
                         <td>
-                            <form action="/admin/users/{{ u.id }}/discount"
-                                  method="post"
-                                  class="d-inline-flex align-items-center gap-1 mb-1">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                <input type="number" name="discount_percent"
-                                       min="0" max="100" step="0.5"
-                                       class="form-control form-control-sm"
-                                       style="width:80px;"
-                                       value="{{ u.discount_percent or 0 }}">
-                                <button class="btn btn-sm btn-outline-warning" title="Скидка">%</button>
-                            </form>
-
+                            <a href="/admin/clients/{{ u.id }}" class="btn btn-sm btn-outline-secondary mb-1">
+                                <i class="fas fa-id-card me-1"></i>Карточка
+                            </a>
                             {% if not u.is_admin and not u.is_approved %}
                                 <form action="/admin/users/{{ u.id }}/approve"
                                       method="post" class="d-inline">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                    <button class="btn btn-sm btn-success">
+                                    <button class="btn btn-sm btn-success mb-1">
                                         <i class="fas fa-check me-1"></i>Одобрить
                                     </button>
                                 </form>
-                                <form action="/admin/users/{{ u.id }}/reject"
-                                      method="post" class="d-inline"
-                                      data-confirm="Отклонить заявку?">
+                            {% endif %}
+                            {% if user.is_admin %}
+                                <form action="/admin/users/{{ u.id }}/discount"
+                                      method="post"
+                                      class="d-inline-flex align-items-center gap-1 mb-1">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                    <button class="btn btn-sm btn-outline-danger">Отклонить</button>
+                                    <input type="number" name="discount_percent"
+                                           min="0" max="100" step="0.5"
+                                           class="form-control form-control-sm"
+                                           style="width:80px;" aria-label="Скидка, %"
+                                           value="{{ u.discount_percent or 0 }}">
+                                    <button class="btn btn-sm btn-outline-warning" title="Сохранить скидку" aria-label="Сохранить скидку">%</button>
                                 </form>
-                            {% elif u.is_admin %}
-                                {% if u.id != user.id %}
-                                    <form action="/admin/users/{{ u.id }}/demote"
+
+                                {% if not u.is_admin and not u.is_approved %}
+                                    <form action="/admin/users/{{ u.id }}/reject"
                                           method="post" class="d-inline"
-                                          data-confirm="Снять права администратора?">
+                                          data-confirm="Отклонить заявку?">
                                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                        <button class="btn btn-sm btn-outline-warning">
-                                            <i class="fas fa-user-minus me-1"></i>Снять админа
+                                        <button class="btn btn-sm btn-outline-danger mb-1">Отклонить</button>
+                                    </form>
+                                {% elif u.is_admin %}
+                                    {% if u.id != user.id %}
+                                        <form action="/admin/users/{{ u.id }}/demote"
+                                              method="post" class="d-inline"
+                                              data-confirm="Снять права администратора?">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                            <button class="btn btn-sm btn-outline-warning mb-1">
+                                                <i class="fas fa-user-minus me-1"></i>Снять админа
+                                            </button>
+                                        </form>
+                                    {% else %}
+                                        <span class="badge bg-dark px-2 py-1">
+                                            <i class="fas fa-user me-1"></i>Это вы
+                                        </span>
+                                    {% endif %}
+                                {% else %}
+                                    <form action="/admin/users/{{ u.id }}/make_admin"
+                                          method="post" class="d-inline"
+                                          data-confirm="Сделать администратором (полный доступ ко всему сайту)?">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                        <button class="btn btn-sm btn-outline-primary mb-1">
+                                            <i class="fas fa-user-shield me-1"></i>Админ
                                         </button>
                                     </form>
-                                {% else %}
-                                    <span class="badge bg-dark px-2 py-1">
-                                        <i class="fas fa-user me-1"></i>Это вы
-                                    </span>
+                                    <form action="/admin/users/{{ u.id }}/reject"
+                                          method="post" class="d-inline"
+                                          data-confirm="Удалить клиента? Если у него есть заказы, будут стёрты только личные данные, а заказы сохранятся.">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                        <button class="btn btn-sm btn-outline-danger mb-1" aria-label="Удалить клиента {{ u.company_name }}">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </form>
                                 {% endif %}
-                            {% else %}
-                                <form action="/admin/users/{{ u.id }}/make_admin"
-                                      method="post" class="d-inline"
-                                      data-confirm="Сделать администратором?">
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                    <button class="btn btn-sm btn-outline-primary">
-                                        <i class="fas fa-user-shield me-1"></i>Админ
-                                    </button>
-                                </form>
-                                <form action="/admin/users/{{ u.id }}/reject"
-                                      method="post" class="d-inline"
-                                      data-confirm="Удалить пользователя?">
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                    <button class="btn btn-sm btn-outline-danger">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </form>
                             {% endif %}
                         </td>
                     </tr>
@@ -356,6 +421,7 @@
         {% endif %}
     </div>
 
+{% if user.is_admin %}
     <!-- СПРАВОЧНИК -->
     <div class="tab-pane fade" id="products">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
@@ -560,8 +626,10 @@
             <p class="text-muted py-4 text-center">Каталог пуст.</p>
         {% endif %}
     </div>
+{% endif %}
 </div>
 
+{% if user.is_admin %}
 <!-- Модальное окно импорта -->
 <div class="modal fade" id="importModal" tabindex="-1">
     <div class="modal-dialog">
@@ -590,6 +658,7 @@
         </div>
     </div>
 </div>
+{% endif %}
 <script nonce="{{ csp_nonce }}">
 (function () {
     function bindFilter(inputId, tbodyId) {
@@ -605,6 +674,15 @@
     }
     bindFilter("client-search", "clients-tbody");
     bindFilter("product-search", "products-tbody");
+
+    // /admin#clients открывает нужную вкладку (по ссылке из «Что сделать сегодня»)
+    function openTabFromHash() {
+        if (!location.hash || !window.bootstrap) return;
+        const trigger = document.querySelector('.nav-tabs a[href="' + location.hash + '"]');
+        if (trigger) bootstrap.Tab.getOrCreateInstance(trigger).show();
+    }
+    openTabFromHash();
+    window.addEventListener("hashchange", openTabFromHash);
 })();
 </script>
 {% endblock %}
