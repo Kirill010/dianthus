@@ -17,5 +17,3 @@ Allow: /consent
 Allow: /marketing-consent
 Allow: /deadlines
 Allow: /login
-
-Sitemap: https://dianthus-opt.ru/sitemap.xml

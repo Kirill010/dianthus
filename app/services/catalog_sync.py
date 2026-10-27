@@ -25,6 +25,7 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import Session, joinedload
 
 from ..models import Order, OrderItem, Product, Supply, SupplyItem
+from .exchange_log import DRY_RUN_MARK
 from .orders import CANCELLED
 from .product_guess import guess_category, guess_country, guess_length_cm
 
@@ -435,7 +436,7 @@ class SyncResult:
         if self.errors:
             text += f", ошибок в строках: {len(self.errors)}"
         if self.dry_run:
-            text = "ПРОВЕРКА, ничего не сохранено — " + text
+            text = f"{DRY_RUN_MARK} — {text}"
         return text
 
 

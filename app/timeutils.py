@@ -47,6 +47,26 @@ def fmt_local(dt: datetime | None, fmt: str = DATETIME_FMT, empty: str = "—") 
     return local.strftime(fmt) if local else empty
 
 
+def fmt_when(dt: datetime | None, empty: str = "—") -> str:
+    """«сегодня в 14:05» / «вчера в 18:30» / «25.10 в 09:00» — по времени магазина.
+
+    Для плашек вроде «Цены и остатки обновлены …»: клиенту так понятнее,
+    чем «27.10.2026 11:05».
+    """
+    local = to_local(dt)
+    if local is None:
+        return empty
+    now = datetime.now(shop_tz())
+    clock = local.strftime("%H:%M")
+    days = (now.date() - local.date()).days
+    if days <= 0:
+        return f"сегодня в {clock}"
+    if days == 1:
+        return f"вчера в {clock}"
+    day = local.strftime("%d.%m" if local.year == now.year else "%d.%m.%Y")
+    return f"{day} в {clock}"
+
+
 def utc_iso(dt: datetime | None) -> str:
     """ISO-8601 с явным смещением (2026-02-14T09:31:00+00:00) — для обмена с 1С."""
     return as_utc(dt).isoformat() if dt else ""

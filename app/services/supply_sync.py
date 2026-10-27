@@ -28,6 +28,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, joinedload
 
 from ..models import Notification, OrderItem, Preorder, Product, Supply, SupplyItem
+from .exchange_log import DRY_RUN_MARK
 from .catalog_sync import (MAX_ERRORS_IN_REPLY, Catalog, RowError, SyncCommitError,
                            clean, fill_empty_from_name, lock_exchange, new_product,
                            parse_product_row)
@@ -98,7 +99,7 @@ class SupplySyncResult:
         if self.errors:
             text += f", ошибок: {len(self.errors)}"
         if self.dry_run:
-            text = "ПРОВЕРКА, ничего не сохранено — " + text
+            text = f"{DRY_RUN_MARK} — {text}"
         return text
 
 

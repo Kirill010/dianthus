@@ -1,19 +1,27 @@
-// Service Worker для Диантуса — офлайн-кэш статики
-// ⚠️ ВЕРСИЯ УВЕЛИЧЕНА ДО v6: при установке новый SW удалит старый кэш
-// и заставит браузер скачать свежие CSS/JS.
-const CACHE_NAME = 'dianthus-v9-2026-01';
+// Service Worker «Диантус». Отдаётся с корня сайта (/sw.js), поэтому работает на ВСЕХ
+// страницах — раньше лежал в /static/ и на страницы сайта не влиял.
+//
+// Что делает:
+//   1. Статика (CSS, JS, шрифты, логотип) грузится быстрее и открывается без сети.
+//   2. Если пропал интернет — вместо ошибки браузера показывает страницу «Нет связи».
+// Чего НЕ делает: не сохраняет страницы сайта (в них цены, корзина, токены защиты)
+// и не трогает отправку форм — заказы всегда идут напрямую на сервер.
+const CACHE_NAME = 'dianthus-v10-2026-10';
+const OFFLINE_URL = '/static/offline.html';
 const STATIC_ASSETS = [
   '/static/style.css',
+  '/static/pwa.js',
   '/static/logo-icon.png',
   '/static/logo-full.png',
   '/static/favicon.ico',
   '/static/vendor/bootstrap.min.css',
   '/static/vendor/bootstrap.bundle.min.js',
   '/static/vendor/fontawesome/css/all.min.css',
+  OFFLINE_URL,
 ];
 
 self.addEventListener('install', (event) => {
-  // Форсируем установку нового SW, не дожидаясь закрытия старых вкладок
+  // Новая версия включается сразу, не дожидаясь закрытия старых вкладок
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
@@ -26,41 +34,53 @@ self.addEventListener('activate', (event) => {
       Promise.all(
         keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
       )
-    ).then(() => self.clients.claim())  // берём контроль над всеми вкладками
+    ).then(() => self.clients.claim())
   );
 });
 
 self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-  if (event.request.method !== 'GET') return;
-  if (!url.pathname.startsWith('/static/')) return;
+  const req = event.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
 
-  const isCssOrJs = /\.(css|js)$/i.test(url.pathname);
+  // Страница сайта: всегда из сети; нет связи — страница-заглушка.
+  if (req.mode === 'navigate') {
+    event.respondWith(fetch(req).catch(() => caches.match(OFFLINE_URL)));
+    return;
+  }
 
-  if (isCssOrJs) {
+  // Из кэша обслуживаем только «каркас»: файлы из списка и библиотеки.
+  // Фото товаров и прочее — обычным путём браузера (иначе кэш разрастался бы).
+  const path = url.pathname;
+  const isShell = STATIC_ASSETS.includes(path) || path.startsWith('/static/vendor/');
+  if (!isShell) return;
+
+  if (/\.(css|js)$/i.test(path)) {
+    // CSS/JS: сначала сеть (свежая версия), нет связи — из кэша
     event.respondWith(
-      fetch(event.request).then((response) => {
+      fetch(req).then((response) => {
         if (response && response.status === 200) {
-          // fix #23: кладём в кэш без query, чтобы версии не плодились
-          const cacheKey = url.origin + url.pathname;
+          // кладём без query-строки, чтобы версии не плодились
           const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(cacheKey, clone));
+          caches.open(CACHE_NAME).then((cache) => cache.put(url.origin + path, clone));
         }
         return response;
-      }).catch(() => caches.match(event.request).then(
-        (c) => c || caches.match(url.origin + url.pathname)
+      }).catch(() => caches.match(req).then(
+        (c) => c || caches.match(url.origin + path)
       ))
     );
     return;
   }
 
+  // Шрифты, картинки каркаса: сначала кэш
   event.respondWith(
-    caches.match(event.request).then((cached) => {
+    caches.match(req).then((cached) => {
       if (cached) return cached;
-      return fetch(event.request).then((response) => {
+      return fetch(req).then((response) => {
         if (!response || response.status !== 200) return response;
         const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        caches.open(CACHE_NAME).then((cache) => cache.put(req, clone));
         return response;
       });
     })

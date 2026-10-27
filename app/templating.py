@@ -17,7 +17,8 @@ from .config import config
 from .deps import get_current_user
 from .security import ensure_csrf_token
 from .services.preorder_service import preorder_count_db
-from .timeutils import DATETIME_FMT, fmt_local, shop_tz
+from .services.pricing import apply_discount
+from .timeutils import DATETIME_FMT, fmt_local, fmt_when, shop_tz
 from . import models
 
 logger = logging.getLogger(__name__)
@@ -116,6 +117,13 @@ templates.env.filters["price"] = _fmt_price
 # {{ order.created_at|localdt }} → «14.02.2026 12:31» по времени магазина (МСК),
 # а не «09:31» по UTC, как лежит в БД.
 templates.env.filters["localdt"] = lambda v, fmt=DATETIME_FMT: fmt_local(v, fmt)
+# {{ dt|when }} → «сегодня в 14:05» / «вчера в 18:30» / «25.10 в 09:00».
+templates.env.filters["when"] = fmt_when
+# {{ item.price|with_discount(5) }} → цена клиента со скидкой (тем же округлением,
+# что и в корзине: apply_discount).
+templates.env.filters["with_discount"] = lambda price, pct: apply_discount(price, pct)[1]
+# {{ 7.5|pct }} → «7.5», {{ 5.0|pct }} → «5»
+templates.env.filters["pct"] = lambda v: f"{float(v or 0):g}"
 
 
 def render(request: Request, template: str, db: Session, **context):

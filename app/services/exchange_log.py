@@ -18,6 +18,12 @@ logger = logging.getLogger(__name__)
 LOG_KEEP_DAYS = 60
 COLLAPSE_WINDOW = timedelta(hours=1)
 
+# Метка в итоговой строке режима «Только проверить»: такой запрос ничего не
+# сохраняет, поэтому не считается обновлением каталога.
+DRY_RUN_MARK = "ПРОВЕРКА, ничего не сохранено"
+# Адреса, которыми приходит каталог (от 1С или файлом из админки)
+CATALOG_ENDPOINTS = ("products/sync", "file-import")
+
 # Объяснения кодов ответа — простыми словами, для владельца
 STATUS_HELP = {
     400: "1С прислала данные в неправильном формате",
@@ -112,6 +118,16 @@ def prune_job() -> None:
         db.close()
 
 
+def last_catalog_update(db: Session) -> ExchangeLog | None:
+    """Последняя УДАЧНАЯ загрузка каталога (1С или файл) — без «Только проверить»
+    и без неудачных попыток. От неё зависит строка «Цены и остатки обновлены …»."""
+    return (db.query(ExchangeLog)
+            .filter(ExchangeLog.ok.is_(True),
+                    ExchangeLog.endpoint.in_(CATALOG_ENDPOINTS),
+                    ~func.coalesce(ExchangeLog.summary, "").contains(DRY_RUN_MARK))
+            .order_by(ExchangeLog.id.desc()).first())
+
+
 def waiting_orders(db: Session) -> int:
     """Заказы, которые 1С ещё не забрала (и которые не отменены)."""
     return db.query(Order).filter(Order.exported_at.is_(None),
@@ -127,10 +143,7 @@ def overview(db: Session, legacy_password_set: bool) -> dict:
     last = db.query(ExchangeLog).order_by(ExchangeLog.id.desc()).first()
     last_ok = (db.query(ExchangeLog).filter(ExchangeLog.ok.is_(True))
                .order_by(ExchangeLog.id.desc()).first())
-    last_sync = (db.query(ExchangeLog)
-                 .filter(ExchangeLog.ok.is_(True),
-                         ExchangeLog.endpoint.in_(["products/sync", "file-import"]))
-                 .order_by(ExchangeLog.id.desc()).first())
+    last_sync = last_catalog_update(db)
     ok_24h = db.query(func.count(ExchangeLog.id)).filter(
         ExchangeLog.ok.is_(True), ExchangeLog.created_at >= day_ago).scalar() or 0
     err_24h = db.query(func.coalesce(func.sum(ExchangeLog.repeat_count), 0)).filter(

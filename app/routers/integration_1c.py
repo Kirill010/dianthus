@@ -60,7 +60,7 @@ from ..services.catalog_sync import (MAX_ERRORS_IN_REPLY, MAX_PRODUCTS_PER_SYNC,
 from ..services.exchange_export import (
     ORDER_CSV_HEADER, ORDER_NUMBER_PREFIX, PRODUCT_CSV_HEADER, csv_response,
     orders_csv_rows, orders_to_payloads, product_payload, products_csv_rows)
-from ..services.exchange_log import note
+from ..services.exchange_log import DRY_RUN_MARK, note
 from ..services.orders import (apply_status_change, load_order_for_update,
                                notify_client_of_status)
 from ..services.supply_sync import MAX_SUPPLIES_PER_SYNC, apply_supplies
@@ -714,7 +714,7 @@ def sync_clients(
 
     if dry_run:
         db.rollback()                      # проверка: ничего не сохраняем
-    note(request, ("ПРОВЕРКА, ничего не сохранено — " if dry_run else "")
+    note(request, (f"{DRY_RUN_MARK} — " if dry_run else "")
                   + f"скидок изменено: {updated}, без изменений: {unchanged}"
                   + (f", ошибок: {len(errors)}" if errors else ""))
     return {"status": "ok", "dry_run": bool(dry_run), "updated": updated,

@@ -866,6 +866,191 @@ hr {
 
 
 /* =========================================================
+   17б. КАТАЛОГ — ВИД «ПРАЙС», СОРТИРОВКА, ПЛАШКИ
+   ========================================================= */
+
+.catalog-fresh { margin: 0 0 14px; }
+
+.category-btn__n {
+    display: inline-block;
+    margin-left: 3px;
+    font-size: .75rem;
+    font-weight: 600;
+    opacity: .65;
+}
+.category-btn.active .category-btn__n { opacity: .85; }
+
+.catalog-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 4px;
+}
+.catalog-sort { margin: 0; }
+.catalog-sort select { min-width: 128px; }
+
+.view-toggle {
+    display: inline-flex;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-input);
+    overflow: hidden;
+}
+.view-toggle__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    font-size: .85rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-decoration: none;
+}
+.view-toggle__btn + .view-toggle__btn { border-left: 1px solid var(--border); }
+.view-toggle__btn:hover { background: var(--primary-mist); color: var(--primary-dark); }
+.view-toggle__btn.active { background: var(--primary); color: #fff; }
+
+/* Цена со скидкой клиента: старая — зачёркнута */
+.price-old {
+    margin-right: 2px;
+    font-size: .8em;
+    font-weight: 500;
+    color: var(--text-soft);
+    text-decoration: line-through;
+}
+.price-note {
+    margin-top: -4px;
+    font-size: .75rem;
+    color: var(--green);
+    font-weight: 600;
+}
+
+/* Прайс-лист: строка на товар */
+.price-list {
+    list-style: none;
+    margin: 14px 0 0;
+    padding: 0;
+    background: #fff;
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-card);
+    overflow: hidden;
+}
+.price-list__head,
+.price-row {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) 86px 140px 200px;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 14px;
+}
+.price-list__head {
+    padding-top: 10px;
+    padding-bottom: 10px;
+    background: var(--bg-soft);
+    border-bottom: 1px solid var(--border-soft);
+    font-size: .75rem;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--text-soft);
+}
+.price-list__group {
+    padding: 8px 14px;
+    background: var(--primary-mist);
+    color: var(--primary-dark);
+    font-weight: 700;
+    font-size: .85rem;
+    border-top: 1px solid var(--border-soft);
+}
+.price-row { border-top: 1px solid var(--border-soft); }
+.price-list__head + .price-row,
+.price-list__group + .price-row { border-top: 0; }
+.price-row:hover { background: var(--bg-soft); }
+.price-row--out { opacity: .6; }
+
+.price-row__thumb {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #f4f1ea;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--primary-light);
+}
+.price-row__thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.price-row__name {
+    display: block;
+    font-weight: 600;
+    line-height: 1.25;
+    color: #1c1c1c;
+    text-decoration: none;
+}
+.price-row__name:hover { color: var(--primary); }
+.price-row__meta { display: block; margin-top: 2px; font-size: .78rem; color: var(--text-soft); }
+.price-row__stock { font-weight: 700; font-size: .9rem; color: var(--green); white-space: nowrap; }
+.price-row__price {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: #1c1c1c;
+    white-space: nowrap;
+}
+.price-row__lock { font-family: system-ui, sans-serif; font-weight: 500; font-size: .8rem; color: var(--text-muted); text-decoration: none; }
+.price-row__lock:hover { color: var(--primary); }
+.price-row__none { font-size: .8rem; color: var(--text-soft); }
+.price-row__form { margin: 0; }
+.price-row .qty-row { height: 38px; }
+.price-row .btn-cart-green { width: 38px; }
+
+@media (max-width: 767.98px) {
+    .price-list__head { display: none; }
+    .price-row {
+        grid-template-columns: 44px minmax(0, 1fr) auto;
+        grid-template-areas:
+            "thumb main  price"
+            "thumb stock stock"
+            "buy   buy   buy";
+        row-gap: 6px;
+        padding: 10px 12px;
+    }
+    .price-row__thumb { grid-area: thumb; align-self: start; }
+    .price-row__main  { grid-area: main; }
+    .price-row__price { grid-area: price; text-align: right; }
+    .price-row__stock { grid-area: stock; font-size: .82rem; }
+    .price-row__stock::before { content: "В наличии: "; font-weight: 500; color: var(--text-muted); }
+    .price-row__buy   { grid-area: buy; }
+    .price-row .qty-row { height: 42px; }
+    .price-row .btn-cart-green { width: 46px; }
+}
+
+
+/* =========================================================
+   17в. УСТАНОВКА НА ЭКРАН ТЕЛЕФОНА (PWA)
+   ========================================================= */
+
+.pwa-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    margin-bottom: 14px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-sm);
+}
+.pwa-banner[hidden] { display: none; }
+.pwa-banner__icon { width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0; }
+.pwa-banner__text { flex: 1; min-width: 0; font-size: .82rem; line-height: 1.3; color: var(--text-muted); }
+.pwa-banner__text strong { display: block; font-size: .9rem; color: var(--text); }
+.pwa-banner__actions { display: flex; align-items: center; gap: 6px; }
+
+
+/* =========================================================
    18. ПУСТОЕ СОСТОЯНИЕ
    ========================================================= */
 

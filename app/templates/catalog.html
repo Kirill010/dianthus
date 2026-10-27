@@ -5,10 +5,16 @@
 
 {% block content %}
 
-<div class="catalog-top-bar d-flex justify-content-between align-items-center mb-4">
+<div class="catalog-top-bar d-flex justify-content-between align-items-center mb-2">
     <h1 class="h3 mb-0">Каталог</h1>
     <span class="badge bg-secondary">{{ total_items }} товаров</span>
 </div>
+
+{% if catalog_updated_at %}
+<p class="catalog-fresh small text-muted">
+    <i class="fas fa-clock me-1"></i>{{ 'Остатки' if public else 'Цены и остатки' }} обновлены {{ catalog_updated_at|when }}
+</p>
+{% endif %}
 
 {% if public %}
 <div class="alert alert-info d-flex align-items-center justify-content-between flex-wrap gap-2 py-2 px-3 mb-4">
@@ -37,7 +43,7 @@
                value="{{ search_q or '' }}" autocomplete="off">
         <button type="submit" class="btn btn-primary">Найти</button>
         {% if current_filters.q %}
-            <a href="/catalog{% if current_filters.category %}?category={{ current_filters.category|urlencode }}{% endif %}"
+            <a href="{{ clear_search_url }}"
                class="btn btn-outline-secondary"
                title="Сбросить поиск">
                 <i class="fas fa-times"></i>
@@ -47,26 +53,24 @@
     <div id="suggestBox" class="suggest-box"></div>
 </form>
 
-{# ─── КАТЕГОРИИ ─── #}
-{% if all_categories %}
+{# ─── КАТЕГОРИИ (число — сколько позиций увидите, нажав) ─── #}
+{% if category_chips %}
 <div class="category-scroll mb-3">
-    <a href="/catalog{% if current_filters.q %}?q={{ current_filters.q|urlencode }}{% endif %}"
+    <a href="{{ category_url('') }}"
        class="category-btn {% if not current_filters.category %}active{% endif %}">
-        Все
+        Все <span class="category-btn__n">{{ all_count }}</span>
     </a>
-    {% for cat in all_categories %}
-        {% if cat in active_categories %}
-        <a href="{{ category_url(cat) }}"
-           class="category-btn {% if current_filters.category == cat %}active{% endif %}">
-            {{ cat }}
+    {% for name, n in category_chips %}
+        <a href="{{ category_url(name) }}"
+           class="category-btn {% if current_filters.category == name %}active{% endif %}">
+            {{ name }} <span class="category-btn__n">{{ n }}</span>
         </a>
-        {% endif %}
     {% endfor %}
 </div>
 {% endif %}
 
 {# ─── ФИЛЬТР ПО КОЛИЧЕСТВУ ─── #}
-<div class="category-scroll mb-4">
+<div class="category-scroll mb-2">
     <a href="{{ level_url('available') }}"
        class="category-btn {% if current_filters.level == 'available' %}active{% endif %}">
         ✓ В наличии ({{ level_counts.available }})
@@ -85,6 +89,30 @@
     </a>
 </div>
 
+{# ─── ВИД И СОРТИРОВКА ─── #}
+<div class="catalog-toolbar">
+    <div class="view-toggle" role="group" aria-label="Вид каталога">
+        <a href="{{ view_url('cards') }}" title="Карточки с фотографиями"
+           class="view-toggle__btn {% if view == 'cards' %}active{% endif %}">
+            <i class="fas fa-table-cells-large"></i><span>Карточки</span>
+        </a>
+        <a href="{{ view_url('list') }}" title="Компактный прайс-лист: одна строка — один товар"
+           class="view-toggle__btn {% if view == 'list' %}active{% endif %}">
+            <i class="fas fa-list"></i><span>Прайс</span>
+        </a>
+    </div>
+    <label class="catalog-sort">
+        <span class="visually-hidden">Сортировка</span>
+        <select id="sortSelect" class="form-select form-select-sm">
+            {% for key, label in sort_options %}
+                <option value="{{ sort_url(key) }}" {% if current_filters.sort == key %}selected{% endif %}>
+                    {{ 'По группам' if (key == 'newest' and view == 'list') else label }}
+                </option>
+            {% endfor %}
+        </select>
+    </label>
+</div>
+
 {# ═══════ ТОВАРЫ В НАЛИЧИИ ═══════ #}
 {% if not items %}
     <div class="empty-state text-center py-5">
@@ -99,6 +127,87 @@
         {% endif %}
     </div>
 {% else %}
+
+    {% if view == 'list' %}
+    {# ───────── ПРАЙС-ЛИСТ: строка на товар ───────── #}
+    <ul class="price-list">
+        <li class="price-list__head" aria-hidden="true">
+            <span></span>
+            <span>Товар</span>
+            <span>Доступно</span>
+            <span>{% if public %}Цена{% else %}Цена, ₽/шт{% endif %}</span>
+            <span></span>
+        </li>
+        {% set ns = namespace(cat=false) %}
+        {% for item in items %}
+            {% set product = item.product %}
+            {% set pack = product.package_size or 1 %}
+            {% set stems = item.available_stems %}
+            {% set is_out = stems < 1 %}
+            {% set photos = product.all_photos %}
+            {% set min_stems = pack * (product.min_quantity or 1) %}
+
+            {% if group_by_category and product.category != ns.cat %}
+                {% set ns.cat = product.category %}
+                <li class="price-list__group">{{ product.category or 'Прочее' }}</li>
+            {% endif %}
+
+            <li class="price-row {% if is_out %}price-row--out{% endif %}"
+                data-step="{{ pack }}" data-min="{{ min_stems }}" data-max="{{ stems }}">
+                <a href="/product/{{ item.id }}" class="price-row__thumb" tabindex="-1" aria-hidden="true">
+                    {% if photos %}
+                        <img src="{{ photos[0] }}" alt="" loading="lazy" width="44" height="44">
+                    {% else %}
+                        <i class="fas fa-seedling"></i>
+                    {% endif %}
+                </a>
+                <div class="price-row__main">
+                    <a href="/product/{{ item.id }}" class="price-row__name">{{ product.name }}</a>
+                    <span class="price-row__meta">
+                        {% if product.country %}{{ product.country }} · {% endif %}{% if product.length_cm %}{{ product.length_cm }} см · {% endif %}в упаковке {{ pack }} шт
+                    </span>
+                </div>
+                <div class="price-row__stock">{{ stems }} шт</div>
+                <div class="price-row__price">
+                    {% if public %}
+                        <a href="/register" class="price-row__lock" title="Цена после регистрации">
+                            <i class="fas fa-lock me-1"></i>после регистрации
+                        </a>
+                    {% elif my_discount %}
+                        <s class="price-old">{{ item.price|price }}</s> {{ item.price|with_discount(my_discount)|price }} ₽
+                    {% else %}
+                        {{ item.price|price }} ₽
+                    {% endif %}
+                </div>
+                <div class="price-row__buy">
+                    {% if is_out %}
+                        <span class="price-row__none">нет в наличии</span>
+                    {% elif not public %}
+                        <form action="/add_to_cart" method="post" class="price-row__form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <input type="hidden" name="supply_item_id" value="{{ item.id }}">
+                            <div class="qty-row">
+                                <button type="button" class="qty-btn js-qty" data-dir="-1" aria-label="Уменьшить">−</button>
+                                <input type="number" name="quantity_stems" class="qty-input"
+                                       value="{{ min_stems }}" min="{{ min_stems }}" max="{{ stems }}"
+                                       step="{{ pack }}" inputmode="numeric" aria-label="Количество, шт">
+                                <button type="button" class="qty-btn js-qty" data-dir="1" aria-label="Увеличить">+</button>
+                                <button type="submit" class="btn-cart-green" title="В корзину" aria-label="В корзину">
+                                    <i class="fas fa-shopping-cart"></i>
+                                </button>
+                            </div>
+                        </form>
+                    {% endif %}
+                </div>
+            </li>
+        {% endfor %}
+    </ul>
+    {% if my_discount and not public %}
+        <p class="small text-muted mt-2 mb-0">Цены указаны с вашей скидкой −{{ my_discount|pct }}%; итог заказа считается в корзине.</p>
+    {% endif %}
+
+    {% else %}
+    {# ───────── КАРТОЧКИ ───────── #}
     <div class="product-grid">
         {% for item in items %}
             {% set product = item.product %}
@@ -178,8 +287,15 @@
                         </a>
                     {% else %}
                     <div class="product-card-v2__price">
-                        {{ item.price|price }} ₽
+                        {% if my_discount %}
+                            <s class="price-old">{{ item.price|price }}</s> {{ item.price|with_discount(my_discount)|price }} ₽
+                        {% else %}
+                            {{ item.price|price }} ₽
+                        {% endif %}
                     </div>
+                    {% if my_discount %}
+                        <div class="price-note">с вашей скидкой −{{ my_discount|pct }}%</div>
+                    {% endif %}
 
                     {# ─── ФОРМА ─── #}
                     {% if not is_out %}
@@ -225,17 +341,18 @@
             </div>
         {% endfor %}
     </div>
+    {% endif %}
 
     {% if total_pages > 1 %}
     <nav class="pagination-nav mt-5 d-flex justify-content-center gap-2">
         {% if page > 1 %}
-            <a href="{{ page_url(page - 1) }}" class="page-btn">
+            <a href="{{ page_url(page - 1) }}" class="page-btn" aria-label="Назад">
                 <i class="fas fa-chevron-left"></i>
             </a>
         {% endif %}
         <span class="page-info">{{ page }} из {{ total_pages }}</span>
         {% if page < total_pages %}
-            <a href="{{ page_url(page + 1) }}" class="page-btn">
+            <a href="{{ page_url(page + 1) }}" class="page-btn" aria-label="Вперёд">
                 <i class="fas fa-chevron-right"></i>
             </a>
         {% endif %}
@@ -279,7 +396,7 @@
                         <a href="/product/{{ item.id }}" class="product-card-v2__name">
                             {{ product.name }}
                         </a>
-                                                <div class="product-card-v2__specs">
+                        <div class="product-card-v2__specs">
                             <div class="spec-line">
                                 <span class="spec-line__label">Кол-во в уп:</span>
                                 <span class="spec-line__value">{{ pack }}шт</span>
@@ -375,11 +492,11 @@
     });
 })();
 
-/* ─── «+»/«−»: шаг = размер упаковки ─── */
+/* ─── «+»/«−»: шаг = размер упаковки (карточка или строка прайса) ─── */
 (function() {
     document.querySelectorAll('.js-qty').forEach(btn => {
         btn.addEventListener('click', function() {
-            const card = this.closest('.product-card-v2');
+            const card = this.closest('[data-step]');
             if (!card) return;
 
             const input = card.querySelector('.qty-input');
@@ -401,10 +518,13 @@
     });
 })();
 
-/* ─── Переключение слайдов на карточке каталога ─── */
-// document.querySelectorAll('.product-card-v2__gallery').forEach(function(gallery) {
-
-// });
-
+/* ─── Сортировка: выбор сразу открывает страницу ─── */
+(function() {
+    const sel = document.getElementById('sortSelect');
+    if (!sel) return;
+    sel.addEventListener('change', () => {
+        if (sel.value.indexOf('/catalog') === 0) window.location.href = sel.value;
+    });
+})();
 </script>
 {% endblock %}

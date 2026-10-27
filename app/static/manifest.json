@@ -1,25 +1,38 @@
 {
+  "id": "/catalog",
   "name": "Диантус — оптовые цветы",
   "short_name": "Диантус",
   "description": "Оптовый магазин цветов для юрлиц и ИП",
   "start_url": "/catalog",
+  "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#f5efe4",
+  "background_color": "#f0e8d9",
   "theme_color": "#4a6741",
   "lang": "ru",
+  "categories": ["shopping", "business"],
   "icons": [
     {
-      "src": "/static/logo-icon.png",
+      "src": "/static/icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/static/logo-icon.png",
+      "src": "/static/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "/static/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
+  ],
+  "shortcuts": [
+    { "name": "Корзина", "url": "/cart" },
+    { "name": "Мои заказы", "url": "/orders" }
   ]
 }

@@ -9,7 +9,9 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Response
+from fastapi.responses import (
+    FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response,
+)
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.orm import Session, joinedload
@@ -370,6 +372,26 @@ def sitemap(db: Session = Depends(get_db)):
         "</urlset>"
     )
     return Response(content=xml, media_type="application/xml")
+
+
+@app.get("/robots.txt", include_in_schema=False)
+def robots_txt():
+    """Правила для поисковых роботов лежат в static/robots.txt, а адрес карты сайта
+    подставляем из настроек (APP_URL) — при смене домена он не устареет."""
+    rules = (STATIC_DIR / "robots.txt").read_text(encoding="utf-8").rstrip()
+    base = config.APP_URL.rstrip("/")
+    body = f"{rules}\n\nSitemap: {base}/sitemap.xml\n"
+    return Response(body, media_type="text/plain; charset=utf-8")
+
+
+@app.get("/sw.js", include_in_schema=False)
+def service_worker():
+    """Сервис-воркер должен лежать в корне сайта, иначе он «видит» только /static/.
+    no-cache: браузер всегда проверяет, нет ли новой версии."""
+    return FileResponse(
+        STATIC_DIR / "sw.js", media_type="application/javascript",
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 @app.get("/register", response_class=HTMLResponse)

@@ -19,9 +19,11 @@
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <link href="/static/vendor/bootstrap.min.css?v=7" rel="stylesheet">
     <link href="/static/vendor/fontawesome/css/all.min.css?v=7" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=10">
+    <link rel="stylesheet" href="/static/style.css?v=11">
     <link rel="manifest" href="/static/manifest.json">
+    <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
     <meta name="theme-color" content="#4a6741">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="Диантус">
 </head>
@@ -107,6 +109,21 @@
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
     {% endif %}
+    {% if request.url.path in ('/', '/catalog') %}
+        {# Показывает pwa.js — только на телефоне, если сайт ещё не установлен #}
+        <div class="pwa-banner" id="pwaBanner" hidden>
+            <img src="/static/icons/icon-192.png" alt="" class="pwa-banner__icon" width="40" height="40">
+            <div class="pwa-banner__text">
+                <strong>«Диантус» на экране телефона</strong>
+                <span data-pwa-android>Каталог открывается в одно касание.</span>
+                <span data-pwa-ios hidden>Нажмите «Поделиться» <i class="fas fa-arrow-up-from-bracket"></i> и выберите «На экран Домой».</span>
+            </div>
+            <div class="pwa-banner__actions">
+                <button type="button" class="btn btn-primary btn-sm" data-pwa-install hidden>Установить</button>
+                <button type="button" class="btn-close" data-pwa-close aria-label="Закрыть"></button>
+            </div>
+        </div>
+    {% endif %}
     {% block content %}{% endblock %}
 </main>
 
@@ -149,6 +166,7 @@
 </footer>
 
 <script src="/static/vendor/bootstrap.bundle.min.js" nonce="{{ csp_nonce }}"></script>
+<script src="/static/pwa.js" nonce="{{ csp_nonce }}" defer></script>
 
 <script nonce="{{ csp_nonce }}">
 /* ─── Подтверждения и «+/−» количества ───
@@ -290,16 +308,6 @@
         }, 20000);
     }, false);
 })();
-
-/* ─── Service Worker ─── */
-if ('serviceWorker' in navigator && !window._swRegistered) {
-    window._swRegistered = true;
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/static/sw.js')
-            .then((reg) => console.log('SW:', reg.scope))
-            .catch((err) => console.warn('SW:', err));
-    });
-}
 
 /* ═══════════════════════════════════════════════════════════
    ГАЛЕРЕЯ на ДЕТАЛЬНОЙ странице товара
