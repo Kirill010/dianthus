@@ -14,7 +14,7 @@
     POST /api/1c/products/photo     фото товара (тело — сама картинка; ?id=…&n=1)
     POST /api/1c/orders/status      статусы заказов (+ номер документа в 1С)
     POST /api/1c/orders/ack         «заказы получены» (чтобы не выгружать повторно)
-    POST /api/1c/clients/sync       персональные скидки клиентов
+    POST /api/1c/clients/sync       скидки клиентов и их id (external_id) в 1С
   сайт → 1С
     GET  /api/1c/products/export    каталог сайта            (?format=csv — таблица)
     GET  /api/1c/orders/export      заказы (?new=1 — только ещё не забранные; ?format=csv)
@@ -676,11 +676,13 @@ def export_clients_to_1c(
         "last_id": users[-1].id if users else after_id,
         "clients": [
             {
-                "id": u.id,
+                "id": u.id,                              # id на сайте
+                "external_id": u.external_id or "",      # id контрагента в 1С
                 "email": u.email,
-                "company": u.company_name,
+                "company": u.company_name,               # название контрагента
                 "contact": u.full_name,
                 "inn": u.inn or "",
+                "address": u.address or "",
                 "phone": u.phone or "",
                 "city": u.city or "",
                 "discount_percent": u.discount_percent or 0,
@@ -700,14 +702,19 @@ def sync_clients(
     db: Session = Depends(get_db),
     _auth: bool = Depends(_verify_basic),
 ):
-    """Персональные скидки из 1С. Меняется ТОЛЬКО discount_percent.
+    """Скидки и идентификатор контрагента из 1С. Меняются ТОЛЬКО discount_percent
+    и external_id (id контрагента в 1С).
 
-    Тело: {"clients": [{"email": "shop@test.ru", "discount_percent": 5},
-                       {"inn": "7701234567", "discount_percent": 7.5}]}
-    Клиент ищется по email; если email не указан — по ИНН (должен быть
-    ровно один клиент с таким ИНН). Новых клиентов и права доступа 1С не
-    создаёт и не меняет: регистрацию и одобрение делает менеджер на сайте.
-    dry_run=1 — «проверка без сохранения»: ответ тот же, но скидки не меняются.
+    Тело: {"clients": [{"email": "shop@test.ru", "external_id": "000001234",
+                        "discount_percent": 5},
+                       {"inn": "7701234567", "discount_percent": 7.5},
+                       {"external_id": "000001234", "discount_percent": 3}]}
+    Клиент ищется по email; если его нет — по external_id; если нет и его — по ИНН
+    (должен быть ровно один клиент с таким ИНН). discount_percent можно не
+    присылать, если присылается external_id (тогда запоминается только он).
+    Новых клиентов и права доступа 1С не создаёт и не меняет: регистрацию и
+    одобрение делает менеджер на сайте.
+    dry_run=1 — «проверка без сохранения»: ответ тот же, но данные не меняются.
     """
     clients = payload.get("clients")
     if not isinstance(clients, list):
@@ -722,47 +729,61 @@ def sync_clients(
             continue
         email = _clean(c.get("email"), 120).lower()
         inn = _clean(c.get("inn"), 12)
+        ext = _clean(c.get("external_id"), 64)
+        pct = None
         try:
-            if "discount_percent" not in c:
+            if "discount_percent" in c:
+                pct = _num(c.get("discount_percent"), "discount_percent")
+                if not (0 <= pct <= 100):
+                    raise RowError(f"discount_percent {pct} вне диапазона 0…100")
+            elif not ext:
                 raise RowError("нет discount_percent")
-            pct = _num(c.get("discount_percent"), "discount_percent")
-            if not (0 <= pct <= 100):
-                raise RowError(f"discount_percent {pct} вне диапазона 0…100")
             if email:
                 matches = db.query(User).filter(User.email == email).all()
+            elif ext:
+                matches = db.query(User).filter(
+                    User.external_id == ext, User.is_admin.is_(False)).all()
             elif inn:
                 matches = db.query(User).filter(
                     User.inn == inn, User.is_admin.is_(False)).all()
             else:
-                raise RowError("нужен email или inn")
+                raise RowError("нужен email, external_id или inn")
             if not matches:
                 raise RowError("клиент не найден")
             if len(matches) > 1:
-                raise RowError("по ИНН найдено несколько клиентов — укажите email")
+                raise RowError("найдено несколько клиентов — укажите email")
         except RowError as e:
-            errors.append(f"#{idx} ({email or inn or '?'}): {e}")
+            errors.append(f"#{idx} ({email or ext or inn or '?'}): {e}")
             continue
 
         user = matches[0]
         if user.is_admin:
-            errors.append(f"#{idx} ({user.email}): у администратора скидка не меняется")
+            errors.append(f"#{idx} ({user.email}): у администратора данные не меняются")
             continue
-        pct = round(pct, 2)
-        if abs((user.discount_percent or 0) - pct) < 0.005:
+
+        changes = []
+        old = user.discount_percent or 0
+        if pct is not None:
+            pct = round(pct, 2)
+            if abs(old - pct) >= 0.005:
+                user.discount_percent = pct
+                changes.append(f"скидка {old:.1f}% → {pct:.1f}%")
+        if ext and (user.external_id or "") != ext:
+            changes.append(f"id в 1С «{user.external_id or '—'}» → «{ext}»")
+            user.external_id = ext
+        if not changes:
             unchanged += 1
             continue
-        old = user.discount_percent or 0
-        user.discount_percent = pct
         if not dry_run:
             db.commit()
             log_action(db, request, None, "user_discount_1c", "user", user.id,
-                       f"1С: {user.email}: скидка {old:.1f}% → {pct:.1f}%")
+                       f"1С: {user.email}: " + "; ".join(changes))
         updated += 1
 
     if dry_run:
         db.rollback()                      # проверка: ничего не сохраняем
     note(request, (f"{DRY_RUN_MARK} — " if dry_run else "")
-                  + f"скидок изменено: {updated}, без изменений: {unchanged}"
+                  + f"клиентов изменено: {updated}, без изменений: {unchanged}"
                   + (f", ошибок: {len(errors)}" if errors else ""))
     return {"status": "ok", "dry_run": bool(dry_run), "updated": updated,
             "unchanged": unchanged, "errors": errors[:MAX_ERRORS_IN_REPLY]}

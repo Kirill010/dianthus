@@ -27,7 +27,8 @@ from sqlalchemy.orm import Session, joinedload
 from ..models import Order, OrderItem, Product, Supply, SupplyItem
 from .exchange_log import DRY_RUN_MARK
 from .orders import CANCELLED
-from .product_guess import guess_category, guess_country, guess_length_cm
+from .taxonomy import (CLEAR, JSON_KEYS, Taxonomy, TaxonomyError, extract_ref,
+                       parse_height)
 
 logger = logging.getLogger(__name__)
 
@@ -166,12 +167,17 @@ def extract_photos(item: dict) -> list:
 
 
 def ext_id_of(item: dict) -> str:
-    """Идентификатор товара в 1С: поле id / external_id / guid / code.
+    """Идентификатор товара в 1С: поле external_id (старые имена: guid / code / id).
 
-    Именно по нему товар сопоставляется при обмене (приоритет выше sku и
-    названия), поэтому переименование номенклатуры в 1С не создаёт дубль.
+    Именно по нему товар сопоставляется при обмене (приоритет выше штрихкода, артикула
+    и названия), поэтому переименование номенклатуры в 1С не создаёт дубль.
+    Если в строке есть поле external_id (даже пустое), поле id — это id НА САЙТЕ (так
+    устроен обмен сайта с 1С в обе стороны) и за идентификатор 1С не принимается.
+    Старый вариант «id без external_id» понимается как идентификатор 1С.
     """
-    for key in ("id", "external_id", "guid", "code"):
+    if "external_id" in item:
+        return clean(item.get("external_id"), 64)
+    for key in ("guid", "code", "id"):
         value = item.get(key)
         if value not in (None, ""):
             return clean(value, 64)
@@ -195,19 +201,25 @@ def parse_product_row(item: dict) -> dict:
         "price": round(price, 2),
         "photos": extract_photos(item),
         # необязательные поля: None = «не передано, не трогать»
+        "barcode": (clean(item.get("barcode"), 64) if "barcode" in item else None),
         "description": (clean(item.get("description"), 5000)
                         if "description" in item else None),
-        "country": (clean(item.get("country"), 100)
-                    if "country" in item else None),
-        "category": ((clean(item.get("category"), 100) or None)
-                     if "category" in item else None),
-        "length_cm": None, "package_size": None, "min_quantity": None,
+        "package_size": None, "min_quantity": None,
         "stock_packs": None, "stock_stems": None,
     }
-    if "length_cm" in item:
-        row["length_cm"] = int(to_number(item["length_cm"], "length_cm"))
-        if not (0 <= row["length_cm"] <= 500):
-            raise RowError(f"length_cm {row['length_cm']} вне диапазона 0…500")
+    # Вид, цвет, рост, страна — значения справочников (отдельные таблицы): по id на
+    # сайте, по id в 1С или по названию. None — не присылали, Ref(clear) — прислали пустым.
+    refs = {}
+    for kind in JSON_KEYS:
+        try:
+            ref = extract_ref(item, kind)
+            if (kind == "height" and ref is not None and not ref.clear
+                    and ref.id is None and not ref.external_id):
+                parse_height(ref.name)             # понятная ошибка про рост — сразу, до базы
+        except TaxonomyError as e:
+            raise RowError(str(e))
+        refs[kind] = ref
+    row["refs"] = refs
     if "package_size" in item:
         row["package_size"] = bounded_int(
             item["package_size"], "package_size", 1, 10_000, 1)
@@ -293,18 +305,20 @@ def _chunks(seq: list, size: int = 500):
 
 
 class Catalog:
-    """Поиск существующих товаров: id из 1С → sku → название."""
+    """Поиск существующих товаров: id из 1С → штрихкод → артикул → название."""
 
     def __init__(self, db: Session, rows: list[dict]):
         self.by_ext: dict[str, Product] = {}
+        self.by_barcode: dict[str, Product] = {}
         self.by_sku: dict[str, Product] = {}
         self.by_name: dict[str, Product] = {}
 
         exts = sorted({ext_id_of(r) for r in rows} - {""})
+        barcodes = sorted({clean(r.get("barcode"), 64) for r in rows} - {""})
         skus = sorted({clean(r.get("sku"), 100) for r in rows} - {""})
         names = sorted({clean(r.get("name"), 200) for r in rows} - {""})
         # порциями: у SQLite лимит на число параметров запроса
-        for column, values in ((Product.external_id, exts),
+        for column, values in ((Product.external_id, exts), (Product.barcode, barcodes),
                                (Product.sku, skus), (Product.name, names)):
             for part in _chunks(values):
                 for p in db.query(Product).filter(column.in_(part)).all():
@@ -313,6 +327,8 @@ class Catalog:
     def _index(self, p: Product) -> None:
         if p.external_id:
             self.by_ext.setdefault(p.external_id, p)
+        if p.barcode:
+            self.by_barcode.setdefault(p.barcode, p)
         if p.sku:
             self.by_sku.setdefault(p.sku, p)
         self.by_name.setdefault(p.name, p)
@@ -320,13 +336,14 @@ class Catalog:
     def add(self, p: Product) -> None:
         self._index(p)
 
-    def find(self, ext: str, sku: str, name: str) -> Product | None:
+    def find(self, ext: str, sku: str, name: str, barcode: str = "") -> Product | None:
         # 1) точное совпадение по id из 1С
         if ext and ext in self.by_ext:
             return self.by_ext[ext]
-        # 2) по артикулу / 3) по названию — но только если это не ДРУГОЙ товар
-        #    1С: иначе два разных товара с одним названием склеились бы в один
-        for cand in (self.by_sku.get(sku) if sku else None,
+        # 2) по штрихкоду / 3) по артикулу / 4) по названию — но только если это не
+        #    ДРУГОЙ товар 1С: иначе два разных товара с одним названием склеились бы в один
+        for cand in (self.by_barcode.get(barcode) if barcode else None,
+                     self.by_sku.get(sku) if sku else None,
                      self.by_name.get(name) if name else None):
             if cand and (not ext or not cand.external_id
                          or cand.external_id == ext):
@@ -335,32 +352,32 @@ class Catalog:
 
 
 def new_product(row: dict, main_image: str = "", photos: list | None = None) -> Product:
-    """Новый товар из разобранной строки; страну, длину и категорию, которых
-    1С не прислала, пробуем понять по названию («Роза Кения 40» → Кения, 40 см)."""
-    country = row["country"] or guess_country(row["name"])
+    """Новый товар из разобранной строки (без классификации: вид, цвет, рост и страну
+    потом кладёт apply_classification — по справочникам)."""
     return Product(
-        sku=row["sku"], external_id=row["ext"], name=row["name"],
-        description=row["description"] or "",
-        country=country,
-        length_cm=row["length_cm"] or guess_length_cm(row["name"]),
+        sku=row["sku"], barcode=row.get("barcode") or "", external_id=row["ext"],
+        name=row["name"], description=row["description"] or "",
         unit="упаковка",
         package_size=row["package_size"] or row.get("package_size_hint") or 1,
         min_quantity=row["min_quantity"] or 1,
-        category=row["category"] or guess_category(row["name"], country) or "Прочее",
         image_url=main_image, photos=photos or [],
     )
 
 
-def fill_empty_from_name(product: Product, row: dict) -> None:
-    """У существующего товара заполняем только ПУСТЫЕ поля и только если 1С
-    их не присылала; всё, что уже есть (от 1С или от менеджера), не трогаем."""
-    if not product.country and row["country"] is None:
-        product.country = guess_country(product.name)
-    if not product.length_cm and row["length_cm"] is None:
-        product.length_cm = guess_length_cm(product.name)
-    if (not product.category or product.category == "Прочее") and not row["category"]:
-        product.category = (guess_category(product.name, product.country or "")
-                            or product.category or "Прочее")
+def resolve_classification(tax: Taxonomy, row: dict) -> dict:
+    """Значения справочников из строки → записи (создаёт недостающие). TaxonomyError — в ошибки строки."""
+    return tax.resolve_refs(row["refs"])
+
+
+def apply_classification(tax: Taxonomy, product: Product, resolved: dict, row: dict) -> None:
+    """Кладёт в товар значения справочников, которые прислала 1С, а пустое остальное
+    угадывает по названию («Роза Кения 40с» → Роза, Кения, 40 см). То, что уже заполнено
+    (1С или менеджером), не трогаем; а у товара без вида ставим «Прочее»."""
+    tax.apply(product, resolved)
+    skip = {kind for kind, ref in row["refs"].items() if ref is not None}
+    tax.fill_empty_from_name(product, skip=skip)
+    if product.kind_ref is None and "kind" not in skip:
+        product.kind_ref = tax.by_name("kind", "Прочее")
 
 
 def duplicates_with_manual_supplies(db: Session) -> int:
@@ -413,6 +430,8 @@ class SyncResult:
     warnings: list[str] = field(default_factory=list)
     supply_id: int | None = None
     dry_run: bool = False
+    # что при этом появилось в справочниках: {"color": ["Белый"], "height": ["65 см"], …}
+    dictionaries: dict = field(default_factory=dict)
 
     def as_dict(self) -> dict:
         return {
@@ -426,6 +445,7 @@ class SyncResult:
             "errors_total": len(self.errors),
             "warnings": self.warnings,
             "supply_id": self.supply_id,
+            "dictionaries_created": self.dictionaries,
         }
 
     def summary(self) -> str:
@@ -433,6 +453,11 @@ class SyncResult:
                 f"обновлено: {self.updated}")
         if self.deactivated:
             text += f", снято с полки: {self.deactivated}"
+        if self.dictionaries:
+            from .taxonomy import LABELS
+            text += ", новых значений справочников: " + "; ".join(
+                f"{LABELS[k].lower()}: {', '.join(v[:5])}{'…' if len(v) > 5 else ''}"
+                for k, v in self.dictionaries.items())
         if self.errors:
             text += f", ошибок в строках: {len(self.errors)}"
         if self.dry_run:
@@ -456,6 +481,7 @@ def apply_products(db: Session, items: list[dict], *, full: bool,
     lock_exchange(db)
     supply = ensure_service_supply(db)
     catalog = Catalog(db, items)
+    tax = Taxonomy(db)
 
     # Позиции служебной партии: один запрос вместо запроса на каждую строку.
     # joinedload отдаёт те же объекты Product, что нашёл каталог выше.
@@ -479,17 +505,25 @@ def apply_products(db: Session, items: list[dict], *, full: bool,
             result.errors.append(f"#{idx} ({label}): {e}")
             # при «полном снимке» не обнуляем товар, чья строка пришла битой
             prot = catalog.find(ext_id_of(item), clean(item.get("sku"), 100),
-                                clean(item.get("name"), 200))
+                                clean(item.get("name"), 200), clean(item.get("barcode"), 64))
             if prot is not None:
                 seen.add(id(prot))
             continue
 
-        product = catalog.find(row["ext"], row["sku"], row["name"])
+        product = catalog.find(row["ext"], row["sku"], row["name"], row["barcode"] or "")
+        try:
+            resolved = resolve_classification(tax, row)
+        except TaxonomyError as e:
+            result.errors.append(f"#{idx} ({row['name'][:60]}): {e}")
+            if product is not None:
+                seen.add(id(product))                       # битая строка не обнуляет товар при «полном снимке»
+            continue
         photos = row["photos"]
         main_image = photos[0] if photos else ""
 
         if product is None:
             product = new_product(row, main_image, photos)
+            apply_classification(tax, product, resolved, row)
             db.add(product)
             catalog.add(product)
             result.created += 1
@@ -497,23 +531,19 @@ def apply_products(db: Session, items: list[dict], *, full: bool,
             product.sku = row["sku"] or product.sku
             if row["ext"]:
                 product.external_id = row["ext"]
+            if row["barcode"] is not None:
+                product.barcode = row["barcode"]
             product.name = row["name"]
             if row["description"] is not None:
                 product.description = row["description"]
-            if row["country"] is not None:
-                product.country = row["country"]
-            if row["length_cm"] is not None:
-                product.length_cm = row["length_cm"]
             if row["package_size"] is not None:
                 product.package_size = row["package_size"]
             if row["min_quantity"] is not None:
                 product.min_quantity = row["min_quantity"]
-            if row["category"]:
-                product.category = row["category"]
             if photos:
                 product.photos = photos
                 product.image_url = main_image
-            fill_empty_from_name(product, row)
+            apply_classification(tax, product, resolved, row)
             catalog.add(product)
             result.updated += 1
         seen.add(id(product))
@@ -547,6 +577,7 @@ def apply_products(db: Session, items: list[dict], *, full: bool,
                 si.is_active = False
                 result.deactivated += 1
 
+    result.dictionaries = tax.report()
     if dry_run:
         # откатываем всё, что насчитали: товары, партию, остатки и блокировку
         db.rollback()
