@@ -1269,6 +1269,13 @@ def supply_unload(
             "остатки всего каталога."
         )
         return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit", status_code=303)
+    if supply.is_from_1c:
+        request.session["flash"] = (
+            "❌ Эту поставку ведёт 1С (инвойс «в пути»), вручную её разгружать нельзя: "
+            "товар появится на полке, когда его оприходуют в 1С, а клиентам с предзаказом "
+            "придёт уведомление."
+        )
+        return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit", status_code=303)
     if not supply.items:
         request.session["flash"] = "В поставке нет товаров"
         return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit", status_code=303)

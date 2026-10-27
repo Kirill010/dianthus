@@ -10,6 +10,7 @@ from html import escape
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from .locks import acquire_file_lock, lock_path, release_file_lock
@@ -55,6 +56,14 @@ def do_unload(db: Session, supply) -> int:
         logger.warning(
             "do_unload: поставка №%s служебная (1С) — пропускаю",
             getattr(supply, "id", "?"),
+        )
+        return 0
+    # Инвойс из 1С («товары в пути»): остатки на полке ведёт 1С, а разгрузка
+    # показала бы тот же товар ещё раз.
+    if getattr(supply, "external_id", ""):
+        logger.warning(
+            "do_unload: поставка №%s ведётся из 1С (инвойс %s) — пропускаю",
+            getattr(supply, "id", "?"), supply.external_id,
         )
         return 0
 
@@ -198,6 +207,8 @@ def _auto_unload_overdue_sync() -> None:
                 Supply.arrival_date.isnot(None),
                 Supply.arrival_date <= now,
                 Supply.is_service.is_(False),   # fix #20
+                # инвойсы из 1С не разгружаем: остатки ведёт 1С
+                or_(Supply.external_id == "", Supply.external_id.is_(None)),
             )
             .all()
         )
@@ -223,6 +234,11 @@ async def _prune_exchange_log() -> None:
     await asyncio.to_thread(prune_job)
 
 
+async def _close_stale_1c_supplies() -> None:
+    from .services.supply_sync import close_stale_job
+    await asyncio.to_thread(close_stale_job)
+
+
 def start_scheduler() -> None:
     global _scheduler
     if not _acquire_scheduler_lock():
@@ -241,6 +257,14 @@ def start_scheduler() -> None:
             _prune_exchange_log,
             trigger=CronTrigger(hour=3, minute=30),
             id="prune_exchange_log",
+            replace_existing=True,
+            max_instances=1,
+        )
+        # Раз в сутки закрываем «забытые» инвойсы из 1С (1С 21+ день их не присылала)
+        _scheduler.add_job(
+            _close_stale_1c_supplies,
+            trigger=CronTrigger(hour=4, minute=10),
+            id="close_stale_1c_supplies",
             replace_existing=True,
             max_instances=1,
         )

@@ -167,10 +167,14 @@ async def import_catalog_file(
     price_unit: str = Form("stem"),
     price_column: str = Form(""),
     full: str = Form(""),
+    dry_run: str = Form(""),
     db: Session = Depends(get_db), admin=Depends(require_admin),
     _csrf: None = Depends(check_csrf),
 ):
-    """Ручная загрузка прайс-листа (CSV / Excel) — те же правила, что у обмена по сети."""
+    """Ручная загрузка прайс-листа (CSV / Excel) — те же правила, что у обмена по сети.
+
+    Галочка «Только проверить» (dry_run) — показывает, что изменится, но ничего не сохраняет.
+    """
     def back(message: str):
         request.session["flash"] = message
         return RedirectResponse(url=PAGE + "#import", status_code=303)
@@ -203,7 +207,7 @@ async def import_catalog_file(
     try:
         result = await run_in_threadpool(
             apply_products, db, rows, full=bool(full),
-            reserve_unexported=config.ONEC_RESERVE_UNEXPORTED)
+            reserve_unexported=config.ONEC_RESERVE_UNEXPORTED, dry_run=bool(dry_run))
     except SyncCommitError:
         return back("❌ База данных не приняла файл. Попробуйте ещё раз или обратитесь к администратору.")
 
@@ -211,8 +215,9 @@ async def import_catalog_file(
     exchange_log.record(method="POST", path="/api/1c/file-import", status_code=200,
                         ip=(request.client.host if request.client else ""), duration_ms=0,
                         info={"auth_kind": "file", "summary": f"файл «{filename[:60]}»: {summary}"})
-    log_action(db, request, admin, "catalog_file_import", "catalog", None,
-               f"Файл «{filename[:80]}»: {summary}")
+    if not dry_run:
+        log_action(db, request, admin, "catalog_file_import", "catalog", None,
+                   f"Файл «{filename[:80]}»: {summary}")
     request.session["import_report"] = {
         "filename": filename, "summary": summary,
         "errors": (result.errors + info["skipped"])[:30],
@@ -221,8 +226,10 @@ async def import_catalog_file(
         "columns": info["columns"],
         "other_price_columns": info["other_price_columns"],
         "full": bool(full),
+        "dry_run": bool(dry_run),
     }
-    request.session["flash"] = f"Файл загружен: {summary}"
+    # у проверки в summary уже написано «ПРОВЕРКА, ничего не сохранено — …»
+    request.session["flash"] = summary if dry_run else f"Файл загружен: {summary}"
     return RedirectResponse(url=PAGE + "#import", status_code=303)
 
 

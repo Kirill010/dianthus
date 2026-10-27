@@ -525,6 +525,7 @@
                         <td>
                             <strong>{{ s.country }}</strong>
                             {% if s.city %}<br><small class="text-muted">г. {{ s.city }}</small>{% endif %}
+                            {% if s.is_from_1c %}<br><span class="badge bg-info text-dark" title="Инвойс из 1С: обновляется обменом">из 1С · {{ s.external_id }}</span>{% endif %}
                         </td>
                         <td>
                             {% if s.arrival_date %}
@@ -555,7 +556,7 @@
                                class="btn btn-sm btn-outline-secondary">
                                 <i class="fas fa-edit"></i>
                             </a>
-                            {% if s.status in ['В пути', 'Прибыл'] %}
+                            {% if s.status in ['В пути', 'Прибыл'] and not s.is_from_1c %}
                                 <form action="/admin/supplies/{{ s.id }}/unload"
                                       method="post" class="d-inline"
                                       data-confirm="Разгрузить?">

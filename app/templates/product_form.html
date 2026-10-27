@@ -27,6 +27,10 @@
                 <div class="col-md-4">
                     <label class="form-label">Категория</label>
                     <select name="category" class="form-select">
+                        {# категория могла прийти из 1С и отсутствовать в списке: не теряем её при сохранении #}
+                        {% if product and product.category and product.category not in categories %}
+                            <option value="{{ product.category }}" selected>{{ product.category }}</option>
+                        {% endif %}
                         {% for cat in categories %}
                             <option value="{{ cat }}" {% if product and product.category == cat %}selected{% endif %}>{{ cat }}</option>
                         {% endfor %}

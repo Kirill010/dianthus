@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from ..models import Order, OrderItem, Product, Supply, SupplyItem
 from .orders import CANCELLED
+from .product_guess import guess_category, guess_country, guess_length_cm
 
 logger = logging.getLogger(__name__)
 
@@ -332,6 +333,35 @@ class Catalog:
         return None
 
 
+def new_product(row: dict, main_image: str = "", photos: list | None = None) -> Product:
+    """Новый товар из разобранной строки; страну, длину и категорию, которых
+    1С не прислала, пробуем понять по названию («Роза Кения 40» → Кения, 40 см)."""
+    country = row["country"] or guess_country(row["name"])
+    return Product(
+        sku=row["sku"], external_id=row["ext"], name=row["name"],
+        description=row["description"] or "",
+        country=country,
+        length_cm=row["length_cm"] or guess_length_cm(row["name"]),
+        unit="упаковка",
+        package_size=row["package_size"] or row.get("package_size_hint") or 1,
+        min_quantity=row["min_quantity"] or 1,
+        category=row["category"] or guess_category(row["name"], country) or "Прочее",
+        image_url=main_image, photos=photos or [],
+    )
+
+
+def fill_empty_from_name(product: Product, row: dict) -> None:
+    """У существующего товара заполняем только ПУСТЫЕ поля и только если 1С
+    их не присылала; всё, что уже есть (от 1С или от менеджера), не трогаем."""
+    if not product.country and row["country"] is None:
+        product.country = guess_country(product.name)
+    if not product.length_cm and row["length_cm"] is None:
+        product.length_cm = guess_length_cm(product.name)
+    if (not product.category or product.category == "Прочее") and not row["category"]:
+        product.category = (guess_category(product.name, product.country or "")
+                            or product.category or "Прочее")
+
+
 def duplicates_with_manual_supplies(db: Session) -> int:
     """Сколько товаров одновременно лежит на полке и из 1С, и из ручной поставки.
 
@@ -381,10 +411,12 @@ class SyncResult:
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     supply_id: int | None = None
+    dry_run: bool = False
 
     def as_dict(self) -> dict:
         return {
             "status": "ok",
+            "dry_run": self.dry_run,
             "processed": self.processed,
             "created": self.created,
             "updated": self.updated,
@@ -402,16 +434,23 @@ class SyncResult:
             text += f", снято с полки: {self.deactivated}"
         if self.errors:
             text += f", ошибок в строках: {len(self.errors)}"
+        if self.dry_run:
+            text = "ПРОВЕРКА, ничего не сохранено — " + text
         return text
 
 
 def apply_products(db: Session, items: list[dict], *, full: bool,
-                   reserve_unexported: bool = False) -> SyncResult:
+                   reserve_unexported: bool = False,
+                   dry_run: bool = False) -> SyncResult:
     """Применяет разобранную выгрузку к базе. Делает commit.
 
     full=True — «полный снимок»: все позиции каталога, которых НЕТ в выгрузке,
     снимаются с остатка (stock=0) и с полки. Включайте, только когда присылаете
     ВЕСЬ каталог одним запросом.
+
+    dry_run=True — «проверка без сохранения»: всё считается точно так же (сколько
+    товаров создастся и обновится, какие строки с ошибками, сколько снимется с
+    полки), но в конце транзакция откатывается и в базе ничего не меняется.
     """
     lock_exchange(db)
     supply = ensure_service_supply(db)
@@ -449,17 +488,7 @@ def apply_products(db: Session, items: list[dict], *, full: bool,
         main_image = photos[0] if photos else ""
 
         if product is None:
-            product = Product(
-                sku=row["sku"], external_id=row["ext"], name=row["name"],
-                description=row["description"] or "",
-                country=row["country"] or "",
-                length_cm=row["length_cm"] or 0,
-                unit="упаковка",
-                package_size=row["package_size"] or row["package_size_hint"] or 1,
-                min_quantity=row["min_quantity"] or 1,
-                category=row["category"] or "Прочее",
-                image_url=main_image, photos=photos,
-            )
+            product = new_product(row, main_image, photos)
             db.add(product)
             catalog.add(product)
             result.created += 1
@@ -483,6 +512,7 @@ def apply_products(db: Session, items: list[dict], *, full: bool,
             if photos:
                 product.photos = photos
                 product.image_url = main_image
+            fill_empty_from_name(product, row)
             catalog.add(product)
             result.updated += 1
         seen.add(id(product))
@@ -515,6 +545,13 @@ def apply_products(db: Session, items: list[dict], *, full: bool,
                 si.stock = 0
                 si.is_active = False
                 result.deactivated += 1
+
+    if dry_run:
+        # откатываем всё, что насчитали: товары, партию, остатки и блокировку
+        db.rollback()
+        result.dry_run = True
+        result.supply_id = None
+        return result
 
     try:
         db.commit()

@@ -10,6 +10,7 @@
 
   1С → сайт
     POST /api/1c/products/sync      каталог, цены, остатки (JSON или CSV; опц. «полный снимок»)
+    POST /api/1c/supplies/sync      инвойсы поставщиков → «товары в пути» (предзаказ)
     POST /api/1c/orders/status      статусы заказов (+ номер документа в 1С)
     POST /api/1c/orders/ack         «заказы получены» (чтобы не выгружать повторно)
     POST /api/1c/clients/sync       персональные скидки клиентов
@@ -62,6 +63,7 @@ from ..services.exchange_export import (
 from ..services.exchange_log import note
 from ..services.orders import (apply_status_change, load_order_for_update,
                                notify_client_of_status)
+from ..services.supply_sync import MAX_SUPPLIES_PER_SYNC, apply_supplies
 from ..timeutils import utc_iso
 
 logger = logging.getLogger(__name__)
@@ -191,10 +193,11 @@ def _parse_json_body(body: bytes) -> dict:
     return payload
 
 
-def _apply_sync(db: Session, items: list[dict], full: bool) -> dict:
+def _apply_sync(db: Session, items: list[dict], full: bool, dry_run: bool = False) -> dict:
     try:
         result = apply_products(db, items, full=full,
-                                reserve_unexported=config.ONEC_RESERVE_UNEXPORTED)
+                                reserve_unexported=config.ONEC_RESERVE_UNEXPORTED,
+                                dry_run=dry_run)
     except SyncCommitError:
         # подробности — только в лог сервера, не в ответ внешней системе
         raise HTTPException(500, "Ошибка БД при сохранении выгрузки. Повторите позже.")
@@ -205,6 +208,7 @@ def _apply_sync(db: Session, items: list[dict], full: bool) -> dict:
 async def sync_products(
     request: Request,
     full: int = 0,
+    dry_run: int = 0,
     db: Session = Depends(get_db),
     _auth: bool = Depends(_verify_basic),
 ):
@@ -215,6 +219,8 @@ async def sync_products(
     full=1 (или "full": true) — «полный снимок»: все позиции каталога, которых НЕТ
     в этой выгрузке, снимаются с остатка (stock=0) и с полки. Включайте только
     когда присылаете ВЕСЬ каталог одним запросом.
+    dry_run=1 — «проверка без сохранения»: ответ тот же (сколько будет создано,
+    обновлено, снято с полки, какие строки с ошибками), но в базе ничего не меняется.
     """
     client_ip = request.client.host if request.client else "?"
     body = await request.body()
@@ -260,8 +266,8 @@ async def sync_products(
     if not products_data and not full_snapshot:
         note(request, "пустая выгрузка (0 товаров)")
         return JSONResponse({
-            "status": "ok", "processed": 0, "created": 0, "updated": 0,
-            "deactivated": 0, "errors": [], "supply_id": None,
+            "status": "ok", "dry_run": bool(dry_run), "processed": 0, "created": 0,
+            "updated": 0, "deactivated": 0, "errors": [], "supply_id": None,
         })
     if not products_data and full_snapshot:
         # Пустой «полный снимок» обнулил бы весь каталог — почти наверняка
@@ -270,7 +276,7 @@ async def sync_products(
             400, "Полный снимок без товаров не принимается "
                  "(он снял бы с продажи весь каталог).")
 
-    out = await run_in_threadpool(_apply_sync, db, products_data, full_snapshot)
+    out = await run_in_threadpool(_apply_sync, db, products_data, full_snapshot, bool(dry_run))
     result = out["result"]
     note(request, out["summary"] + (", полный снимок" if full_snapshot else ""))
     logger.info(
@@ -284,6 +290,42 @@ async def sync_products(
         reply["csv"] = {"columns": csv_info["columns"],
                         "skipped": csv_info["skipped"][:MAX_ERRORS_IN_REPLY]}
     return JSONResponse(reply)
+
+
+@router.post("/supplies/sync")
+async def sync_supplies(
+    request: Request,
+    dry_run: int = 0,
+    db: Session = Depends(get_db),
+    _auth: bool = Depends(_verify_basic),
+):
+    """Инвойсы поставщиков из 1С → «товары в пути» на сайте.
+
+    Тело: {"supplies": [{"id": "00000622", "number": "00000622", "date": "2026-10-29",
+                         "country": "Эквадор", "supplier": "ECUANROS S.A",
+                         "status": "in_transit",
+                         "items": [{"id": "…", "sku": "…", "name": "Роза Фридом 60",
+                                    "package_size": 25, "price_per_stem": 42.5,
+                                    "quantity_stems": 3000}]}]}
+    status: in_transit (ещё в пути) | received (оприходован в 1С) | cancelled.
+    Повторная отправка ничего не дублирует: поставка ищется по id инвойса.
+    dry_run=1 — проверка без сохранения.
+    """
+    body = await request.body()
+    if len(body) > MAX_BODY_BYTES:
+        raise HTTPException(413, "Слишком большой запрос — отправляйте инвойсы частями.")
+    payload = _parse_json_body(body)
+    supplies = payload.get("supplies")
+    if not isinstance(supplies, list):
+        raise HTTPException(400, "Поле 'supplies' должно быть массивом")
+    if len(supplies) > MAX_SUPPLIES_PER_SYNC:
+        raise HTTPException(413, f"Слишком много инвойсов за раз (максимум {MAX_SUPPLIES_PER_SYNC}).")
+    try:
+        result = await run_in_threadpool(apply_supplies, db, supplies, dry_run=bool(dry_run))
+    except SyncCommitError:
+        raise HTTPException(500, "Ошибка БД при сохранении инвойсов. Повторите позже.")
+    note(request, result.summary())
+    return JSONResponse(result.as_dict())
 
 
 @router.get("/ping")
@@ -607,6 +649,7 @@ def export_clients_to_1c(
 def sync_clients(
     request: Request,
     payload: dict,
+    dry_run: int = 0,
     db: Session = Depends(get_db),
     _auth: bool = Depends(_verify_basic),
 ):
@@ -617,6 +660,7 @@ def sync_clients(
     Клиент ищется по email; если email не указан — по ИНН (должен быть
     ровно один клиент с таким ИНН). Новых клиентов и права доступа 1С не
     создаёт и не меняет: регистрацию и одобрение делает менеджер на сайте.
+    dry_run=1 — «проверка без сохранения»: ответ тот же, но скидки не меняются.
     """
     clients = payload.get("clients")
     if not isinstance(clients, list):
@@ -662,12 +706,16 @@ def sync_clients(
             continue
         old = user.discount_percent or 0
         user.discount_percent = pct
-        db.commit()
-        log_action(db, request, None, "user_discount_1c", "user", user.id,
-                   f"1С: {user.email}: скидка {old:.1f}% → {pct:.1f}%")
+        if not dry_run:
+            db.commit()
+            log_action(db, request, None, "user_discount_1c", "user", user.id,
+                       f"1С: {user.email}: скидка {old:.1f}% → {pct:.1f}%")
         updated += 1
 
-    note(request, f"скидок изменено: {updated}, без изменений: {unchanged}"
+    if dry_run:
+        db.rollback()                      # проверка: ничего не сохраняем
+    note(request, ("ПРОВЕРКА, ничего не сохранено — " if dry_run else "")
+                  + f"скидок изменено: {updated}, без изменений: {unchanged}"
                   + (f", ошибок: {len(errors)}" if errors else ""))
-    return {"status": "ok", "updated": updated, "unchanged": unchanged,
-            "errors": errors[:MAX_ERRORS_IN_REPLY]}
+    return {"status": "ok", "dry_run": bool(dry_run), "updated": updated,
+            "unchanged": unchanged, "errors": errors[:MAX_ERRORS_IN_REPLY]}

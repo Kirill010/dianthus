@@ -19,7 +19,7 @@ ORDER_STATUSES = ["Новый", "Подтверждён", "В работе",
 SUPPLY_STATUSES = ["Ожидается", "В пути", "Прибыл", "Разгружен"]
 
 PRODUCT_CATEGORIES = [
-    "Роза Эквадор", "Роза кустовая", "Хризантема",
+    "Роза Эквадор", "Роза", "Роза кустовая", "Хризантема",
     "Гвоздика", "Тюльпан", "Пион",
     "Горшечные", "Зелень", "Прочее",
 ]
@@ -155,9 +155,18 @@ class Supply(Base):
     status = Column(String(30), default="Ожидается")
     notes = Column(Text, default="")
     is_service = Column(Boolean, default=False, nullable=False)
+    # Поставка, которую ведёт 1С (инвойс «в пути»): номер/идентификатор документа
+    # в 1С. Пусто — поставка заведена вручную. Такие поставки обновляются только
+    # обменом, не разгружаются автоматически и вручную (остатки ведёт 1С).
+    external_id = Column(String(64), default="", index=True)
+    external_synced_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
     items = relationship("SupplyItem", back_populates="supply",
                          cascade="all, delete-orphan")
+
+    @property
+    def is_from_1c(self) -> bool:
+        return bool(self.external_id)
 
     @property
     def is_active(self) -> bool:

@@ -61,6 +61,9 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
         "notes":      "TEXT DEFAULT ''",
         "is_service": "BOOLEAN DEFAULT FALSE NOT NULL",
         "city":       "VARCHAR(100) DEFAULT ''",
+        # Инвойсы из 1С («товары в пути»): идентификатор документа в 1С и время последнего обмена
+        "external_id":        "VARCHAR(64) DEFAULT ''",
+        "external_synced_at": "TIMESTAMP",
     },
     "supply_items": {
         "is_active":      "BOOLEAN DEFAULT FALSE",
@@ -106,6 +109,9 @@ EXPECTED_INDEXES: dict[str, list[tuple]] = {
         ("ix_orders_exported_at", "exported_at"),
         # NULL-ы в уникальном индексе допустимы (старые заказы без токена)
         ("uq_orders_order_token", "order_token", "unique"),
+    ],
+    "supplies": [
+        ("ix_supplies_external_id", "external_id"),
     ],
     "supply_items": [
         ("ix_supply_items_supply_product", "supply_id, product_id"),
