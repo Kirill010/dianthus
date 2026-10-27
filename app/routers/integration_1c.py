@@ -11,6 +11,7 @@
   1С → сайт
     POST /api/1c/products/sync      каталог, цены, остатки (JSON или CSV; опц. «полный снимок»)
     POST /api/1c/supplies/sync      инвойсы поставщиков → «товары в пути» (предзаказ)
+    POST /api/1c/products/photo     фото товара (тело — сама картинка; ?id=…&n=1)
     POST /api/1c/orders/status      статусы заказов (+ номер документа в 1С)
     POST /api/1c/orders/ack         «заказы получены» (чтобы не выгружать повторно)
     POST /api/1c/clients/sync       персональные скидки клиентов
@@ -41,7 +42,7 @@ import re
 from datetime import datetime, timezone
 
 from fastapi import (APIRouter, BackgroundTasks, Body, Depends, HTTPException,
-                     Request)
+                     Query, Request)
 from fastapi.responses import JSONResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -51,7 +52,7 @@ from ..config import config
 from ..database import get_db
 from ..models import (ORDER_STATUSES, Order, Product, SupplyItem, User)
 from ..security import _client_ip, check_rate_limit, safe_equal
-from ..services import api_keys
+from ..services import api_keys, onec_photos
 from ..services.audit import log_action
 from ..services.catalog_files import decode_text, parse_catalog_text
 from ..services.catalog_sync import (MAX_ERRORS_IN_REPLY, MAX_PRODUCTS_PER_SYNC,
@@ -326,6 +327,52 @@ async def sync_supplies(
         raise HTTPException(500, "Ошибка БД при сохранении инвойсов. Повторите позже.")
     note(request, result.summary())
     return JSONResponse(result.as_dict())
+
+
+async def _read_limited(request: Request, limit: int, what: str) -> bytes:
+    """Читает тело запроса, но не больше limit байт: огромный файл не должен целиком
+    оказаться в памяти. Сначала смотрим заявленный размер, потом считаем по ходу."""
+    declared = (request.headers.get("content-length") or "").strip()
+    if declared.isdigit() and int(declared) > limit:
+        raise HTTPException(413, f"{what} больше {limit // (1024 * 1024)} МБ.")
+    chunks, total = [], 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > limit:
+            raise HTTPException(413, f"{what} больше {limit // (1024 * 1024)} МБ.")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+@router.post("/products/photo")
+async def upload_product_photo(
+    request: Request,
+    product_id: str = Query("", alias="id"),
+    sku: str = "",
+    name: str = "",
+    n: int = 1,
+    dry_run: int = 0,
+    db: Session = Depends(get_db),
+    _auth: bool = Depends(_verify_basic),
+):
+    """Фото товара из 1С. Тело запроса — САМА картинка (двоичные данные JPEG/PNG/WEBP),
+    не JSON и не base64. Товар — в адресе: ?id=<код или GUID из 1С> (или sku, или name).
+    n — номер фото по порядку (1 — главное): занятый номер заменяется, следующий —
+    добавляется. dry_run=1 — проверить, ничего не сохраняя. Подробности — в памятке
+    (раздел «Фото товаров»). Доступа на сервер для этого не нужно.
+    """
+    try:
+        body = await _read_limited(request, onec_photos.MAX_PHOTO_BYTES, "Файл")
+        result = await run_in_threadpool(
+            onec_photos.apply_product_photo, db, ext=product_id, sku=sku, name=name,
+            position=n, content=body, dry_run=bool(dry_run))
+    except HTTPException as e:
+        note(request, f"фото: {e.detail}")      # причина видна в журнале обмена в админке
+        raise
+    verdict = {"saved": "сохранено", "unchanged": "без изменений",
+               "would_save": "проверка: было бы сохранено"}[result["result"]]
+    note(request, f"фото «{result['product']['name'][:60]}» №{result['position']}: {verdict}")
+    return JSONResponse(result)
 
 
 @router.get("/ping")
