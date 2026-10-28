@@ -1846,6 +1846,15 @@ a.contacts-item__value:hover { color: var(--primary); }
     .public-nav__link { padding: 8px 8px; }
     .public-nav__cta { margin-left: 2px; padding: 6px 10px; }
 }
+/* Узкий телефон (375 px и меньше): в шапке остаются «Каталог», «Войти» и кнопка регистрации;
+   «Контакты» есть в подвале каждой страницы */
+@media (max-width: 420px) {
+    .public-nav__link--secondary { display: none; }
+}
+@media (max-width: 360px) {
+    .public-nav__link { padding: 8px 5px; font-size: .92rem; }
+    .public-nav__cta { font-size: .82rem; padding: 6px 8px; }
+}
 
 /* ─── HERO ─── */
 .landing-hero {
