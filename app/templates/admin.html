@@ -72,6 +72,7 @@
         <a href="/admin/picking" class="btn btn-outline-primary btn-sm"><i class="fas fa-boxes-packing me-1"></i>Лист сборки</a>
         <a href="/admin/claims" class="btn btn-outline-secondary btn-sm"><i class="fas fa-triangle-exclamation me-1"></i>Рекламации</a>
         {% if user.is_admin %}
+        <a href="/admin/filters" class="btn btn-outline-secondary btn-sm"><i class="fas fa-tags me-1"></i>Фильтры каталога</a>
         <a href="/admin/integration" class="btn btn-outline-secondary btn-sm"><i class="fas fa-plug me-1"></i>Интеграция с 1С</a>
         <a href="/admin/legal" class="btn btn-outline-secondary btn-sm"><i class="fas fa-scale-balanced me-1"></i>Юридическое</a>
         <a href="/admin/settings" class="btn btn-outline-secondary btn-sm"><i class="fas fa-sliders me-1"></i>Настройки</a>
@@ -453,12 +454,12 @@
                 <thead>
                     <tr>
                         <th>ID</th><th>Фото</th><th>Название</th>
-                        <th>Категория</th><th>Страна</th><th>Упак.</th><th></th>
+                        <th>Вид</th><th>Цвет</th><th>Рост</th><th>Страна</th><th>Упак.</th><th></th>
                     </tr>
                 </thead>
                 <tbody id="products-tbody">
                 {% for p in products %}
-                    <tr data-search="{{ (p.name ~ ' ' ~ (p.category or '') ~ ' ' ~ (p.country or ''))|lower|e }}">
+                    <tr data-search="{{ (p.name ~ ' ' ~ (p.sku or '') ~ ' ' ~ (p.barcode or '') ~ ' ' ~ p.kind_name ~ ' ' ~ p.color_name ~ ' ' ~ p.country_name)|lower|e }}">
                         <td>{{ p.id }}</td>
                         <td>
                             {% if p.image_url %}
@@ -470,12 +471,14 @@
                         </td>
                         <td>
                             {{ p.name }}
-                            {% if p.length_cm %}
-                                <br><small class="text-muted">{{ p.length_cm }} см</small>
+                            {% if p.sku or p.barcode %}
+                                <br><small class="text-muted">{% if p.sku %}арт. {{ p.sku }}{% endif %}{% if p.sku and p.barcode %} · {% endif %}{% if p.barcode %}ш/к {{ p.barcode }}{% endif %}</small>
                             {% endif %}
                         </td>
-                        <td><small>{{ p.category }}</small></td>
-                        <td><small>{{ p.country or "—" }}</small></td>
+                        <td><small>{{ p.kind_name or "—" }}</small></td>
+                        <td><small>{{ p.color_name or "—" }}</small></td>
+                        <td><small>{{ (p.height_cm ~ " см") if p.height_cm else "—" }}</small></td>
+                        <td><small>{{ p.country_name or "—" }}</small></td>
                         <td><small>{{ p.package_size }} шт</small></td>
                         <td>
                             <a href="/admin/products/{{ p.id }}/edit"
@@ -598,7 +601,7 @@
             <table class="table table-hover align-middle">
                 <thead>
                     <tr>
-                        <th>Товар</th><th>Категория</th>
+                        <th>Товар</th><th>Вид</th>
                         <th>Партия</th><th>Цена</th><th>Остаток</th>
                     </tr>
                 </thead>
@@ -606,7 +609,7 @@
                 {% for i in active_items %}
                     <tr>
                         <td>{{ i.product.name }}</td>
-                        <td><small>{{ i.product.category }}</small></td>
+                        <td><small>{{ i.product.kind_name }}</small></td>
                         <td>
                             <small>№{{ i.supply.id }} · {{ i.supply.country }}</small>
                         </td>

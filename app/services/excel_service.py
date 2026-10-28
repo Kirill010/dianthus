@@ -114,15 +114,16 @@ def export_customers_to_excel(customers: list[dict]) -> BytesIO:
     wb = Workbook()
     ws = wb.active
     ws.title = "Клиенты"
-    ws.append(["Компания", "Контакт", "Email", "Телефон", "ИНН", "Город", "Статус",
+    ws.append(["id", "Компания", "Контакт", "Email", "Телефон", "ИНН", "Город", "Адрес", "Статус",
                "Скидка %", "Заказов", "Сумма, ₽", "Последний заказ",
                "Последний вход", "Зарегистрирован",
                "Согласие на рекламу", "Согласие на обработку данных"])
     _header(ws)
     for c in customers:
-        ws.append(_row([c.get("company_name", ""), c.get("full_name", ""),
+        ws.append(_row([c.get("id", ""), c.get("company_name", ""), c.get("full_name", ""),
                         c.get("email", ""), c.get("phone", ""),
-                        c.get("inn", ""), c.get("city", ""), c.get("status", ""),
+                        c.get("inn", ""), c.get("city", ""), c.get("address", ""),
+                        c.get("status", ""),
                         c.get("discount_percent", 0),
                         c.get("orders_count", 0), c.get("total_sum", 0),
                         c.get("last_order_date", ""), c.get("last_login", ""),
@@ -134,12 +135,14 @@ def export_customers_to_excel(customers: list[dict]) -> BytesIO:
 
 # ИМПОРТ СПРАВОЧНИКА ТОВАРОВ
 
-PRODUCT_IMPORT_HEADERS = ["Название", "Страна", "Длина, см",
-                          "Единица", "В упаковке", "Мин. заказ",
-                          "Категория", "Описание"]
+PRODUCT_IMPORT_HEADERS = ["Название", "Артикул", "Штрихкод", "Вид", "Цвет", "Рост, см",
+                          "Страна", "Единица", "В упаковке", "Мин. заказ", "Описание"]
 
 
 def import_products_from_excel(content: bytes) -> tuple[list[dict], list[str]]:
+    """Excel «справочник товаров» (без цен и остатков) → строки в том же виде, что и в обмене
+    с 1С: name, sku, barcode, kind, color, height, country, unit, package_size, min_quantity,
+    description. Колонки читаются по порядку, как в шаблоне (PRODUCT_IMPORT_HEADERS)."""
     warnings: list[str] = []
     products: list[dict] = []
     try:
@@ -164,14 +167,17 @@ def import_products_from_excel(content: bytes) -> tuple[list[dict], list[str]]:
             # PostgreSQL одна «длинная» строка роняла импорт целиком.
             products.append({
                 "name": name[:200],
-                "country": _to_str_preserve(safe(1))[:100],
-                "length_cm": min(500, max(0, _to_int(safe(2)))),
-                "unit": (_to_str_preserve(safe(3)) or "упаковка")[:30],
-                "package_size": min(10_000, max(1, _to_int(safe(4)) or 1)),
-                "min_quantity": min(10_000, max(1, _to_int(safe(5)) or 1)),
-                "category": (_to_str_preserve(safe(6)) or "Прочее")[:100],
-                "description": _to_str_preserve(safe(7))[:5000],
-                "image_url": "",
+                "sku": _to_str_preserve(safe(1))[:100],
+                "barcode": _to_str_preserve(safe(2))[:64],
+                "kind": _to_str_preserve(safe(3))[:100],
+                "color": _to_str_preserve(safe(4))[:100],
+                "height": "" if _to_str_preserve(safe(5)) in ("0", "0.0") else _to_str_preserve(safe(5))[:20],
+                "country": _to_str_preserve(safe(6))[:100],
+                # пусто / 0 = «в файле не указано»: у существующего товара не меняем
+                "unit": _to_str_preserve(safe(7))[:30],
+                "package_size": min(10_000, max(0, _to_int(safe(8)))),
+                "min_quantity": min(10_000, max(0, _to_int(safe(9)))),
+                "description": _to_str_preserve(safe(10))[:5000],
             })
         except (ValueError, TypeError) as e:
             warnings.append(f"Строка {i}: {e}")
@@ -183,8 +189,8 @@ def build_products_import_template() -> BytesIO:
     ws = wb.active
     ws.title = "Товары"
     ws.append(PRODUCT_IMPORT_HEADERS)
-    ws.append(["Роза Freedom 60 см", "Эквадор", 60, "упаковка",
-               25, 1, "Роза Эквадор", "Классическая красная"])
+    ws.append(["Роза Freedom 60 см", "ROSA-FREEDOM-60", "4600000000001", "Роза", "Красный",
+               60, "Эквадор", "упаковка", 25, 1, "Классическая красная роза"])
     _header(ws)
     _autosize(ws, max_width=30)
     return _stream(wb)
@@ -205,20 +211,6 @@ _COL_ALIASES: dict[str, list[str]] = {
 _STOP_WORDS = [
     "итого", "всего наименований", "в том числе",
     "ндс:", "подпись", "отпустил", "получил",
-]
-
-_LENGTH_MIN = 20
-_LENGTH_MAX = 150
-
-_CATEGORY_PATTERNS: list[tuple[str, str]] = [
-    (r"гвоздик", "Гвоздика"),
-    (r"хризантем", "Хризантема"),
-    (r"тюльпан", "Тюльпан"),
-    (r"пион", "Пион"),
-    (r"горшеч", "Горшечные"),
-    (r"зелень", "Зелень"),
-    (r"\btessa\b", "Роза Эквадор"),
-    (r"роза", "Роза Эквадор"),
 ]
 
 # Предполагаемый размер упаковки по названию (если в накладной нет колонки)
@@ -322,31 +314,16 @@ def _is_stop_row(row: list) -> bool:
     return any(w in chunk for w in _STOP_WORDS)
 
 
-def _extract_length(name: str) -> int:
-    for m in re.finditer(r"\b(\d{2,3})\b", name):
-        n = int(m.group(1))
-        if _LENGTH_MIN <= n <= _LENGTH_MAX:
-            return n
-    return 0
-
-
-def _guess_category(name: str) -> str:
-    low = name.lower()
-    for pattern, category in _CATEGORY_PATTERNS:
-        if re.search(pattern, low):
-            return category
-    return "Прочее"
-
-
 def parse_invoice(content: bytes, filename: str
                   ) -> tuple[list[dict], list[str]]:
     """
     Универсальный парсер накладных.
 
     Возвращает:
-        items — [{"name", "quantity", "unit", "price", "total",
-                  "length_cm", "category", "country", "package_size"}]
+        items — [{"name", "quantity", "unit", "price", "total", "country", "package_size"}]
         warnings
+    Вид, рост и цвет в накладной обычно не пишут: для нового товара их угадывает сайт по названию
+    (taxonomy.Taxonomy.fill_empty_from_name).
     """
     warnings: list[str] = []
     fn = (filename or "").lower()
@@ -424,8 +401,6 @@ def parse_invoice(content: bytes, filename: str
             "unit": unit,
             "price": price,                 # за ШТУКУ
             "total": total,
-            "length_cm": _extract_length(name),
-            "category": _guess_category(name),
             "country": country,
             "package_size": pack_from_invoice,  # 0 = неизвестно
         })

@@ -17,8 +17,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 from starlette.requests import Request
 
-from app.models import (Notification, Order, Product, Supply, SupplyItem,
-                        User)
+from app.models import Notification, Order, Product, User
 from tests.helpers import csrf_from, login, make_order, make_user, seed_item
 
 
@@ -397,8 +396,8 @@ def test_search_suggest_treats_wildcards_literally(web, mem_db):
 def _xlsx(rows):
     wb = Workbook()
     ws = wb.active
-    ws.append(["Название", "Страна", "Длина, см", "Единица", "В упаковке",
-               "Мин. заказ", "Категория", "Описание"])
+    ws.append(["Название", "Артикул", "Штрихкод", "Вид", "Цвет", "Рост, см", "Страна",
+               "Единица", "В упаковке", "Мин. заказ", "Описание"])
     for r in rows:
         ws.append(r)
     buf = BytesIO()
@@ -406,29 +405,67 @@ def _xlsx(rows):
     return buf.getvalue()
 
 
+def _import_products(web, data):
+    mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    token = csrf_from(web.get("/admin").text)
+    r = web.post("/admin/products/import", follow_redirects=False,
+                 data={"csrf_token": token}, files={"file": ("p.xlsx", data, mime)})
+    assert r.status_code == 303
+    return r
+
+
 def test_excel_import_does_not_duplicate_products(web, mem_db):
     """Было: повторная загрузка того же файла удваивала справочник."""
+    from app.models import Color, Country, Height, Kind
     _admin(web, mem_db)
-    data = _xlsx([["Роза Импорт", "Эквадор", 60, "упаковка", 25, 1, "Роза Эквадор", "d"]])
-    mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    for _ in range(2):
-        token = csrf_from(web.get("/admin").text)
-        r = web.post("/admin/products/import", follow_redirects=False,
-                     data={"csrf_token": token},
-                     files={"file": ("p.xlsx", data, mime)})
-        assert r.status_code == 303
+    data = _xlsx([["Роза Импорт", "ROSA-IMP", "4600000000777", "Роза", "Красный", 60,
+                   "Эквадор", "упаковка", 25, 1, "d"]])
+    _import_products(web, data)
+    sizes = [mem_db.query(m).count() for m in (Kind, Color, Height, Country)]
+    _import_products(web, data)
     assert mem_db.query(Product).filter(Product.name == "Роза Импорт").count() == 1
+    p = mem_db.query(Product).filter(Product.name == "Роза Импорт").one()
+    assert (p.sku, p.barcode) == ("ROSA-IMP", "4600000000777")
+    assert (p.kind_name, p.color_name, p.height_cm, p.country_name) == ("Роза", "Красный", 60, "Эквадор")
+    # значения справочников тоже не плодятся
+    assert [mem_db.query(m).count() for m in (Kind, Color, Height, Country)] == sizes
+
+
+def test_excel_import_matches_by_barcode_and_keeps_filled_values(web, mem_db):
+    """Товар находится по штрихкоду (название могло измениться); пустые ячейки значений не стирают."""
+    _admin(web, mem_db)
+    seed = seed_item(mem_db, name="Старое имя", barcode="4600000000555", color="Белый")
+    data = _xlsx([["Новое имя", None, "4600000000555", None, None, None, None, None, None, None, None]])
+    _import_products(web, data)
+    mem_db.expire_all()
+    assert mem_db.query(Product).count() == 1
+    p = mem_db.get(Product, seed.product_id)
+    assert (p.name, p.color_name, p.height_cm, p.kind_name) == ("Старое имя", "Белый", 60, "Роза")
+    # (название, пришедшее без артикула/штрихкода, — отдельный товар; тут штрихкод совпал, имя остаётся прежним)
+
+
+def test_excel_import_reports_new_filter_values_and_bad_height(web, mem_db):
+    _admin(web, mem_db)
+    data = _xlsx([["Хорошая", None, None, "Гвоздика", "Малиновый", 65, "Кения", None, 20, None, None],
+                  ["Плохая", None, None, "Роза", None, "очень длинная", None, None, None, None, None]])
+    _import_products(web, data)
+    names = {p.name for p in mem_db.query(Product).all()}
+    assert names == {"Хорошая"}                                   # битую строку пропустили, остальное загрузили
+    flash = web.get("/admin").text
+    assert "Малиновый" in flash and "65 см" in flash              # владелец видит, что появилось в фильтрах
 
 
 def test_excel_import_clamps_values_for_postgres_columns():
     from app.services.excel_service import import_products_from_excel
-    data = _xlsx([["Н" * 500, "С" * 300, 9999, "У" * 99, 0, 0, "К" * 300, "О" * 9000]])
+    data = _xlsx([["Н" * 500, "A" * 300, "1" * 200, "К" * 300, "Ц" * 300, 9999, "С" * 300,
+                   "У" * 99, 0, 0, "О" * 9000]])
     products, _ = import_products_from_excel(data)
     p = products[0]
-    assert len(p["name"]) == 200 and len(p["country"]) == 100
-    assert len(p["unit"]) == 30 and len(p["category"]) == 100
-    assert len(p["description"]) == 5000
-    assert p["length_cm"] == 500 and p["package_size"] == 1 and p["min_quantity"] == 1
+    assert len(p["name"]) == 200 and len(p["sku"]) == 100 and len(p["barcode"]) == 64
+    assert len(p["kind"]) == 100 and len(p["color"]) == 100 and len(p["country"]) == 100
+    assert len(p["unit"]) == 30 and len(p["description"]) == 5000
+    assert p["height"] == "9999"                  # рост проверит справочник (10…300 см), а не файл
+    assert p["package_size"] == 0 and p["min_quantity"] == 0       # 0 = «в файле не указано»
 
 
 def test_product_edit_validates_fields(web, mem_db):
@@ -438,7 +475,7 @@ def test_product_edit_validates_fields(web, mem_db):
     token = csrf_from(web.get(f"/admin/products/{item.product_id}/edit").text)
     web.post(f"/admin/products/{item.product_id}/edit", follow_redirects=False,
              data={"csrf_token": token, "name": "Роза", "package_size": 0,
-                   "min_quantity": 1, "length_cm": 60, "category": "Прочее"})
+                   "min_quantity": 1})
     mem_db.refresh(item.product)
     assert item.product.package_size == 25                    # осталось как было
 
@@ -645,10 +682,11 @@ def test_product_photo_upload_is_converted_to_webp(web, mem_db, tmp_path, monkey
     token = csrf_from(web.get("/admin/products/new").text)
     r = web.post("/admin/products/new", follow_redirects=False,
                  data={"csrf_token": token, "name": "Роза с фото", "package_size": 25,
-                       "min_quantity": 1, "length_cm": 60, "category": "Роза Эквадор"},
+                       "min_quantity": 1},
                  files={"image_files": ("rose.png", _png(), "image/png")})
     assert r.status_code == 303
     product = mem_db.query(Product).filter(Product.name == "Роза с фото").one()
+    assert product.kind_name == "Прочее"                       # вид не выбран — «Прочее», как раньше
     assert len(product.photos) == 1 and product.photos[0].startswith("/static/uploads/")
     saved = list(tmp_path.glob("*.webp"))
     assert len(saved) == 1 and saved[0].read_bytes()[:4] == b"RIFF"       # настоящий WebP
@@ -664,7 +702,7 @@ def test_decompression_bomb_photo_is_rejected(web, mem_db, tmp_path, monkeypatch
     token = csrf_from(web.get("/admin/products/new").text)
     web.post("/admin/products/new", follow_redirects=False,
              data={"csrf_token": token, "name": "Бомба", "package_size": 25,
-                   "min_quantity": 1, "length_cm": 60, "category": "Прочее"},
+                   "min_quantity": 1},
              files={"image_files": ("bomb.png", bomb, "image/png")})
     product = mem_db.query(Product).filter(Product.name == "Бомба").one()
     assert product.photos == []                                  # фото отклонено

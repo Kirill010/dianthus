@@ -15,6 +15,7 @@ from app.database import Base, get_db
 from app.main import app
 from app.models import Product, Supply, SupplyItem, User
 from app.services.passwords import hash_password
+from app.services.taxonomy import set_taxonomy
 
 
 @pytest.fixture(scope="function")
@@ -54,9 +55,9 @@ def seeded(test_db):
     """Один активный товар с ценой + одобренный клиент."""
     product = Product(
         name="Роза Публичная", package_size=25, min_quantity=1,
-        country="Эквадор", length_cm=60, category="Роза Эквадор",
         image_url="/static/logo-icon.png",
     )
+    set_taxonomy(test_db, product, kind="Роза", height=60, country="Эквадор")
     supply = Supply(country="Эквадор", status="Разгружен")
     user = User(
         email="client@test.ru",

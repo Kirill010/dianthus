@@ -27,6 +27,10 @@ logger = logging.getLogger(__name__)
 
 MODELS = {"kind": Kind, "color": Color, "height": Height, "country": Country}
 LABELS = {"kind": "Вид", "color": "Цвет", "height": "Рост", "country": "Страна"}
+PLURALS = {"kind": "kinds", "color": "colors", "height": "heights", "country": "countries"}
+# столбец товара, в котором лежит ссылка на справочник
+PRODUCT_FK = {"kind": Product.kind_id, "color": Product.color_id,
+              "height": Product.height_id, "country": Product.country_id}
 # какие ключи JSON относятся к справочнику (первый — основной)
 JSON_KEYS = {
     "kind":    ("kind", "category"),
@@ -231,6 +235,8 @@ class Taxonomy:
             row = model(name=shown, external_id=ref.external_id)
             if kind == "color":
                 row.hex = ref.hex
+            # новое значение встаёт в конец списка
+            row.sort_order = max((r.sort_order or 0 for r in self._by_id[kind].values()), default=0) + 1
         self.db.add(row)
         self.db.flush()
         self._by_id[kind][row.id] = row
@@ -289,7 +295,7 @@ class Taxonomy:
                 except TaxonomyError:
                     pass
         if product.kind_ref is None and "kind" not in skip:
-            kind = guess_category(name, product.country)
+            kind = guess_category(name)
             if kind:
                 product.kind_ref = self.by_name("kind", kind)
         if product.color_ref is None and "color" not in skip:
@@ -300,6 +306,12 @@ class Taxonomy:
     def report(self) -> dict:
         """{kind: [«что создали»]} — только непустое; для ответа 1С и журнала."""
         return {k: v for k, v in self.created.items() if v}
+
+
+def describe(report: dict) -> str:
+    """{"color": ["Белый"], "height": ["65 см"]} → «цвет: Белый; рост: 65 см» (журнал, сообщения)."""
+    return "; ".join(f"{LABELS[k].lower()}: {', '.join(v[:5])}{'…' if len(v) > 5 else ''}"
+                     for k, v in report.items() if v)
 
 
 def set_taxonomy(db: Session, product: Product, *, kind=None, color=None, height=None, country=None,
@@ -331,9 +343,12 @@ def seed_defaults(db: Session) -> dict:
         tax.by_name("height", cm)
     for name in DEFAULT_COUNTRIES:
         tax.by_name("country", name)
-    for i, row in enumerate(tax.rows("kind")):
-        if not row.sort_order:
-            row.sort_order = DEFAULT_KINDS.index(row.name) + 1 if row.name in DEFAULT_KINDS else 100 + i
+    # порядок показа: сначала стартовый набор в том порядке, как он записан, затем остальное
+    for kind, names in (("kind", DEFAULT_KINDS), ("color", [n for n, _hex in DEFAULT_COLORS]),
+                        ("country", DEFAULT_COUNTRIES)):
+        position = {fold(n): i for i, n in enumerate(names, start=1)}
+        for i, row in enumerate(ordered(kind, tax.rows(kind)), start=len(names) + 1):
+            row.sort_order = position.get(fold(row.name), i)
     db.flush()
     return tax.report()
 
@@ -403,18 +418,18 @@ def ordered(kind: str, rows: list) -> list:
     return sorted(rows, key=lambda r: (r.sort_order or 0, fold(r.name)))
 
 
+def choices(db: Session) -> dict:
+    """Записи всех справочников в порядке показа: {kind: [строки]} — для выпадающих списков."""
+    return {kind: ordered(kind, db.query(model).all()) for kind, model in MODELS.items()}
+
+
 def dictionaries_payload(db: Session) -> dict:
     """Все справочники для 1С: {"kinds": [...], "colors": [...], "heights": [...], "countries": [...]}."""
-    out = {}
-    for kind, model in MODELS.items():
-        plural = {"kind": "kinds", "color": "colors", "height": "heights", "country": "countries"}[kind]
-        out[plural] = [row_payload(kind, r) for r in ordered(kind, db.query(model).all())]
-    return out
+    return {PLURALS[kind]: [row_payload(kind, r) for r in ordered(kind, db.query(model).all())]
+            for kind, model in MODELS.items()}
 
 
 def usage_counts(db: Session) -> dict[str, dict[int, int]]:
-    """{kind: {id записи: сколько товаров на неё ссылается}} — для страницы «Справочники»."""
-    columns = {"kind": Product.kind_id, "color": Product.color_id,
-               "height": Product.height_id, "country": Product.country_id}
+    """{kind: {id записи: сколько товаров на неё ссылается}} — для страницы «Фильтры каталога»."""
     return {kind: dict(db.query(col, func.count(Product.id)).filter(col.isnot(None)).group_by(col).all())
-            for kind, col in columns.items()}
+            for kind, col in PRODUCT_FK.items()}

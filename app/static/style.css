@@ -880,6 +880,33 @@ hr {
 }
 .category-btn.active .category-btn__n { opacity: .85; }
 
+/* Панель фильтров каталога: вид, цвет, рост, страна */
+.catalog-filters .category-btn { padding: 6px 13px; font-size: .82rem; }
+.filter-group__title {
+    display: block;
+    margin: 0 0 4px 2px;
+    font-size: .74rem;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+@media (min-width: 768px) {
+    .filter-group { display: flex; align-items: flex-start; gap: 12px; }
+    .filter-group__title { flex: 0 0 4.5rem; margin: 9px 0 0; }
+    .filter-group .category-scroll { flex: 1 1 auto; flex-wrap: wrap; overflow-x: visible; padding-bottom: 4px; margin-bottom: 4px; }
+}
+.color-dot {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    margin-right: 6px;
+    border: 1px solid rgba(0, 0, 0, .28);
+    border-radius: 50%;
+    vertical-align: -1px;
+}
+.color-dot--none { background: repeating-linear-gradient(45deg, #e6e6e6, #e6e6e6 3px, #fff 3px, #fff 6px); }
+
 .catalog-toolbar {
     display: flex;
     flex-wrap: wrap;

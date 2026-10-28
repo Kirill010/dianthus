@@ -70,6 +70,13 @@
             <div class="form-text">Необязательно</div>
         </div>
         <div class="mb-3">
+            <label class="form-label small fw-bold">Адрес</label>
+            <input type="text" name="address" class="form-control"
+                   maxlength="300" value="{{ user.address or '' }}"
+                   placeholder="Москва, ул. Цветочная, 1">
+            <div class="form-text">Необязательно — попадёт в заказ и документы</div>
+        </div>
+        <div class="mb-3">
             <label class="form-label small fw-bold">Email</label>
             <input type="email" class="form-control"
                    value="{{ user.email }}" disabled>

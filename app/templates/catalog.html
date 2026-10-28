@@ -25,9 +25,9 @@
 
 {# ═══════ ФОРМА ПОИСКА ═══════ #}
 <form class="catalog-search mb-4" method="get" action="/catalog">
-    {% if current_filters.category %}
-        <input type="hidden" name="category" value="{{ current_filters.category }}">
-    {% endif %}
+    {% for key in ('kind', 'color', 'height', 'country') %}{% for i in selected[key] %}
+        <input type="hidden" name="{{ key }}" value="{{ i }}">
+    {% endfor %}{% endfor %}
     {% if current_filters.level and current_filters.level != 'available' %}
         <input type="hidden" name="level" value="{{ current_filters.level }}">
     {% endif %}
@@ -39,7 +39,7 @@
         <span class="input-group-text"><i class="fas fa-search"></i></span>
         <input type="text" id="searchInput" name="q"
                class="form-control form-control-lg"
-               placeholder="Поиск по названию или описанию..."
+               placeholder="Поиск по названию, артикулу, штрихкоду..."
                value="{{ search_q or '' }}" autocomplete="off">
         <button type="submit" class="btn btn-primary">Найти</button>
         {% if current_filters.q %}
@@ -53,19 +53,36 @@
     <div id="suggestBox" class="suggest-box"></div>
 </form>
 
-{# ─── КАТЕГОРИИ (число — сколько позиций увидите, нажав) ─── #}
-{% if category_chips %}
-<div class="category-scroll mb-3">
-    <a href="{{ category_url('') }}"
-       class="category-btn {% if not current_filters.category %}active{% endif %}">
-        Все <span class="category-btn__n">{{ all_count }}</span>
-    </a>
-    {% for name, n in category_chips %}
-        <a href="{{ category_url(name) }}"
-           class="category-btn {% if current_filters.category == name %}active{% endif %}">
-            {{ name }} <span class="category-btn__n">{{ n }}</span>
-        </a>
-    {% endfor %}
+{# ─── ФИЛЬТРЫ: вид, цвет, рост, страна. Можно выбрать несколько значений;
+       число — сколько позиций увидите, нажав. На телефоне панель сворачивается. ─── #}
+{% if has_filter_options %}
+<div class="catalog-filters mb-3">
+    <button class="btn btn-outline-secondary btn-sm d-md-none mb-2" type="button"
+            data-bs-toggle="collapse" data-bs-target="#catalogFilters"
+            aria-expanded="{{ 'true' if picked_filters else 'false' }}" aria-controls="catalogFilters">
+        <i class="fas fa-sliders me-1"></i>Фильтры{% if picked_filters %} ({{ picked_filters }}){% endif %}
+    </button>
+    <div id="catalogFilters" class="collapse d-md-block {% if picked_filters %}show{% endif %}">
+        {% for title, key, options in filter_groups %}
+        {% if options %}
+        <div class="filter-group">
+            <span class="filter-group__title">{{ title }}</span>
+            <div class="category-scroll">
+                {% for o in options %}
+                <a href="{{ o.url }}" class="category-btn {% if o.selected %}active{% endif %}"
+                   {% if o.selected %}aria-pressed="true"{% endif %}>
+                    {% if key == 'color' %}<span class="color-dot {% if not o.hex %}color-dot--none{% endif %}" {% if o.hex %}style="background: {{ o.hex }}"{% endif %}></span>{% endif %}
+                    {{ o.name }} <span class="category-btn__n">{{ o.count }}</span>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+        {% endfor %}
+        {% if picked_filters %}
+        <a href="{{ clear_filters_url }}" class="small"><i class="fas fa-times me-1"></i>Сбросить фильтры</a>
+        {% endif %}
+    </div>
 </div>
 {% endif %}
 
@@ -147,9 +164,9 @@
             {% set photos = product.all_photos %}
             {% set min_stems = pack * (product.min_quantity or 1) %}
 
-            {% if group_by_category and product.category != ns.cat %}
-                {% set ns.cat = product.category %}
-                <li class="price-list__group">{{ product.category or 'Прочее' }}</li>
+            {% if group_by_kind and (product.kind_name or 'Прочее') != ns.cat %}
+                {% set ns.cat = product.kind_name or 'Прочее' %}
+                <li class="price-list__group">{{ ns.cat }}</li>
             {% endif %}
 
             <li class="price-row {% if is_out %}price-row--out{% endif %}"
@@ -164,7 +181,7 @@
                 <div class="price-row__main">
                     <a href="/product/{{ item.id }}" class="price-row__name">{{ product.name }}</a>
                     <span class="price-row__meta">
-                        {% if product.country %}{{ product.country }} · {% endif %}{% if product.length_cm %}{{ product.length_cm }} см · {% endif %}в упаковке {{ pack }} шт
+                        {% if product.country_name %}{{ product.country_name }} · {% endif %}{% if product.color_name %}{{ product.color_name }} · {% endif %}{% if product.height_cm %}{{ product.height_cm }} см · {% endif %}в упаковке {{ pack }} шт
                     </span>
                 </div>
                 <div class="price-row__stock">{{ stems }} шт</div>
@@ -260,10 +277,16 @@
                     </a>
 
                     <div class="product-card-v2__specs">
-                        {% if product.length_cm %}
+                        {% if product.color_name %}
                             <div class="spec-line">
-                                <span class="spec-line__label">Размер:</span>
-                                <span class="spec-line__value">{{ product.length_cm }}см</span>
+                                <span class="spec-line__label">Цвет:</span>
+                                <span class="spec-line__value">{{ product.color_name }}</span>
+                            </div>
+                        {% endif %}
+                        {% if product.height_cm %}
+                            <div class="spec-line">
+                                <span class="spec-line__label">Рост:</span>
+                                <span class="spec-line__value">{{ product.height_cm }}см</span>
                             </div>
                         {% endif %}
                         <div class="spec-line">

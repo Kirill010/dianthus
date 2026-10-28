@@ -4,6 +4,7 @@ import re
 
 from app.models import Order, OrderItem, Product, Supply, SupplyItem, User
 from app.services.passwords import hash_password
+from app.services.taxonomy import set_taxonomy
 
 
 def csrf_from(html: str) -> str:
@@ -43,10 +44,11 @@ def make_user(db, email="client@test.ru", password="Client123", *, admin=False,
 
 def seed_item(db, *, name="Роза Тест", stock=10, price=50.0, pack=25,
               active=True, service=False, status="Разгружен",
-              sku="", external_id="") -> SupplyItem:
+              sku="", external_id="", barcode="", kind="Роза", color=None,
+              height=60, country="Эквадор") -> SupplyItem:
     product = Product(name=name, package_size=pack, min_quantity=1,
-                      country="Эквадор", length_cm=60, category="Роза Эквадор",
-                      sku=sku, external_id=external_id)
+                      sku=sku, external_id=external_id, barcode=barcode)
+    set_taxonomy(db, product, kind=kind, color=color, height=height, country=country)
     supply = Supply(country="1С" if service else "Эквадор", status=status,
                     is_service=service,
                     notes="Авто-синхронизация из 1С" if service else "")

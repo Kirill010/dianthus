@@ -25,15 +25,20 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
     "products": {
         "name":         "VARCHAR(200)",
         "description":  "TEXT DEFAULT ''",
-        "country":      "VARCHAR(100) DEFAULT ''",
-        "length_cm":    "INTEGER DEFAULT 0",
         "unit":         "VARCHAR(30) DEFAULT 'упаковка'",
         "package_size": "INTEGER DEFAULT 1",
         "min_quantity": "INTEGER DEFAULT 1",
         "image_url":    "VARCHAR(500) DEFAULT ''",
-        "category":     "VARCHAR(100) DEFAULT 'Прочее'",
         "sku":          "VARCHAR(100) DEFAULT ''",
         "external_id":  "VARCHAR(64) DEFAULT ''",
+        "barcode":      "VARCHAR(64) DEFAULT ''",
+        # Вид, цвет, рост и страна — ссылки на справочники (таблицы kinds, colors,
+        # heights, countries). Старые текстовые country / category / length_cm остаются
+        # в старых базах нетронутыми: их значения переносит _backfill_taxonomy.
+        "kind_id":      "INTEGER",
+        "color_id":     "INTEGER",
+        "height_id":    "INTEGER",
+        "country_id":   "INTEGER",
         # Для PostgreSQL _column_ddl() заменит тип на JSONB.
         "photos":       "TEXT DEFAULT '[]'",
     },
@@ -42,6 +47,9 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
         "company_name":     "VARCHAR(200) DEFAULT ''",
         "inn":              "VARCHAR(12) DEFAULT ''",
         "city":             "VARCHAR(100) DEFAULT ''",
+        # Контрагент для 1С: адрес и идентификатор контрагента в 1С
+        "address":          "VARCHAR(300) DEFAULT ''",
+        "external_id":      "VARCHAR(64) DEFAULT ''",
         "is_admin":         "BOOLEAN DEFAULT FALSE",
         "is_approved":      "BOOLEAN DEFAULT FALSE",
         "discount_percent": "FLOAT DEFAULT 0",
@@ -97,10 +105,13 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
 # (имя индекса, колонки) или (имя, колонки, "unique")
 EXPECTED_INDEXES: dict[str, list[tuple]] = {
     "products": [
-        ("ix_products_category", "category"),
         ("ix_products_sku", "sku"),
-        ("ix_products_country", "country"),
         ("ix_products_external_id", "external_id"),
+        ("ix_products_barcode", "barcode"),
+        ("ix_products_kind_id", "kind_id"),
+        ("ix_products_color_id", "color_id"),
+        ("ix_products_height_id", "height_id"),
+        ("ix_products_country_id", "country_id"),
     ],
     "orders": [
         ("ix_orders_created_at", "created_at"),
@@ -122,6 +133,7 @@ EXPECTED_INDEXES: dict[str, list[tuple]] = {
         ("ix_users_email", "email"),
         ("ix_users_created_at", "created_at"),
         ("ix_users_approved", "is_approved"),
+        ("ix_users_external_id", "external_id"),
     ],
     "notifications": [
         ("ix_notifications_user_unread", "user_id, is_read"),
@@ -293,6 +305,29 @@ def _backfill_order_subtotals() -> None:
         logger.warning("Backfill orders: %s", e)
 
 
+def _backfill_taxonomy() -> None:
+    """Один раз при обновлении: значения из старых текстовых колонок товара (страна,
+    категория, длина) становятся записями справочников, а справочники получают стартовый
+    набор (виды, цвета, рост, страны). Сбой не должен оставлять работу «сделанной»:
+    тогда флаг снимается, и перенос повторится при следующем запуске."""
+    flag = "taxonomy_v1"
+    if not _backfill_once(flag):
+        return
+    try:
+        from sqlalchemy.orm import Session
+
+        from .services import taxonomy
+        with Session(bind=current_bind()) as db:
+            moved = taxonomy.migrate_legacy_products(db)
+            created = taxonomy.seed_defaults(db)
+            db.commit()
+        logger.info("✅ Справочники: перенесено товаров %d, добавлено значений: %s",
+                    moved, {k: len(v) for k, v in created.items()} or "—")
+    except Exception as e:
+        logger.warning("Перенос справочников не удался (повторим при следующем запуске): %s", e)
+        _exec_one(f"DELETE FROM _migrations WHERE name = '{flag}'", "Снят флаг переноса справочников")
+
+
 def _ensure_trigram_search_indexes(dialect: str) -> None:
     """PostgreSQL: триграммные индексы для поиска ILIKE '%текст%'.
 
@@ -376,6 +411,7 @@ def _auto_migrate_inner() -> None:
     _backfill_product_photos()
     _backfill_product_external_ids()
     _backfill_order_subtotals()
+    _backfill_taxonomy()
 
     if added:
         logger.info("✅ Авто-миграция: +%d изменений", added)

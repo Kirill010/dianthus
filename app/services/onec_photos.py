@@ -7,8 +7,8 @@
 на сервер для этого не нужен и не должен выдаваться.
 
 Правила (всё идемпотентно — повторная отправка ничего не ломает и не плодит файлы):
-  * товар ищется как в каталоге: id из 1С → артикул → точное название; товар, которого
-    ещё нет на сайте, фото не создаёт (сначала products/sync);
+  * товар ищется как в каталоге: id из 1С → штрихкод → артикул → точное название; товар,
+    которого ещё нет на сайте, фото не создаёт (сначала products/sync);
   * n — номер фото по порядку: 1 — главное. Номер занят — фото заменяется, следующий по
     порядку — добавляется, дальше — ошибка (чтобы не было «дыр»);
   * имя файла = товар + отпечаток содержимого: то же самое фото на том же месте не
@@ -32,19 +32,21 @@ MAX_PHOTOS_PER_PRODUCT = 10
 
 
 def apply_product_photo(db: Session, *, ext: str, sku: str, name: str, position: int,
-                        content: bytes, dry_run: bool = False) -> dict:
+                        content: bytes, barcode: str = "", dry_run: bool = False) -> dict:
     """Кладёт картинку на место `position` у товара. Возвращает ответ для 1С.
 
-    Бросает HTTPException: 400 (нет id/sku/name, плохой номер, не картинка, «дыра» в
+    Бросает HTTPException: 400 (нет id/barcode/sku/name, плохой номер, не картинка, «дыра» в
     номерах), 404 (такого товара на сайте нет), 500 (не удалось сохранить).
     """
     ext, sku, name = clean(ext, 64), clean(sku, 100), clean(name, 200)
-    if not (ext or sku or name):
-        raise HTTPException(400, "Укажите товар: id (код или GUID из 1С), sku или name.")
+    barcode = clean(barcode, 64)
+    if not (ext or barcode or sku or name):
+        raise HTTPException(400, "Укажите товар: id (как в products/sync), barcode, sku или name.")
     if not 1 <= position <= MAX_PHOTOS_PER_PRODUCT:
         raise HTTPException(400, f"Номер фото n — от 1 до {MAX_PHOTOS_PER_PRODUCT}.")
 
-    product = Catalog(db, [{"id": ext, "sku": sku, "name": name}]).find(ext, sku, name)
+    product = Catalog(db, [{"id": ext, "sku": sku, "name": name, "barcode": barcode}]).find(
+        ext, sku, name, barcode)
     if product is None:
         raise HTTPException(
             404, "Такого товара на сайте нет. Сначала отправьте каталог (products/sync) и "
@@ -101,7 +103,8 @@ def apply_product_photo(db: Session, *, ext: str, sku: str, name: str, position:
         "status": "ok", "dry_run": bool(dry_run),
         "result": result if not (dry_run and result == "saved") else "would_save",
         "product": {"id": product.id, "external_id": product.external_id or "",
-                    "sku": product.sku or "", "name": product.name},
+                    "sku": product.sku or "", "barcode": product.barcode or "",
+                    "name": product.name},
         "position": position, "photos_total": len(new_list),
         "url": url, "width": size[0], "height": size[1],
     }

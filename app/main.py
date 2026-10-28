@@ -53,7 +53,7 @@ def _safe_load_routers() -> dict:
     out = {}
     for name in ("admin", "cart", "catalog", "profile", "integration_1c",
                  "integration_admin", "legal", "deadlines", "claims", "staff",
-                 "password_reset"):
+                 "filters", "password_reset"):
         try:
             mod = import_module(f".routers.{name}", package="app")
             if not hasattr(mod, "router"):

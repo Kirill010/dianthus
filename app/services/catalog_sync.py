@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session, joinedload
 from ..models import Order, OrderItem, Product, Supply, SupplyItem
 from .exchange_log import DRY_RUN_MARK
 from .orders import CANCELLED
-from .taxonomy import (CLEAR, JSON_KEYS, Taxonomy, TaxonomyError, extract_ref,
+from .taxonomy import (JSON_KEYS, Taxonomy, TaxonomyError, describe, extract_ref,
                        parse_height)
 
 logger = logging.getLogger(__name__)
@@ -202,6 +202,7 @@ def parse_product_row(item: dict) -> dict:
         "photos": extract_photos(item),
         # необязательные поля: None = «не передано, не трогать»
         "barcode": (clean(item.get("barcode"), 64) if "barcode" in item else None),
+        "unit": clean(item.get("unit"), 30),       # пусто = не менять (у нового — «упаковка»)
         "description": (clean(item.get("description"), 5000)
                         if "description" in item else None),
         "package_size": None, "min_quantity": None,
@@ -357,7 +358,7 @@ def new_product(row: dict, main_image: str = "", photos: list | None = None) -> 
     return Product(
         sku=row["sku"], barcode=row.get("barcode") or "", external_id=row["ext"],
         name=row["name"], description=row["description"] or "",
-        unit="упаковка",
+        unit=row.get("unit") or "упаковка",
         package_size=row["package_size"] or row.get("package_size_hint") or 1,
         min_quantity=row["min_quantity"] or 1,
         image_url=main_image, photos=photos or [],
@@ -454,10 +455,7 @@ class SyncResult:
         if self.deactivated:
             text += f", снято с полки: {self.deactivated}"
         if self.dictionaries:
-            from .taxonomy import LABELS
-            text += ", новых значений справочников: " + "; ".join(
-                f"{LABELS[k].lower()}: {', '.join(v[:5])}{'…' if len(v) > 5 else ''}"
-                for k, v in self.dictionaries.items())
+            text += ", новых значений справочников — " + describe(self.dictionaries)
         if self.errors:
             text += f", ошибок в строках: {len(self.errors)}"
         if self.dry_run:
@@ -536,6 +534,8 @@ def apply_products(db: Session, items: list[dict], *, full: bool,
             product.name = row["name"]
             if row["description"] is not None:
                 product.description = row["description"]
+            if row["unit"]:
+                product.unit = row["unit"]
             if row["package_size"] is not None:
                 product.package_size = row["package_size"]
             if row["min_quantity"] is not None:

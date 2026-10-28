@@ -13,8 +13,8 @@ from ..security import check_csrf
 from ..services import totp
 from ..templating import render
 from ..web import safe_back
-from ..validators import (validate_company_name, validate_full_name,
-                          validate_password, validate_phone,
+from ..validators import (validate_address, validate_company_name,
+                          validate_full_name, validate_password, validate_phone,
                           validate_inn, validate_city)
 from .. import models
 
@@ -178,6 +178,7 @@ def profile_update(
     company_name: str = Form(""),
     inn: str = Form(""),
     city: str = Form(""),
+    address: str = Form(""),
     db: Session = Depends(get_db),
     _csrf: None = Depends(check_csrf),
 ):
@@ -190,6 +191,7 @@ def profile_update(
     company_name = company_name.strip()
     inn = inn.strip()
     city = city.strip()
+    address = address.strip()
 
     errors: list[str] = []
     checks = [
@@ -198,6 +200,7 @@ def profile_update(
         (validate_company_name, company_name),
         (lambda v: validate_inn(v, required=False), inn),
         (lambda v: validate_city(v, required=False), city),
+        (validate_address, address),
     ]
     for check, value in checks:
         msg = check(value)
@@ -213,6 +216,7 @@ def profile_update(
     user.company_name = company_name
     user.inn = inn
     user.city = city
+    user.address = address
     db.commit()
     logger.info("Профиль обновлён: %s", user.email)
     request.session["profile_ok"] = "Данные профиля сохранены"

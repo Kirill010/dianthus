@@ -167,7 +167,7 @@ def claim_create(
         match = next((i for i in order.items if i.product_name == product_name and i.product_id), None)
         if match is not None:
             product = db.get(Product, match.product_id)
-            country = (product.country if product else "") or ""
+            country = product.country_name if product else ""
 
     claim = Claim(
         user_id=user.id, order_id=order.id if order else None,

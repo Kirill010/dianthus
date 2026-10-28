@@ -16,7 +16,7 @@ from tests.helpers import login, make_order, make_user, seed_item
 
 EXPECTED_ROUTERS = {
     "admin", "cart", "catalog", "profile", "integration_1c", "integration_admin",
-    "legal", "deadlines", "claims", "staff", "password_reset",
+    "legal", "deadlines", "claims", "staff", "filters", "password_reset",
 }
 
 # Адреса, которые открыты без входа
@@ -29,7 +29,7 @@ PUBLIC = {
 # Только для владельца (менеджеру — отказ)
 OWNER_ONLY_PREFIXES = (
     "/admin/integration", "/admin/legal", "/admin/products", "/admin/supplies",
-    "/admin/customers/export", "/admin/data-requests",
+    "/admin/customers/export", "/admin/data-requests", "/admin/filters",
 )
 # Страницы «моё»: чужому человеку (даже владельцу) они отвечают 404 — так и задумано,
 # владелец смотрит те же заказы и жалобы в админке

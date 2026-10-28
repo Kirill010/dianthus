@@ -10,6 +10,7 @@ from app.services import api_keys
 from app.services.preorder_service import add_preorder_to_db
 from app.services.product_guess import guess_category, guess_country, guess_length_cm
 from app.services.supply_sync import close_stale_supplies
+from app.services.taxonomy import set_taxonomy
 from tests.helpers import csrf_from, login, make_user, seed_item
 
 
@@ -64,7 +65,9 @@ def test_invoice_becomes_in_transit_supply(web, mem_db):
     item = supply.items[0]
     assert item.stock == 3000 // 25 and item.price == 42.5 and item.is_active is False
     product = item.product
-    assert product.length_cm == 60 and product.category == "Роза Эквадор"   # поняли по названию
+    # рост и вид поняли по названию, страна — со страны инвойса
+    assert (product.height_cm, product.kind_name, product.country_name) == (60, "Роза", "Эквадор")
+    assert data["dictionaries_created"] == {}                    # всё это есть в стартовом наборе
 
 
 def test_resending_the_same_invoice_does_not_duplicate(web, mem_db):
@@ -314,7 +317,7 @@ def test_guess_country(name, country):
 
 
 @pytest.mark.parametrize("name,category", [
-    ("Роза Эквадор Фридом 60", "Роза Эквадор"), ("Роза Кения 40", "Роза"),
+    ("Роза Эквадор Фридом 60", "Роза"), ("Роза Кения 40", "Роза"),
     ("Роза кустовая Баблс", "Роза кустовая"), ("Хризантема одноголовая", "Хризантема"),
     ("Гвоздика Мондиал 70", "Гвоздика"), ("Гипсофила", ""),
 ])
@@ -327,19 +330,19 @@ def test_sync_fills_only_empty_fields_from_name(web, mem_db):
     body = {"products": [
         {"id": "N-1", "name": "Роза Кения 40с", "package_size": 25, "price_per_stem": 30, "stock_stems": 500},
         {"id": "N-2", "name": "Роза Кения 40", "package_size": 25, "price_per_stem": 30, "stock_stems": 500,
-         "country": "Эквадор", "length_cm": 70, "category": "Свой раздел"},      # 1С прислала сама — не трогаем
+         "country": "Эквадор", "height": 70, "kind": "Свой раздел"},      # 1С прислала сама — не трогаем
     ]}
     assert web.post("/api/1c/products/sync", json=body, headers=h).status_code == 200
     mem_db.expire_all()
     a = mem_db.query(Product).filter_by(external_id="N-1").one()
     b = mem_db.query(Product).filter_by(external_id="N-2").one()
-    assert (a.country, a.length_cm, a.category) == ("Кения", 40, "Роза")
-    assert (b.country, b.length_cm, b.category) == ("Эквадор", 70, "Свой раздел")
+    assert (a.country_name, a.height_cm, a.kind_name) == ("Кения", 40, "Роза")
+    assert (b.country_name, b.height_cm, b.kind_name) == ("Эквадор", 70, "Свой раздел")
 
     # менеджер поправил руками — повторная выгрузка без этих полей их не меняет
-    a.country, a.length_cm = "Колумбия", 55
+    set_taxonomy(mem_db, a, country="Колумбия", height=55)
     mem_db.commit()
     web.post("/api/1c/products/sync", json=body, headers=h)
     mem_db.expire_all()
     a = mem_db.query(Product).filter_by(external_id="N-1").one()
-    assert (a.country, a.length_cm) == ("Колумбия", 55)
+    assert (a.country_name, a.height_cm) == ("Колумбия", 55)

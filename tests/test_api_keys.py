@@ -281,7 +281,7 @@ def test_sync_accepts_csv_body(web, mem_db):
     assert r.json()["created"] == 2 and r.json()["errors"] == []
     item = mem_db.query(SupplyItem).join(Product).filter(Product.sku == "ROSA-1").one()
     assert item.price == 42.5 and item.stock == 3000 // 25 and item.product.package_size == 25
-    assert item.product.country == "Эквадор"
+    assert item.product.country_name == "Эквадор"
 
 
 def test_sync_accepts_windows1251_csv(web, mem_db):
@@ -335,7 +335,7 @@ def test_orders_csv_export_and_formula_guard(web, mem_db):
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/csv")
     text = r.content.decode("utf-8-sig")
     lines = text.strip().splitlines()
-    assert lines[0].startswith("order_number;order_id;")
+    assert lines[0].startswith("order_number;order_id;date;")
     assert len(lines) == 2 and lines[1].startswith("САЙТ-1;1;")
     assert '" =HYPERLINK' in lines[1] and '"=HYPERLINK' not in lines[1]    # формула обезврежена
     assert "ROSA-1" in lines[1]
@@ -444,16 +444,17 @@ def test_import_guesses_pack_for_new_products_only(web, mem_db):
 
 def test_empty_cells_do_not_wipe_existing_values(web, mem_db):
     admin_login(web, mem_db)
-    seed = seed_item(mem_db, name="Роза Тест", stock=1, sku="A1")
-    seed.product.country = "Эквадор"
+    seed = seed_item(mem_db, name="Роза Тест", stock=1, sku="A1", color="Белый")
     seed.product.description = "Описание"
     mem_db.commit()
-    content = xlsx_bytes([["Артикул", "Наименование", "Цена", "Остаток", "В пач.", "Страна", "Описание"],
-                          ["A1", "Роза Тест", 50, 100, None, None, None]])
+    content = xlsx_bytes([["Артикул", "Наименование", "Цена", "Остаток", "В пач.", "Страна", "Вид",
+                           "Цвет", "Рост", "Штрихкод", "Описание"],
+                          ["A1", "Роза Тест", 50, 100, None, None, None, None, 0, None, None]])
     upload(web, "p.xlsx", content, stock_unit="stems")
     mem_db.expire_all()
     p = mem_db.query(Product).filter_by(sku="A1").one()
-    assert p.country == "Эквадор" and p.description == "Описание" and p.package_size == 25
+    assert (p.country_name, p.kind_name, p.color_name, p.height_cm) == ("Эквадор", "Роза", "Белый", 60)
+    assert p.description == "Описание" and p.package_size == 25
 
 
 def test_import_rejects_bad_files(web, mem_db):

@@ -1,7 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
 <a href="/admin" class="back-link"><i class="fas fa-arrow-left"></i> Назад в админку</a>
-<h2 class="mb-4">{{ 'Редактирование' if product else 'Новый товар' }}</h2>
+<h2 class="mb-2">{{ 'Редактирование' if product else 'Новый товар' }}</h2>
+{% if product %}
+<p class="text-muted small mb-4">Номер товара на сайте (id): <strong>{{ product.id }}</strong>{% if product.external_id %} · id в 1С: <strong>{{ product.external_id }}</strong>{% endif %}</p>
+{% else %}
+<div class="mb-4"></div>
+{% endif %}
 
 <form method="post" enctype="multipart/form-data" class="needs-validation" novalidate>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -11,32 +16,34 @@
                 <label class="form-label">Название товара *</label>
                 <input type="text" name="name" class="form-control" value="{{ product.name if product else '' }}" required maxlength="200">
             </div>
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">Артикул</label>
+                    <input type="text" name="sku" class="form-control" value="{{ product.sku if product else '' }}" maxlength="100">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Штрихкод</label>
+                    <input type="text" name="barcode" class="form-control" value="{{ product.barcode if product else '' }}" maxlength="64" inputmode="numeric">
+                </div>
+            </div>
             <div class="mb-3">
                 <label class="form-label">Описание</label>
                 <textarea name="description" class="form-control" rows="3">{{ product.description if product else '' }}</textarea>
             </div>
             <div class="row g-3">
-                <div class="col-md-4">
-                    <label class="form-label">Страна</label>
-                    <input type="text" name="country" class="form-control" value="{{ product.country if product else '' }}" maxlength="100">
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">Длина (см)</label>
-                    <input type="number" name="length_cm" class="form-control" value="{{ product.length_cm if product else 0 }}" min="0" max="500">
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">Категория</label>
-                    <select name="category" class="form-select">
-                        {# категория могла прийти из 1С и отсутствовать в списке: не теряем её при сохранении #}
-                        {% if product and product.category and product.category not in categories %}
-                            <option value="{{ product.category }}" selected>{{ product.category }}</option>
-                        {% endif %}
-                        {% for cat in categories %}
-                            <option value="{{ cat }}" {% if product and product.category == cat %}selected{% endif %}>{{ cat }}</option>
+                {% for field, label, key in (('kind_id', 'Вид', 'kind'), ('color_id', 'Цвет', 'color'), ('height_id', 'Рост, см', 'height'), ('country_id', 'Страна', 'country')) %}
+                <div class="col-6 col-md-3">
+                    <label class="form-label">{{ label }}</label>
+                    <select name="{{ field }}" class="form-select">
+                        <option value="0">— не указано —</option>
+                        {% for r in choices[key] %}
+                            <option value="{{ r.id }}" {% if product and product[field] == r.id %}selected{% endif %}>{% if key == 'height' %}{{ r.cm }}{% else %}{{ r.name }}{% endif %}</option>
                         {% endfor %}
                     </select>
                 </div>
+                {% endfor %}
             </div>
+            <div class="form-text mb-2">Нет нужного значения? Добавьте его в <a href="/admin/filters">«Фильтры каталога»</a> — или оно появится само, когда 1С пришлёт такой товар.</div>
             <div class="row g-3 mt-1">
                 <div class="col-md-4">
                     <label class="form-label">Единица измерения</label>

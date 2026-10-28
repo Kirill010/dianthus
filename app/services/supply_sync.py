@@ -30,9 +30,9 @@ from sqlalchemy.orm import Session, joinedload
 from ..models import Notification, OrderItem, Preorder, Product, Supply, SupplyItem
 from .exchange_log import DRY_RUN_MARK
 from .catalog_sync import (MAX_ERRORS_IN_REPLY, Catalog, RowError, SyncCommitError,
-                           clean, fill_empty_from_name, lock_exchange, new_product,
-                           parse_product_row)
-from .product_guess import guess_country
+                           apply_classification, clean, lock_exchange, new_product,
+                           parse_product_row, resolve_classification)
+from .taxonomy import Taxonomy, TaxonomyError, describe
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +70,8 @@ class SupplySyncResult:
     warnings: list[str] = field(default_factory=list)
     dry_run: bool = False
     emails: list[dict] = field(default_factory=list)      # письма клиентам (шлём после commit)
+    # что при этом появилось в справочниках (вид, цвет, рост, страна): {"color": ["Белый"], …}
+    dictionaries: dict = field(default_factory=dict)
 
     def as_dict(self) -> dict:
         return {
@@ -87,6 +89,7 @@ class SupplySyncResult:
             "errors": self.errors[:MAX_ERRORS_IN_REPLY],
             "errors_total": len(self.errors),
             "warnings": self.warnings[:MAX_ERRORS_IN_REPLY],
+            "dictionaries_created": self.dictionaries,
         }
 
     def summary(self) -> str:
@@ -96,6 +99,8 @@ class SupplySyncResult:
             text += f", отменено: {self.cancelled}"
         if self.preorders_fulfilled:
             text += f", предзаказов выполнено: {self.preorders_fulfilled}"
+        if self.dictionaries:
+            text += ", новых значений справочников — " + describe(self.dictionaries)
         if self.errors:
             text += f", ошибок: {len(self.errors)}"
         if self.dry_run:
@@ -217,7 +222,7 @@ def _has_open_preorders(db: Session, item_ids: list[int]) -> int:
 
 
 def _upsert_lines(db: Session, supply: Supply, sp: dict, catalog: Catalog,
-                  result: SupplySyncResult) -> None:
+                  tax: Taxonomy, result: SupplySyncResult) -> None:
     by_product: dict[Product, SupplyItem] = {si.product: si for si in supply.items}
     seen: set[int] = set()
     for idx, line in enumerate(sp["lines"], start=1):
@@ -227,7 +232,12 @@ def _upsert_lines(db: Session, supply: Supply, sp: dict, catalog: Catalog,
         except RowError as e:
             result.errors.append(f"инвойс {sp['number']}, строка {idx} ({label}): {e}")
             continue
-        product = catalog.find(row["ext"], row["sku"], row["name"])
+        product = catalog.find(row["ext"], row["sku"], row["name"], row["barcode"] or "")
+        try:
+            resolved = resolve_classification(tax, row)
+        except TaxonomyError as e:
+            result.errors.append(f"инвойс {sp['number']}, строка {idx} ({label}): {e}")
+            continue
         if product is not None:
             pack = max(1, product.package_size or 1)
         else:
@@ -246,18 +256,20 @@ def _upsert_lines(db: Session, supply: Supply, sp: dict, catalog: Catalog,
             continue
 
         if product is None:
-            if row["country"] is None:
-                # страна: из названия («Роза Кения 40»), иначе — страна самого инвойса
-                row = {**row, "country": guess_country(row["name"]) or sp["country"] or None}
             product = new_product(row, photos=row["photos"],
                                  main_image=row["photos"][0] if row["photos"] else "")
+            apply_classification(tax, product, resolved, row)
             db.add(product)
             catalog.add(product)
             result.products_created += 1
         else:
-            fill_empty_from_name(product, row)
-            if not product.country and row["country"] is None and sp["country"]:
-                product.country = sp["country"]
+            apply_classification(tax, product, resolved, row)
+        # страна: из справочника/названия («Роза Кения 40»), иначе — страна самого инвойса
+        if product.country_ref is None and row["refs"]["country"] is None and sp["country"]:
+            try:
+                product.country_ref = tax.by_name("country", sp["country"])
+            except TaxonomyError:
+                pass
 
         item = by_product.get(product)
         if item is None:
@@ -360,6 +372,7 @@ def apply_supplies(db: Session, supplies: list[dict], *, dry_run: bool = False) 
     all_lines = [_line_to_product_item(ln) for _, sp in parsed if sp["status"] == "in_transit"
                  for ln in sp["lines"]]
     catalog = Catalog(db, all_lines)
+    tax = Taxonomy(db)
 
     for idx, sp in parsed:
         result.processed += 1
@@ -378,7 +391,7 @@ def apply_supplies(db: Session, supplies: list[dict], *, dry_run: bool = False) 
             supply.notes = _notes(sp)
             supply.external_synced_at = now
             db.flush()
-            _upsert_lines(db, supply, sp, catalog, result)
+            _upsert_lines(db, supply, sp, catalog, tax, result)
             result.created += 1 if fresh else 0
             result.updated += 0 if fresh else 1
             continue
@@ -415,6 +428,7 @@ def apply_supplies(db: Session, supplies: list[dict], *, dry_run: bool = False) 
 
     db.flush()
     fulfil_preorders(db, result)
+    result.dictionaries = tax.report()
 
     if dry_run:
         db.rollback()

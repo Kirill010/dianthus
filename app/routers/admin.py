@@ -1,25 +1,26 @@
 # app/routers/admin.py
 """Админ-панель: заказы, клиенты, справочник, поставки."""
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import List
 
 from starlette.concurrency import run_in_threadpool
 from fastapi import (APIRouter, BackgroundTasks, Depends, File, Form,
                      HTTPException, Request, UploadFile)
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
-from sqlalchemy import select, or_, func
+from sqlalchemy import or_, func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload, joinedload
 
 from ..database import get_db
 from ..deps import require_admin, require_staff
-from ..models import (ORDER_STATUSES, PRODUCT_CATEGORIES, SUPPLY_STATUSES,
+from ..models import (ORDER_STATUSES, SUPPLY_STATUSES,
                       AuditLog, Claim, Order, OrderItem, Preorder, Product,
                       Supply, SupplyItem, User)
 from ..security import check_csrf
-from ..services import api_keys, exchange_log, legal
+from ..services import api_keys, exchange_log, legal, taxonomy
 from ..services.audit import log_action
+from ..services.catalog_sync import Catalog, apply_classification, resolve_classification
 from ..services.orders import (apply_status_change, load_order_for_update,
                                notify_client_of_status)
 from ..services.excel_service import (build_products_import_template,
@@ -32,8 +33,8 @@ from ..services.notifier import notify_client_approved
 from ..services.upload_service import delete_upload, save_uploads
 from ..templating import render
 from ..timeutils import DATE_FMT, fmt_local, local_midnight_utc, shop_tz
-from ..validators import (validate_country, validate_positive_int,
-                          validate_price, validate_stock, validate_city)
+from ..validators import (validate_country, validate_price, validate_stock,
+                          validate_city)
 from ..web import LIKE_ESCAPE, contains_pattern, safe_back
 
 logger = logging.getLogger(__name__)
@@ -112,8 +113,8 @@ def _detach_product(db: Session, product_id: int, supply_item_ids: list[int]) ->
 
 # ───────────────────────── проверка полей товара ─────────────────────────
 
-def _check_product_fields(name, description, country, length_cm, unit,
-                          package_size, min_quantity, category) -> list[str]:
+def _check_product_fields(db: Session, name, sku, barcode, description, unit,
+                          package_size, min_quantity, product_id: int | None = None) -> list[str]:
     """Единые правила для создания и правки товара.
 
     Раньше правка не проверяла ничего: package_size=0 или длина названия
@@ -121,26 +122,41 @@ def _check_product_fields(name, description, country, length_cm, unit,
     PostgreSQL.
     """
     errors = []
-    name = (name or "").strip()
+    name, sku, barcode = (name or "").strip(), (sku or "").strip(), (barcode or "").strip()
     if not name:
         errors.append("Укажите название")
     elif len(name) > 200:
         errors.append("Название длиннее 200 символов")
-    if len((country or "").strip()) > 100:
-        errors.append("Страна длиннее 100 символов")
-    if len((category or "").strip()) > 100:
-        errors.append("Категория длиннее 100 символов")
+    if len(sku) > 100:
+        errors.append("Артикул длиннее 100 символов")
+    if len(barcode) > 64:
+        errors.append("Штрихкод длиннее 64 символов")
+    elif barcode:
+        # по штрихкоду товар находится при обмене с 1С: у двух товаров он не должен совпадать
+        twin = db.query(Product).filter(Product.barcode == barcode, Product.id != (product_id or 0)).first()
+        if twin is not None:
+            errors.append(f"Штрихкод {barcode} уже указан у товара «{twin.name}»")
     if len((unit or "").strip()) > 30:
         errors.append("Единица измерения длиннее 30 символов")
     if len((description or "")) > 5000:
         errors.append("Описание длиннее 5000 символов")
-    if not (0 <= (length_cm or 0) <= 500):
-        errors.append("Длина стебля: от 0 до 500 см")
     if not (1 <= (package_size or 0) <= 10_000):
         errors.append("Размер упаковки: от 1 до 10 000 шт")
     if not (1 <= (min_quantity or 0) <= 10_000):
         errors.append("Мин. заказ: от 1 до 10 000 упаковок")
     return errors
+
+
+def _picked_values(db: Session, errors: list[str], **ids) -> dict:
+    """Что выбрано в выпадающих списках формы товара: {kind: запись справочника | None}."""
+    picked = {}
+    for kind in taxonomy.MODELS:
+        value = ids.get(f"{kind}_id") or 0
+        row = db.get(taxonomy.MODELS[kind], value) if value else None
+        if value and row is None:
+            errors.append(f"{taxonomy.LABELS[kind]}: выбранного значения нет в списке")
+        picked[kind] = row
+    return picked
 
 
 def _is_photo_url(url: str) -> bool:
@@ -244,7 +260,7 @@ def dashboard(
         users=users, pending_count=todo["applications"], stats=stats,
         list_limit=LIST_LIMIT, users_total=users_total,
         products=[], supplies=[], active_items=[], products_total=0, active_total=0,
-        supply_statuses=SUPPLY_STATUSES, categories=PRODUCT_CATEGORIES,
+        supply_statuses=SUPPLY_STATUSES,
     )
     if is_admin:
         active_filter = (SupplyItem.is_active.is_(True), SupplyItem.stock > 0)
@@ -571,12 +587,14 @@ def customers_export(db: Session = Depends(get_db), _a=Depends(require_admin)):
     for u in users:
         cnt, total, last = agg.get(u.id, (0, 0.0, None))
         customers.append({
+            "id": u.id,
             "company_name": u.company_name,
             "full_name": u.full_name,
             "email": u.email,
             "phone": u.phone,
             "inn": u.inn,
             "city": u.city,
+            "address": u.address or "",
             "status": "Активен" if u.is_approved else "Ожидает одобрения",
             "discount_percent": u.discount_percent or 0,
             "orders_count": cnt,
@@ -639,39 +657,39 @@ async def products_import(
         request.session["flash"] = msg
         return RedirectResponse(url=_back(request), status_code=303)
 
-    # Повторная загрузка того же файла раньше дублировала весь справочник.
-    # Теперь товар ищется по ТОЧНОМУ названию (как и при обмене с 1С): найден —
-    # обновляем характеристики, нет — создаём. Регистр намеренно не сглаживаем:
-    # lower() в SQLite не понимает кириллицу, а в PostgreSQL зависит от локали.
+    # Повторная загрузка того же файла раньше дублировала весь справочник. Теперь товар
+    # ищется так же, как при обмене с 1С — штрихкод → артикул → ТОЧНОЕ название (регистр
+    # намеренно не сглаживаем: lower() в SQLite не понимает кириллицу, а в PostgreSQL
+    # зависит от локали): найден — обновляем, нет — создаём. Вид, цвет, рост и страна —
+    # значения справочников; нового значения ещё нет — оно создаётся (без дублей).
     created = updated = 0
     try:
-        by_name: dict[str, Product] = {}
-        names = sorted({d["name"][:200] for d in products})
-        for i in range(0, len(names), 500):
-            for p in db.query(Product).filter(
-                    Product.name.in_(names[i:i + 500])).all():
-                by_name.setdefault(p.name, p)
-
+        catalog = Catalog(db, products)
+        tax = taxonomy.Taxonomy(db)
         for data in products:
-            data = dict(data)
-            data["name"] = data["name"][:200]
-            existing = by_name.get(data["name"])
-            if existing is None:
-                product = Product(**data)
+            filled = {key: value for key, value in data.items() if value}      # пусто = «не указано»
+            row = {"refs": {kind: taxonomy.extract_ref(filled, kind) for kind in taxonomy.JSON_KEYS}}
+            try:
+                resolved = resolve_classification(tax, row)
+            except taxonomy.TaxonomyError as e:
+                warnings.append(f"{data['name'][:60]}: {e}")
+                continue
+            product = catalog.find("", data["sku"], data["name"], data["barcode"])
+            if product is None:
+                product = Product(
+                    name=data["name"], sku=data["sku"], barcode=data["barcode"],
+                    description=data["description"], unit=data["unit"] or "упаковка",
+                    package_size=data["package_size"] or guess_package_size(data["name"]),
+                    min_quantity=data["min_quantity"] or 1)
                 db.add(product)
-                by_name[data["name"]] = product
+                catalog.add(product)
                 created += 1
             else:
-                for field in ("country", "unit", "category", "description"):
-                    if data.get(field):
-                        setattr(existing, field, data[field][:5000])
-                if data.get("length_cm"):
-                    existing.length_cm = data["length_cm"]
-                if data.get("package_size"):
-                    existing.package_size = data["package_size"]
-                if data.get("min_quantity"):
-                    existing.min_quantity = data["min_quantity"]
+                for field in ("sku", "barcode", "unit", "description", "package_size", "min_quantity"):
+                    if data[field]:
+                        setattr(product, field, data[field])
                 updated += 1
+            apply_classification(tax, product, resolved, row)
         db.commit()
     except (IntegrityError, SQLAlchemyError) as e:
         db.rollback()
@@ -680,8 +698,10 @@ async def products_import(
         return RedirectResponse(url=_back(request), status_code=303)
 
     msg = f"Импорт: создано {created}, обновлено {updated}"
+    if tax.report():
+        msg += f". Новые значения фильтров — {taxonomy.describe(tax.report())}"
     if warnings:
-        msg += f". Предупреждений: {len(warnings)}"
+        msg += f". Предупреждений: {len(warnings)}: " + "; ".join(warnings[:3])
     request.session["flash"] = msg
     return RedirectResponse(url=_back(request), status_code=303)
 
@@ -695,7 +715,7 @@ def product_new_page(
     admin=Depends(require_admin),
 ):
     return render(request, "product_form.html", db,
-                  user=admin, product=None, categories=PRODUCT_CATEGORIES)
+                  user=admin, product=None, choices=taxonomy.choices(db))
 
 
 @router.get("/products/{product_id}/edit", response_class=HTMLResponse)
@@ -708,28 +728,33 @@ def product_edit_page(
     if not product:
         raise HTTPException(404, "Товар не найден")
     return render(request, "product_form.html", db,
-                  user=admin, product=product, categories=PRODUCT_CATEGORIES)
+                  user=admin, product=product, choices=taxonomy.choices(db))
 
 
 @router.post("/products/new")
 def product_new(
     request: Request,
     name: str = Form(""),
+    sku: str = Form(""),
+    barcode: str = Form(""),
     description: str = Form(""),
-    country: str = Form(""),
-    length_cm: int = Form(0),
+    kind_id: int = Form(0),
+    color_id: int = Form(0),
+    height_id: int = Form(0),
+    country_id: int = Form(0),
     unit: str = Form("упаковка"),
     package_size: int = Form(25),
     min_quantity: int = Form(1),
-    category: str = Form("Прочее"),
     image_url: str = Form(""),
     image_files: List[UploadFile] = File(None),
     db: Session = Depends(get_db),
     _a=Depends(require_admin),
     _csrf: None = Depends(check_csrf),
 ):
-    errors = _check_product_fields(name, description, country, length_cm,
-                                   unit, package_size, min_quantity, category)
+    errors = _check_product_fields(db, name, sku, barcode, description, unit,
+                                   package_size, min_quantity)
+    picked = _picked_values(db, errors, kind_id=kind_id, color_id=color_id,
+                            height_id=height_id, country_id=country_id)
     if image_url.strip() and not _is_photo_url(image_url.strip()):
         errors.append("Ссылка на фото должна начинаться с http://, https:// или /static/")
     if errors:
@@ -742,13 +767,17 @@ def product_new(
     if image_url.strip():
         photos.append(image_url.strip())
 
-    db.add(Product(
-        name=name.strip(), description=description.strip(),
-        country=country.strip(), length_cm=length_cm, unit=unit,
+    if picked["kind"] is None:                      # вид не выбран — «Прочее», как раньше
+        picked["kind"] = taxonomy.Taxonomy(db).by_name("kind", "Прочее")
+    product = Product(
+        name=name.strip(), sku=sku.strip(), barcode=barcode.strip(),
+        description=description.strip(), unit=(unit or "упаковка").strip() or "упаковка",
         package_size=package_size, min_quantity=min_quantity,
-        category=category, image_url=photos[0] if photos else "",
-        photos=photos,
-    ))
+        image_url=photos[0] if photos else "", photos=photos,
+    )
+    for kind, row in picked.items():
+        setattr(product, taxonomy.SLOTS[kind], row)
+    db.add(product)
     db.commit()
     log_action(db, request, _a, "product_new",
                "product", None, f"Добавлен товар «{name.strip()}»")
@@ -760,13 +789,16 @@ def product_new(
 def product_edit(
     product_id: int, request: Request,
     name: str = Form(""),
+    sku: str = Form(""),
+    barcode: str = Form(""),
     description: str = Form(""),
-    country: str = Form(""),
-    length_cm: int = Form(0),
+    kind_id: int = Form(0),
+    color_id: int = Form(0),
+    height_id: int = Form(0),
+    country_id: int = Form(0),
     unit: str = Form("упаковка"),
     package_size: int = Form(25),
     min_quantity: int = Form(1),
-    category: str = Form("Прочее"),
     image_url: str = Form(""),
     image_files: List[UploadFile] = File(None),
     remove_photos: List[str] = Form(default=[]),
@@ -778,8 +810,10 @@ def product_edit(
     if not product:
         raise HTTPException(404, "Товар не найден")
 
-    errors = _check_product_fields(name, description, country, length_cm,
-                                   unit, package_size, min_quantity, category)
+    errors = _check_product_fields(db, name, sku, barcode, description, unit,
+                                   package_size, min_quantity, product_id=product.id)
+    picked = _picked_values(db, errors, kind_id=kind_id, color_id=color_id,
+                            height_id=height_id, country_id=country_id)
     if image_url.strip() and not _is_photo_url(image_url.strip()):
         errors.append("Ссылка на фото должна начинаться с http://, https:// или /static/")
     if errors:
@@ -787,13 +821,14 @@ def product_edit(
         return RedirectResponse(url=f"/admin/products/{product_id}/edit", status_code=303)
 
     product.name = name.strip()
+    product.sku = sku.strip()
+    product.barcode = barcode.strip()
     product.description = description.strip()
-    product.country = country.strip()
-    product.length_cm = length_cm
+    for kind, row in picked.items():            # «не указано» в списке = убрать значение
+        setattr(product, taxonomy.SLOTS[kind], row)
     product.unit = (unit or "упаковка").strip() or "упаковка"
     product.package_size = package_size
     product.min_quantity = min_quantity
-    product.category = (category or "Прочее").strip() or "Прочее"
 
     current = list(product.photos or [])
     if not current and product.image_url:
@@ -1070,17 +1105,20 @@ async def supply_import_invoice(
     skipped = []
 
     try:
+        tax = taxonomy.Taxonomy(db)
         for it in items:
             product = db.query(Product).filter(Product.name == it["name"]).first()
             if not product:
                 pack = it.get("package_size") or guess_package_size(it["name"])
                 product = Product(
-                    name=it["name"], description="",
-                    country=it.get("country") or supply.country,
-                    length_cm=it.get("length_cm", 0), unit="упаковка",
-                    package_size=pack, min_quantity=1,
-                    image_url="", category=it.get("category", "Прочее"),
+                    name=it["name"], description="", unit="упаковка",
+                    package_size=pack, min_quantity=1, image_url="",
                 )
+                # страна — из накладной (или страна поставки); вид, рост и цвет сайт
+                # угадывает по названию
+                country = taxonomy.Ref(kind="country", name=it.get("country") or supply.country)
+                row = {"refs": {"kind": None, "color": None, "height": None, "country": country}}
+                apply_classification(tax, product, resolve_classification(tax, row), row)
                 db.add(product)
                 db.flush()
                 created_products += 1

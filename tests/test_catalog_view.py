@@ -6,7 +6,7 @@ import re
 import struct
 from datetime import datetime, timedelta, timezone
 
-from app.models import ExchangeLog
+from app.models import Color, Country, ExchangeLog, Height, Kind
 from app.services import exchange_log
 from app.timeutils import fmt_when
 from tests.helpers import login, make_user, seed_item
@@ -23,9 +23,15 @@ def client_session(web, db, **extra):
 
 
 def chip(html: str, name: str):
-    """Число на кнопке категории (или None, если кнопки нет)."""
+    """Число на кнопке фильтра (или None, если кнопки нет)."""
     m = re.search(r">\s*" + re.escape(name) + r'\s*<span class="category-btn__n">(\d+)</span>', html)
     return int(m.group(1)) if m else None
+
+
+def ident(db, model, name):
+    """id записи справочника по названию (для рост — по сантиметрам)."""
+    column = model.cm if model is Height else model.name
+    return db.query(model).filter(column == name).one().id
 
 
 def log_row(db, endpoint="products/sync", ok=True, summary="товаров: 5, новых: 1", **kw):
@@ -36,18 +42,20 @@ def log_row(db, endpoint="products/sync", ok=True, summary="товаров: 5, �
 
 # ───────────── режим «Прайс» ─────────────
 
-def test_list_view_groups_by_category_and_shows_client_price(web, mem_db):
+def test_list_view_groups_by_kind_and_shows_client_price(web, mem_db):
     a = seed_item(mem_db, name="Роза Фридом", price=50.0)
-    b = seed_item(mem_db, name="Гвоздика Микс", price=20.0)
-    b.product.category = "Гвоздика"
+    seed_item(mem_db, name="Гвоздика Микс", price=20.0, kind="Гвоздика")
+    # порядок групп задаётся в «Фильтрах каталога» (sort_order), а не алфавитом
+    mem_db.query(Kind).filter(Kind.name == "Роза").one().sort_order = 1
+    mem_db.query(Kind).filter(Kind.name == "Гвоздика").one().sort_order = 2
     mem_db.commit()
     client_session(web, mem_db, discount_percent=10)
 
     html = web.get("/catalog?view=list").text
     assert html.count('class="price-row ') == 2
     assert 'class="price-list__group">Гвоздика<' in html
-    assert 'class="price-list__group">Роза Эквадор<' in html
-    assert html.index("Гвоздика Микс") < html.index("Роза Фридом")      # группы по алфавиту
+    assert 'class="price-list__group">Роза<' in html
+    assert html.index("Роза Фридом") < html.index("Гвоздика Микс")
     assert "Цена, ₽/шт" in html
     # цена со скидкой 10%: 50 → 45, старая зачёркнута; итог считает корзина
     assert '<s class="price-old">50</s> 45 ₽' in html
@@ -107,44 +115,114 @@ def test_list_view_has_bigger_pages_than_cards(web, mem_db):
     assert web.get("/catalog?view=cards").text.count('class="product-card-v2 ') == 12
 
 
-# ───────────── счётчики категорий и уровней ─────────────
+# ───────────── фильтры: вид, цвет, рост, страна ─────────────
 
-def test_category_chips_show_counts_that_match_the_result(web, mem_db):
-    seed_item(mem_db, name="Роза Красная")
-    seed_item(mem_db, name="Роза Белая")
-    c = seed_item(mem_db, name="Гвоздика Микс")
-    c.product.category = "Гвоздика"
+def seed_filter_catalog(db):
+    """Три товара: у каждого свой вид, цвет, рост и страна."""
+    seed_item(db, name="Роза Красная", kind="Роза", color="Красный", height=60, country="Эквадор")
+    seed_item(db, name="Роза Белая", kind="Роза", color="Белый", height=70, country="Колумбия")
+    seed_item(db, name="Гвоздика Микс", kind="Гвоздика", color="Красный", height=60, country="Колумбия")
+
+
+def test_filter_chips_show_counts_that_match_the_result(web, mem_db):
+    seed_filter_catalog(mem_db)
+    html = web.get("/catalog").text
+    assert (chip(html, "Роза"), chip(html, "Гвоздика")) == (2, 1)
+    assert (chip(html, "Красный"), chip(html, "Белый")) == (2, 1)
+    assert (chip(html, "60 см"), chip(html, "70 см")) == (2, 1)
+    assert (chip(html, "Эквадор"), chip(html, "Колумбия")) == (1, 2)
+    assert "Сбросить фильтры" not in html                           # ничего не выбрано
+    # число на кнопке = сколько товаров покажет страница
+    assert "2 товаров" in web.get(f"/catalog?kind={ident(mem_db, Kind, 'Роза')}").text
+
+
+def test_several_values_of_one_filter_and_filters_of_different_kinds_combine(web, mem_db):
+    seed_filter_catalog(mem_db)
+    red, white = ident(mem_db, Color, "Красный"), ident(mem_db, Color, "Белый")
+    rose = ident(mem_db, Kind, "Роза")
+
+    both = web.get(f"/catalog?color={red}&color={white}").text          # «или» внутри одного фильтра
+    assert "3 товаров" in both and "Сбросить фильтры" in both
+    red_only = web.get(f"/catalog?color={red}").text
+    assert "Роза Красная" in red_only and "Гвоздика Микс" in red_only and "Роза Белая" not in red_only
+    # «и» между разными фильтрами
+    assert "1 товаров" in web.get(f"/catalog?color={red}&kind={rose}").text
+    # счёт у каждого значения считается при ДРУГИХ выбранных фильтрах, но без своего собственного
+    html = web.get(f"/catalog?color={red}").text
+    assert chip(html, "Красный") == 2 and chip(html, "Белый") == 1
+    assert chip(html, "Роза") == 1 and chip(html, "Гвоздика") == 1
+    # ссылка на выбранное значение его снимает, а на другое — добавляет
+    assert f'href="/catalog?color={red}&amp;color={white}"' in html or f'href="/catalog?color={red}&color={white}"' in html
+    assert 'href="/catalog"' in html
+
+
+def test_filter_by_height_and_country_and_search_by_their_names(web, mem_db):
+    seed_filter_catalog(mem_db)
+    h70, columbia = ident(mem_db, Height, 70), ident(mem_db, Country, "Колумбия")
+    page = web.get(f"/catalog?height={h70}").text
+    assert "Роза Белая" in page and "Роза Красная" not in page
+    page = web.get(f"/catalog?country={columbia}").text
+    assert "Роза Белая" in page and "Гвоздика Микс" in page and "Роза Красная" not in page
+    # поиск понимает названия из справочников и рост числом
+    assert "Роза Белая" in web.get("/catalog?q=Колумбия").text
+    assert "Роза Белая" in web.get("/catalog?q=70").text and "Роза Красная" not in web.get("/catalog?q=70").text
+    assert "Гвоздика Микс" in web.get("/catalog?q=Красный").text and "Роза Белая" not in web.get("/catalog?q=Красный").text
+
+
+def test_search_finds_product_by_sku_and_barcode(web, mem_db):
+    seed_item(mem_db, name="Роза Артикульная", sku="ROSA-FREEDOM-60", barcode="4600000000001")
+    assert "Роза Артикульная" in web.get("/catalog?q=ROSA-FREEDOM").text
+    assert "Роза Артикульная" in web.get("/catalog?q=4600000000001").text
+    assert "Роза Артикульная" not in web.get("/catalog?q=4600000000999").text
+
+
+def test_unknown_or_garbage_filter_values_do_not_break_the_page(web, mem_db):
+    seed_filter_catalog(mem_db)
+    for query in ("kind=999999", "color=abc", "height=-5", "country=", "kind=1&kind=1&kind=1",
+                  "color=" + "9" * 40, "category=Нет такого"):
+        assert web.get("/catalog?" + query).status_code == 200, query
+
+
+def test_old_text_links_with_category_and_country_names_still_work(web, mem_db):
+    seed_filter_catalog(mem_db)
+    page = web.get("/catalog?category=Гвоздика").text
+    assert "Гвоздика Микс" in page and "Роза Красная" not in page
+    page = web.get("/catalog?country=Колумбия").text
+    assert "Роза Белая" in page and "Роза Красная" not in page
+
+
+def test_filter_panel_is_hidden_when_there_are_no_products(web, mem_db):
+    html = web.get("/catalog").text
+    assert 'id="catalogFilters"' not in html
+
+
+def test_color_chip_shows_its_circle(web, mem_db):
+    seed_item(mem_db, name="Роза Красная", color="Красный")
+    mem_db.query(Color).filter(Color.name == "Красный").one().hex = "#c0392b"
     mem_db.commit()
     html = web.get("/catalog").text
-    assert chip(html, "Все") == 3
-    assert chip(html, "Роза Эквадор") == 2
-    assert chip(html, "Гвоздика") == 1
-    # число на кнопке = сколько товаров покажет страница
-    assert "2 товаров" in web.get("/catalog?category=" + "Роза Эквадор").text
+    assert 'class="color-dot " style="background: #c0392b"' in html
 
 
-def test_category_counts_follow_search_and_hide_empty(web, mem_db):
+# ───────────── счётчики видов и уровней ─────────────
+
+def test_kind_counts_follow_search_and_hide_empty(web, mem_db):
     seed_item(mem_db, name="Роза Красная")
-    c = seed_item(mem_db, name="Гвоздика Микс")
-    c.product.category = "Гвоздика"
-    mem_db.commit()
+    seed_item(mem_db, name="Гвоздика Микс", kind="Гвоздика")
     html = web.get("/catalog?q=Роза").text
-    assert chip(html, "Все") == 1
-    assert chip(html, "Роза Эквадор") == 1
+    assert chip(html, "Роза") == 1
     assert chip(html, "Гвоздика") is None                           # по запросу пусто — кнопки нет
-    # выбранная категория остаётся на месте, даже если в ней ничего не нашлось
-    html = web.get("/catalog?q=Роза&category=Гвоздика").text
+    # выбранный вид остаётся на месте, даже если в нём ничего не нашлось
+    html = web.get(f"/catalog?q=Роза&kind={ident(mem_db, Kind, 'Гвоздика')}").text
     assert chip(html, "Гвоздика") == 0
     assert "Ничего не найдено" in html
 
 
-def test_category_from_1c_outside_the_list_gets_its_own_chip(web, mem_db):
-    it = seed_item(mem_db, name="Эустома Белая")
-    it.product.category = "Эустома"
-    mem_db.commit()
+def test_kind_from_1c_outside_the_default_list_gets_its_own_chip(web, mem_db):
+    seed_item(mem_db, name="Эустома Белая", kind="Эустома")
     html = web.get("/catalog").text
     assert chip(html, "Эустома") == 1
-    assert "Эустома Белая" in web.get("/catalog?category=Эустома").text
+    assert "Эустома Белая" in web.get(f"/catalog?kind={ident(mem_db, Kind, 'Эустома')}").text
 
 
 def test_level_counts_follow_the_search(web, mem_db):

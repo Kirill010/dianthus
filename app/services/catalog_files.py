@@ -26,6 +26,7 @@ ALIASES: dict[str, list[str]] = {
     "id": ["id", "guid", "external id", "externalid", "external_id", "uid",
            "идентификатор", "код", "код номенклатуры", "код 1с", "ссылка"],
     "sku": ["артикул", "sku", "арт", "артикул товара"],
+    "barcode": ["штрихкод", "штрих код", "штрих-код", "barcode", "ean", "ean13", "ean 13"],
     "name": ["наименование", "название", "номенклатура", "товар", "name",
              "наименование товара", "наименование номенклатуры"],
     "price": ["price per stem", "price_per_stem", "цена опт", "оптовая цена",
@@ -40,9 +41,13 @@ ALIASES: dict[str, list[str]] = {
     "package_size": ["в пач", "в пачке", "шт в пач", "шт в пачке", "в упак",
                      "в упаковке", "шт в упаковке", "шт/упак", "упаковка",
                      "пачка", "package size", "package_size", "кратность"],
+    # Справочники-фильтры: вид, цвет, рост, страна («Группа» сюда не относим: в 1С это
+    # обычно «Срезка» на всё сразу, и из неё получился бы один «вид» на весь каталог)
+    "kind": ["вид", "вид цветка", "категория", "kind", "category"],
+    "color": ["цвет", "окрас", "color", "colour"],
+    "height": ["рост", "рост см", "высота", "высота см", "длина", "длина см", "height",
+               "height cm", "length cm"],
     "country": ["страна", "страна происхождения", "происхождение", "country"],
-    "category": ["категория", "группа", "category", "вид"],
-    "length_cm": ["длина", "длина см", "длина, см", "length cm", "length_cm"],
     "min_quantity": ["мин заказ", "минимальный заказ", "мин кол-во",
                      "min quantity", "min_quantity"],
     "description": ["описание", "description"],
@@ -176,8 +181,8 @@ def rows_from_table(table: list[list], *, stock_unit: str = "stems",
         item: dict = {"name": name}
 
         def put(field, value):
-            """Пустая ячейка = «не передано»: существующее значение не затираем."""
-            if value not in (None, "", 0, 0.0):
+            """Пустая (или нулевая) ячейка = «не передано»: существующее значение не затираем."""
+            if value is not None and str(value).strip() not in ("", "0", "0.0"):
                 item[field] = value
 
         try:
@@ -208,11 +213,10 @@ def rows_from_table(table: list[list], *, stock_unit: str = "stems",
             else:
                 item["stock_packs"] = 0
 
-            for field in ("country", "category", "description"):
+            for field in ("barcode", "kind", "color", "height", "country", "description"):
                 put(field, _to_str_preserve(cell(field)))
-            for field in ("length_cm", "min_quantity"):
-                if cell(field) not in (None, ""):
-                    put(field, to_number(cell(field), field))
+            if cell("min_quantity") not in (None, ""):
+                put("min_quantity", to_number(cell("min_quantity"), "min_quantity"))
             put("photos", str(cell("photos") or "").strip())
         except RowError as e:
             skipped.append(f"строка {offset} ({name[:40]}): {e}")

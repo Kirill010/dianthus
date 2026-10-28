@@ -25,6 +25,8 @@ def reset_postgres() -> None:
 
 def reset_sqlite() -> None:
     Base.metadata.drop_all(bind=engine)
+    with engine.begin() as conn:                                   # отметки «перенос выполнен» тоже сбрасываем,
+        conn.execute(text("DROP TABLE IF EXISTS _migrations"))      # иначе стартовые справочники не появятся
 
 
 def reset() -> None:

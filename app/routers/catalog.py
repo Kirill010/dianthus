@@ -10,7 +10,7 @@ from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from sqlalchemy import and_, case, func, or_
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from ..config import config
@@ -48,6 +48,7 @@ FACETS = {
     "height": (Product.height_id, Height),
     "country": (Product.country_id, Country),
 }
+FACET_TITLES = {"kind": "Вид", "color": "Цвет", "height": "Рост", "country": "Страна"}
 MAX_IDS_PER_FACET = 50
 
 
@@ -149,18 +150,32 @@ def _read_selection(db: Session, request: Request) -> dict:
 
 # ───────────────────────────── условия запроса ─────────────────────────────
 
-def _apply_filters(query, q, sel, min_price, max_price, min_length, max_length,
-                   skip=()):
+def _search_condition(q: str):
+    """Поиск: название, артикул, штрихкод, описание и названия из справочников
+    («роза», «белый», «эквадор»); число до трёх цифр — ещё и рост («60»)."""
+    pattern = contains_pattern(q)
+
+    def named(model):
+        return select(model.id).where(model.name.ilike(pattern, escape=LIKE_ESCAPE))
+
+    conditions = [
+        Product.name.ilike(pattern, escape=LIKE_ESCAPE),
+        Product.sku.ilike(pattern, escape=LIKE_ESCAPE),
+        Product.barcode.ilike(pattern, escape=LIKE_ESCAPE),
+        Product.description.ilike(pattern, escape=LIKE_ESCAPE),
+        Product.kind_id.in_(named(Kind)),
+        Product.color_id.in_(named(Color)),
+        Product.country_id.in_(named(Country)),
+    ]
+    if q.isdigit() and len(q) <= 3:
+        conditions.append(Product.height_id.in_(select(Height.id).where(Height.cm == int(q))))
+    return or_(*conditions)
+
+
+def _apply_filters(query, q, sel, min_price, max_price, skip=()):
     """skip — какие фильтры-справочники не применять (нужно для счётчиков)."""
     if q:
-        pattern = contains_pattern(q)
-        query = query.filter(or_(
-            Product.name.ilike(pattern, escape=LIKE_ESCAPE),
-            Product.sku.ilike(pattern, escape=LIKE_ESCAPE),
-            Product.barcode.ilike(pattern, escape=LIKE_ESCAPE),
-            Product.description.ilike(pattern, escape=LIKE_ESCAPE),
-            Product.country.ilike(pattern, escape=LIKE_ESCAPE),
-        ))
+        query = query.filter(_search_condition(q))
     for key, (column, _model) in FACETS.items():
         ids = sel.get(key)
         if ids and key not in skip:
@@ -169,14 +184,21 @@ def _apply_filters(query, q, sel, min_price, max_price, min_length, max_length,
         query = query.filter(SupplyItem.price >= min_price)
     if max_price is not None:
         query = query.filter(SupplyItem.price <= max_price)
-    if min_length is not None:
-        query = query.filter(Product.length_cm >= min_length)
-    if max_length is not None:
-        query = query.filter(Product.length_cm <= max_length)
     return query
 
 
-def _apply_sort(query, sort: str, grouped: bool = False):
+# Прайс-лист идёт группами по видам — в порядке, заданном в «Фильтрах каталога».
+# Товар без вида лежит в группе «Прочее».
+_KIND_ORDER = select(Kind.sort_order).where(Kind.id == Product.kind_id).correlate(Product).scalar_subquery()
+_KIND_NAME = select(Kind.name).where(Kind.id == Product.kind_id).correlate(Product).scalar_subquery()
+
+
+def _other_kind_order(db: Session) -> int:
+    order = db.query(Kind.sort_order).filter(Kind.name == "Прочее").scalar()
+    return 9999 if order is None else order
+
+
+def _apply_sort(query, sort: str, grouped: bool = False, other_order: int = 9999):
     if sort == "price_asc":
         return query.order_by(SupplyItem.price.asc(), SupplyItem.id.asc())
     if sort == "price_desc":
@@ -184,9 +206,9 @@ def _apply_sort(query, sort: str, grouped: bool = False):
     if sort == "name":
         return query.order_by(Product.name.asc(), SupplyItem.id.asc())
     if grouped:
-        # Прайс-лист: группы по видам, внутри группы — по алфавиту
-        return query.order_by(Product.category.asc(), Product.name.asc(),
-                              SupplyItem.id.asc())
+        return query.order_by(func.coalesce(_KIND_ORDER, other_order),
+                              func.coalesce(_KIND_NAME, "Прочее"),
+                              Product.name.asc(), SupplyItem.id.asc())
     return query.order_by(SupplyItem.created_at.desc(), SupplyItem.id.desc())
 
 
@@ -199,8 +221,7 @@ def _make_page_url(request: Request):
     return page_url
 
 
-def _count_by_level(db: Session, q, sel, min_price, max_price,
-                    min_length, max_length) -> dict:
+def _count_by_level(db: Session, q, sel, min_price, max_price) -> dict:
     """Сколько позиций на каждом уровне остатка — при ТЕКУЩИХ фильтрах."""
     stems = _stems_expr()
 
@@ -219,15 +240,14 @@ def _count_by_level(db: Session, q, sel, min_price, max_price,
         .join(Product, SupplyItem.product_id == Product.id)
         .filter(SupplyItem.is_active.is_(True))
     )
-    query = _apply_filters(query, q, sel, min_price, max_price,
-                           min_length, max_length)
+    query = _apply_filters(query, q, sel, min_price, max_price)
     row = query.one()
     return dict(zip(("available", "big", "medium", "small", "out"),
                     (int(v or 0) for v in row)))
 
 
 def _facet_counts(db: Session, key: str, level: str, q, sel, min_price,
-                  max_price, min_length, max_length) -> dict:
+                  max_price) -> dict:
     """{id значения: сколько позиций увидит клиент, выбрав его}. Считается при
     текущем остатке, поиске и ДРУГИХ фильтрах, но без самого этого фильтра —
     поэтому выбранные значения не «обнуляют» соседей."""
@@ -239,8 +259,7 @@ def _facet_counts(db: Session, key: str, level: str, q, sel, min_price,
         .filter(SupplyItem.is_active.is_(True))
     )
     query = _apply_quantity_filter(query, level)
-    query = _apply_filters(query, q, sel, min_price, max_price,
-                           min_length, max_length, skip=(key,))
+    query = _apply_filters(query, q, sel, min_price, max_price, skip=(key,))
     return {fid: int(cnt) for fid, cnt in query.group_by(column).all()
             if fid is not None}
 
@@ -309,8 +328,6 @@ def catalog(
     level: str = "available",
     min_price: Optional[float] = None,
     max_price: Optional[float] = None,
-    min_length: Optional[int] = None,
-    max_length: Optional[int] = None,
     sort: str = "newest",
     view: str = "",
     page: int = 1,
@@ -342,10 +359,10 @@ def catalog(
 
     query = _base_query(db)
     query = _apply_quantity_filter(query, level)
-    query = _apply_filters(query, q, sel, min_price, max_price,
-                           min_length, max_length)
-    group_by_category = view == "list" and sort == "newest"
-    query = _apply_sort(query, sort, grouped=group_by_category)
+    query = _apply_filters(query, q, sel, min_price, max_price)
+    group_by_kind = view == "list" and sort == "newest"
+    query = _apply_sort(query, sort, grouped=group_by_kind,
+                        other_order=_other_kind_order(db) if group_by_kind else 9999)
 
     page_size = LIST_PAGE_SIZE if view == "list" else config.PAGE_SIZE
     total = query.count()
@@ -355,7 +372,7 @@ def catalog(
     items = query.offset((page - 1) * page_size).limit(page_size).all()
 
     preorder_items = []
-    if (user and page == 1 and not q and not sel["kind"]
+    if (user and page == 1 and not q and not any(sel.values())
             and level == "available"):
         preorder_items = (
             _preorder_query(db)
@@ -368,18 +385,16 @@ def catalog(
     current_filters = {
         "q": q, "level": level, "sort": sort, "view": view,
         "min_price": min_price, "max_price": max_price,
-        "min_length": min_length, "max_length": max_length,
         "kind": sel["kind"], "color": sel["color"],
         "height": sel["height"], "country": sel["country"],
     }
 
-    common = (q, sel, min_price, max_price, min_length, max_length)
+    common = (q, sel, min_price, max_price)
     options = {
         key: _options(db, key, _facet_counts(db, key, level, *common),
                       sel[key], current_filters)
         for key in FACETS
     }
-    all_count = sum(o["count"] for o in options["kind"])
 
     level_counts = _count_by_level(db, *common)
 
@@ -394,55 +409,34 @@ def catalog(
     # из 1С (или файлом). Пока обмена не было — строку не показываем.
     last_update = exchange_log.last_catalog_update(db)
 
-    # ── Совместимость со старым шаблоном (имена вместо id) ──
-    kind_by_name = {o["name"]: o["id"] for o in options["kind"]}
-    country_names = [o["name"] for o in options["country"]]
-    compat_filters = dict(current_filters)
-    compat_filters["category"] = (
-        next((o["name"] for o in options["kind"] if o["selected"]), "")
-        if len(sel["kind"]) == 1 else "")
-    compat_filters["country"] = (
-        next((o["name"] for o in options["country"] if o["selected"]), "")
-        if len(sel["country"]) == 1 else "")
-
-    def category_url(name: str) -> str:
-        kid = kind_by_name.get(name)
-        return _catalog_url(current_filters, kind=[kid] if kid else [])
-
     response = render(
         request, "catalog.html", db,
         user=user,
         public=public,
         items=items,
         preorder_items=preorder_items,
-        # новые фильтры: списки {id, name, count, selected, hex, url}
-        kind_options=options["kind"],
-        color_options=options["color"],
-        height_options=options["height"],
-        country_options=options["country"],
+        # фильтры-справочники: списки {id, name, count, selected, hex, url}
+        filter_groups=[(title, key, options[key]) for key, title in FACET_TITLES.items()],
+        has_filter_options=any(options.values()),
         selected=sel,
-        # старые имена — пока шаблон не переведён на *_options
-        countries=country_names,
-        category_chips=[(o["name"], o["count"]) for o in options["kind"]],
-        all_count=all_count,
+        picked_filters=sum(len(ids) for ids in sel.values()),
         quantity_levels=QUANTITY_LEVELS,
         level_counts=level_counts,
         sort_options=SORT_OPTIONS,
-        current_filters=compat_filters,
+        current_filters=current_filters,
         search_q=q,
         view=view,
-        group_by_category=group_by_category,
+        group_by_kind=group_by_kind,
         my_discount=(float(user.discount_percent or 0) if user else 0.0),
         catalog_updated_at=(last_update.created_at if last_update else None),
         page=page, total_pages=total_pages, total_items=total,
         page_url=_make_page_url(request),
         has_filters=any([
             q, sel["kind"], sel["color"], sel["height"], sel["country"],
-            min_price, max_price, min_length, max_length, level != "available",
+            min_price, max_price, level != "available",
         ]),
         active_supplies=active_supplies,
         preorder_max_packs=MAX_PREORDER_PACKS,
-        category_url=category_url,
         level_url=lambda l: _catalog_url(current_filters, level=l),
         sort_url=lambda s: _catalog_url(current_filters, sort=s),
         view_url=lambda v: _catalog_url(current_filters, view=v),

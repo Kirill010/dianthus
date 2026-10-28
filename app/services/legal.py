@@ -269,7 +269,7 @@ def export_user_data(db: Session, user: User) -> dict:
         "profile": {
             "email": user.email, "full_name": user.full_name,
             "phone": user.phone, "company_name": user.company_name,
-            "inn": user.inn, "city": user.city,
+            "inn": user.inn, "city": user.city, "address": user.address or "",
             "discount_percent": user.discount_percent,
             "registered_at": utc_iso(user.created_at),
             "last_login_at": utc_iso(user.last_login_at),
@@ -359,6 +359,8 @@ def anonymize_user(db: Session, user: User) -> None:
     user.company_name = f"Клиент №{uid} (данные удалены)"
     user.inn = ""
     user.city = ""
+    user.address = ""
+    user.external_id = ""                                   # связь с контрагентом 1С тоже разрываем
     user.totp_secret = ""
     user.staff_note = ""
     user.is_approved = False

@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% set hide_bottom_nav = true %}
+{% block title %}Фильтры каталога — админка{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h2 class="mb-0"><i class="fas fa-tags me-2"></i>Фильтры каталога</h2>
+    <a href="/admin" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i>В админку</a>
+</div>
+
+<p class="text-muted small">По этим спискам клиенты отбирают товары в каталоге: вид цветка, цвет, рост и страна. Каждый список — отдельная таблица, у каждой записи свой номер (id). Новые значения появляются сами, когда 1С присылает товар или когда загружается файл с товарами; здесь их можно добавить, переименовать, выбрать цвет кружка или удалить — удалить можно только то, что ни у одного товара не указано.</p>
+
+<div class="row g-3">
+{% for s in sections %}
+    <div class="col-12 col-xl-6" id="{{ s.kind }}">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <strong>{{ s.title }}</strong>
+                <span class="badge bg-secondary">{{ s.rows|length }}</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="text-muted" style="width:3rem">id</th>
+                            <th>{% if s.kind == 'height' %}Рост, см{% else %}Название{% endif %}{% if s.kind == 'color' %} и цвет кружка{% endif %}</th>
+                            <th class="text-end" style="width:5.5rem">Товаров</th>
+                            <th style="width:2.5rem"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for r in s.rows %}
+                        {% set used = s.usage.get(r.id, 0) %}
+                        <tr>
+                            <td class="text-muted small">{{ r.id }}</td>
+                            <td>
+                                <form method="post" action="/admin/filters/{{ s.kind }}/{{ r.id }}/edit" class="d-flex gap-1 align-items-center">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    {% if s.kind == 'height' %}
+                                        <input type="number" name="name" value="{{ r.cm }}" min="10" max="300" required class="form-control form-control-sm" style="max-width:6rem" aria-label="Рост, см">
+                                    {% else %}
+                                        <input type="text" name="name" value="{{ r.name }}" maxlength="100" required class="form-control form-control-sm" aria-label="Название">
+                                    {% endif %}
+                                    {% if s.kind == 'color' %}
+                                        <input type="color" name="swatch" value="{{ r.hex or '#ffffff' }}" class="form-control form-control-sm form-control-color flex-shrink-0" title="Цвет кружка в фильтре" aria-label="Цвет кружка">
+                                    {% endif %}
+                                    <button class="btn btn-sm btn-outline-primary flex-shrink-0" title="Сохранить"><i class="fas fa-check"></i></button>
+                                </form>
+                                {% if r.external_id %}<div class="small text-muted">id в 1С: {{ r.external_id }}</div>{% endif %}
+                            </td>
+                            <td class="text-end small">{{ used }}</td>
+                            <td class="text-end">
+                                {% if used %}
+                                    <button class="btn btn-sm btn-outline-secondary" disabled title="Используется у товаров — удалить нельзя"><i class="fas fa-trash"></i></button>
+                                {% else %}
+                                    <form method="post" action="/admin/filters/{{ s.kind }}/{{ r.id }}/delete" data-confirm="Удалить эту запись?">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                        <button class="btn btn-sm btn-outline-danger" title="Удалить"><i class="fas fa-trash"></i></button>
+                                    </form>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="4" class="text-muted small p-3">Пока пусто.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer">
+                <form method="post" action="/admin/filters/{{ s.kind }}/add" class="d-flex gap-2 align-items-center flex-wrap">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    {% if s.kind == 'height' %}
+                        <input type="number" name="name" min="10" max="300" required placeholder="например, 65" class="form-control form-control-sm" style="max-width:10rem" aria-label="Новый рост, см">
+                    {% else %}
+                        <input type="text" name="name" maxlength="100" required placeholder="Новое значение" class="form-control form-control-sm" style="max-width:14rem" aria-label="Новое значение">
+                    {% endif %}
+                    {% if s.kind == 'color' %}
+                        <input type="color" name="swatch" value="#cccccc" class="form-control form-control-sm form-control-color" title="Цвет кружка в фильтре" aria-label="Цвет кружка">
+                    {% endif %}
+                    <button class="btn btn-sm btn-primary"><i class="fas fa-plus me-1"></i>Добавить</button>
+                </form>
+                {% if s.kind == 'country' %}
+                    <div class="small text-muted mt-2">Страны есть и в «Настройках» (сроки заказа по странам). Переименовали страну здесь — поправьте её и там.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+{% endfor %}
+</div>
+{% endblock %}

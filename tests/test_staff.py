@@ -419,8 +419,10 @@ def test_customers_excel_includes_all_clients_and_marketing_consent(web, mem_db)
     as_admin(web, mem_db)
     rows = list(load_workbook(BytesIO(web.get("/admin/customers/export").content)).active.values)
     header = rows[0]
-    data = {r[0]: dict(zip(header, r)) for r in rows[1:]}
+    data = {dict(zip(header, r))["Компания"]: dict(zip(header, r)) for r in rows[1:]}
     assert "Согласие на рекламу" in header and set(data) == {"Согласен", "Не согласен"}
+    assert header[:2] == ("id", "Компания") and "Адрес" in header            # у контрагента есть id и адрес
+    assert data["Согласен"]["id"] == yes.id
     assert data["Согласен"]["Согласие на рекламу"] == "Да" and data["Согласен"]["Заказов"] == 1
     assert data["Не согласен"]["Согласие на рекламу"] == "Нет" and data["Не согласен"]["Заказов"] == 0
 

@@ -16,7 +16,7 @@ from .security import (check_csrf, check_rate_limit, reset_rate_limit,
                        reset_login_failures)
 from .services import legal, totp
 from .services.passwords import hash_password, verify_password
-from .validators import (validate_company_name, validate_email,
+from .validators import (validate_address, validate_company_name, validate_email,
                          validate_full_name, validate_password,
                          validate_phone, validate_inn, validate_city)
 from . import models
@@ -54,6 +54,7 @@ async def register(
     company_name: str = Form(""),
     inn: str = Form(""),
     city: str = Form(""),
+    address: str = Form(""),
     consent: str = Form(""),
     marketing_consent: str = Form(""),
     db: Session = Depends(get_db),
@@ -64,6 +65,7 @@ async def register(
     phone = phone.strip()
     inn = inn.strip()
     city = city.strip()
+    address = address.strip()
 
     errors: list[str] = []
     for check, value in [
@@ -74,6 +76,7 @@ async def register(
         (validate_password, password),
         (validate_inn, inn),
         (validate_city, city),
+        (validate_address, address),
     ]:
         msg = check(value)
         if msg:
@@ -93,7 +96,7 @@ async def register(
         request.session["register_data"] = {
             "email": email, "full_name": full_name,
             "phone": phone, "company_name": company_name,
-            "inn": inn, "city": city, "consent": bool(consent),
+            "inn": inn, "city": city, "address": address, "consent": bool(consent),
             "marketing_consent": bool(marketing_consent),
         }
         return RedirectResponse(url="/register", status_code=303)
@@ -107,7 +110,7 @@ async def register(
     user = models.User(
         email=email, hashed_password=pwd_hash,
         full_name=full_name, phone=phone,
-        company_name=company_name, inn=inn, city=city,
+        company_name=company_name, inn=inn, city=city, address=address,
         is_approved=False,
     )
     try:

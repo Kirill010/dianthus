@@ -157,7 +157,7 @@
                     </td>
                     <td>
                         <strong>{{ item.product.name }}</strong>
-                        {% if item.product.length_cm %}<br><small class="text-muted">{{ item.product.length_cm }} см</small>{% endif %}
+                        {% if item.product.height_cm %}<br><small class="text-muted">{{ item.product.height_cm }} см</small>{% endif %}
                     </td>
                     <td><small>{{ pack }} шт</small></td>
                     <td>
@@ -229,7 +229,7 @@
                     {% for p in all_products %}
                         <option value="{{ p.id }}">
                             {{ p.name }}
-                            {% if p.length_cm %} · {{ p.length_cm }} см{% endif %}
+                            {% if p.height_cm %} · {{ p.height_cm }} см{% endif %}
                             · уп. {{ p.package_size }} шт
                         </option>
                     {% endfor %}

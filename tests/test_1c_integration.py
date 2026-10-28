@@ -10,9 +10,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.database import Base, get_db
+from app.database import Base
 from app.main import app
-from app.models import Order, OrderItem, Product, Supply, SupplyItem, User
+from app.models import (Color, Country, Height, Kind, Order, OrderItem, Product,
+                        SupplyItem, User)
 from app.services.passwords import hash_password
 
 # Логин/пароль заданы в tests/conftest.py (INTEGRATION_USER / INTEGRATION_PASSWORD)
@@ -21,25 +22,29 @@ AUTH = {
     + base64.b64encode(b"1c_dianthus:test-1c-pass").decode()
 }
 
-# Ровно тот формат, который согласован с 1С.
+# Ровно тот формат, который согласован с 1С (образец владельца, только с одним фото).
 # "id" здесь — идентификатор товара В 1С; он сохраняется в Product.external_id.
 PRODUCTS_PAYLOAD = {
     "products": [
         {
-            "id": 1,
+            "id": "00000012345",
             "sku": "ROSA-FREEDOM-60",
+            "barcode": "4600000000001",
             "name": "Роза Freedom 60 см",
             "description": "Классическая красная роза",
+            "kind": "Роза",
+            "color": "Красный",
+            "height": 60,
             "country": "Эквадор",
-            "length_cm": 60,
+            "unit": "упаковка",
             "package_size": 25,
             "min_quantity": 1,
-            "category": "Роза Эквадор",
             "price_per_stem": 42.50,
             "stock_packs": 120,
             "photos": ["https://dianthus-opt.ru/static/uploads/abc.webp"],
         }
-    ]
+    ],
+    "full": False,
 }
 
 
@@ -125,10 +130,14 @@ def test_sync_creates_product_with_external_id(client, test_db):
 
     product = test_db.query(Product).one()
     assert product.name == "Роза Freedom 60 см"
-    assert product.external_id == "1"          # id из 1С сохранён
+    assert product.external_id == "00000012345"        # id из 1С сохранён
     assert product.sku == "ROSA-FREEDOM-60"
-    assert product.package_size == 25
-    assert product.length_cm == 60
+    assert product.barcode == "4600000000001"
+    assert product.package_size == 25 and product.unit == "упаковка"
+    # вид, цвет, рост и страна — записи отдельных справочников (создались сами)
+    assert (product.kind_name, product.color_name, product.height_cm, product.country_name) == (
+        "Роза", "Красный", 60, "Эквадор")
+    assert data["dictionaries_created"] == {}          # эти значения есть в стартовом наборе
 
     item = test_db.query(SupplyItem).one()
     assert item.price == 42.50                 # цена за ШТ
@@ -137,9 +146,23 @@ def test_sync_creates_product_with_external_id(client, test_db):
     assert item.supply.is_service is True      # служебная поставка 1С
 
 
+def test_sync_creates_missing_dictionary_values_once(client, test_db):
+    """Значения, которых в справочниках ещё нет, создаются сами (и сообщаются в ответе) — без дублей."""
+    novel = {"products": [{**PRODUCTS_PAYLOAD["products"][0], "kind": "Эустома", "color": "Малиновый",
+                           "height": 65, "country": "Мексика"}]}
+    first = client.post("/api/1c/products/sync", json=novel, headers=AUTH).json()
+    assert first["dictionaries_created"] == {"kind": ["Эустома"], "color": ["Малиновый"],
+                                             "height": ["65 см"], "country": ["Мексика"]}
+    again = client.post("/api/1c/products/sync", json=novel, headers=AUTH).json()
+    assert again["dictionaries_created"] == {}                     # повторная выгрузка ничего не плодит
+    assert test_db.query(Kind).filter(Kind.name == "Эустома").count() == 1
+    assert test_db.query(Height).filter(Height.cm == 65).count() == 1
+
+
 def test_sync_is_idempotent_by_external_id(client, test_db):
     """Повторная выгрузка того же товара не создаёт дубль."""
     client.post("/api/1c/products/sync", json=PRODUCTS_PAYLOAD, headers=AUTH)
+    sizes = [test_db.query(m).count() for m in (Kind, Color, Height, Country)]
 
     changed = {
         "products": [
@@ -159,6 +182,8 @@ def test_sync_is_idempotent_by_external_id(client, test_db):
     assert test_db.query(Product).count() == 1
     product = test_db.query(Product).one()
     assert product.name == "Роза Freedom 60 см (новая упаковка)"
+    assert r.json()["dictionaries_created"] == {}                  # справочники не плодятся
+    assert [test_db.query(m).count() for m in (Kind, Color, Height, Country)] == sizes
 
     item = test_db.query(SupplyItem).one()
     assert item.price == 45.0
@@ -180,19 +205,23 @@ def test_products_export_has_agreed_format(client, test_db):
 
     # обязательные поля согласованного формата
     assert set(p) >= {
-        "id", "external_id", "sku", "name", "description", "country",
-        "length_cm", "package_size", "min_quantity", "category",
-        "price_per_stem", "stock_packs", "photos",
+        "id", "external_id", "sku", "barcode", "name", "description", "kind", "color",
+        "height", "country", "unit", "package_size", "min_quantity", "price_per_stem",
+        "stock_packs", "photos",
     }
     assert p["id"] == product.id               # id товара на сайте
-    assert p["external_id"] == "1"             # id товара в 1С
+    assert p["external_id"] == "00000012345"   # id товара в 1С
     assert p["sku"] == "ROSA-FREEDOM-60"
+    assert p["barcode"] == "4600000000001"
     assert p["name"] == "Роза Freedom 60 см"
     assert p["price_per_stem"] == 42.50
     assert p["stock_packs"] == 120
     assert p["package_size"] == 25
     assert p["min_quantity"] == 1
-    assert p["category"] == "Роза Эквадор"
+    assert (p["kind"], p["color"], p["height"], p["country"]) == ("Роза", "Красный", 60, "Эквадор")
+    # рядом с названиями — id записей справочников на сайте
+    assert (p["kind_id"], p["color_id"], p["height_id"], p["country_id"]) == (
+        product.kind_id, product.color_id, product.height_id, product.country_id)
     assert p["photos"] == ["https://dianthus-opt.ru/static/uploads/abc.webp"]
 
 
@@ -241,11 +270,17 @@ def test_orders_export(client, test_db):
     assert o["status"] == "Новый"
     assert o["total"] == 2125.0
     assert o["comment"] == "Позвонить за час"
-    assert o["buyer"]["company"] == "ООО Ромашка"
-    assert o["buyer"]["inn"] == "7701234567"
+    # контрагент: id (на сайте), id в 1С, название, ИНН, email, адрес, телефон
+    assert o["counterparty"] == {
+        "id": user.id, "external_id": "", "name": "ООО Ромашка", "inn": "7701234567",
+        "email": "shop@test.ru", "address": "", "phone": "+79001234567",
+    }
 
     line = o["items"][0]
+    assert line["product_id"] == product.id
+    assert line["external_id"] == "00000012345"
     assert line["sku"] == "ROSA-FREEDOM-60"
+    assert line["barcode"] == "4600000000001"
     assert line["quantity_packs"] == 2
     assert line["package_size"] == 25
     assert line["stems"] == 50

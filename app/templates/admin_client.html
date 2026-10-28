@@ -33,11 +33,13 @@ document.getElementById('tmp-copy').addEventListener('click', function () {
     <div class="card p-4 h-100">
         <h5 class="mb-3">Контакты и статус</h5>
         <dl class="row mb-0">
+            <dt class="col-sm-4 text-muted fw-normal">Номер (id)</dt><dd class="col-sm-8">{{ client.id }}{% if client.external_id %} · id в 1С: {{ client.external_id }}{% endif %}</dd>
             <dt class="col-sm-4 text-muted fw-normal">Контактное лицо</dt><dd class="col-sm-8">{{ client.full_name }}</dd>
             <dt class="col-sm-4 text-muted fw-normal">Телефон</dt><dd class="col-sm-8"><a href="tel:{{ client.phone }}">{{ client.phone or '—' }}</a></dd>
             <dt class="col-sm-4 text-muted fw-normal">Email</dt><dd class="col-sm-8"><a href="mailto:{{ client.email }}">{{ client.email }}</a></dd>
             <dt class="col-sm-4 text-muted fw-normal">ИНН</dt><dd class="col-sm-8">{{ client.inn or '—' }}</dd>
             <dt class="col-sm-4 text-muted fw-normal">Город</dt><dd class="col-sm-8">{{ client.city or '—' }}</dd>
+            <dt class="col-sm-4 text-muted fw-normal">Адрес</dt><dd class="col-sm-8">{{ client.address or '—' }}</dd>
             <dt class="col-sm-4 text-muted fw-normal">Регистрация</dt><dd class="col-sm-8">{{ client.created_at|localdt('%d.%m.%Y') }}</dd>
             <dt class="col-sm-4 text-muted fw-normal">Был на сайте</dt><dd class="col-sm-8">{{ client.last_login_at|localdt if client.last_login_at else 'ещё не входил' }}</dd>
             <dt class="col-sm-4 text-muted fw-normal">Статус</dt>

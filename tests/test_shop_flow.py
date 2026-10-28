@@ -248,12 +248,14 @@ def test_catalog_links_encode_query_text(web, mem_db):
     shop_login(web, mem_db)
     seed_item(mem_db, name="Роза & Пион", stock=5)
     from urllib.parse import unquote
-    page = web.get("/catalog", params={"q": "Роза & Пион", "category": "Роза Эквадор"}).text
-    link = re.search(r'href="/catalog\?q=([^"]*)"', page)           # ссылка «Все» (категории)
+    from app.models import Kind
+    kind_id = mem_db.query(Kind).filter(Kind.name == "Роза").one().id
+    page = web.get("/catalog", params={"q": "Роза & Пион", "kind": kind_id}).text
+    link = re.search(r'href="/catalog\?q=([^"]*)"', page)           # кнопка вида «Роза» (снять выбор)
     assert link is not None
     assert "&" not in link.group(1) and unquote(link.group(1)) == "Роза & Пион"
-    reset = re.search(r'href="/catalog\?category=([^"]*)"', page)    # крестик «сбросить поиск»
-    assert reset is not None and unquote(reset.group(1)) == "Роза Эквадор"
+    reset = re.search(r'href="/catalog\?kind=([^"]*)"', page)        # крестик «сбросить поиск»
+    assert reset is not None and unquote(reset.group(1)) == str(kind_id)
 
 
 def test_empty_catalog_messages_differ_for_search_and_no_stock(web, mem_db):

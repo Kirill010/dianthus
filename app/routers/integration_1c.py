@@ -18,18 +18,27 @@
   сайт → 1С
     GET  /api/1c/products/export    каталог сайта            (?format=csv — таблица)
     GET  /api/1c/orders/export      заказы (?new=1 — только ещё не забранные; ?format=csv)
-    GET  /api/1c/clients/export     клиенты
+    GET  /api/1c/clients/export     клиенты (контрагенты)
+    GET  /api/1c/dictionaries       справочники: виды, цвета, рост, страны (только чтение)
   служебное
     GET  /api/1c/ping               проверка связи и ключа
 
-Формат товара (одинаковый в обе стороны):
+У каждой сущности есть id. Товар: id, sku (артикул), barcode (штрихкод), name. Контрагент: id,
+name, inn, email, address, phone. Заказ: id (на сайте), number («САЙТ-57»), date.
+В выгрузке С САЙТА `id` — номер на сайте, а идентификатор 1С лежит в `external_id`
+(пусто, пока 1С его не сообщила).
 
-    {"id": 1, "external_id": "ROSA-FREEDOM-60", "sku": "ROSA-FREEDOM-60",
+Формат товара из 1С (`id` — идентификатор товара в 1С):
+
+    {"id": "00000012345", "sku": "ROSA-FREEDOM-60", "barcode": "4600000000001",
      "name": "Роза Freedom 60 см", "description": "Классическая красная роза",
-     "country": "Эквадор", "length_cm": 60, "unit": "упаковка",
-     "package_size": 25, "min_quantity": 1, "category": "Роза Эквадор",
-     "price_per_stem": 42.5, "stock_packs": 120,
-     "photos": ["https://dianthus-opt.ru/static/uploads/abc.webp"]}
+     "kind": "Роза", "color": "Красный", "height": 60, "country": "Эквадор",
+     "unit": "упаковка", "package_size": 25, "min_quantity": 1,
+     "price_per_stem": 42.5, "stock_packs": 120, "photos": []}
+
+kind (вид), color (цвет), height (рост, см) и country (страна) — значения справочников сайта
+(у каждого справочника своя таблица). Нового значения на сайте ещё нет — оно создаётся само,
+без дублей. Точнее можно указать id: kind_id (на сайте) или kind_external_id (в 1С).
 
 ВНИМАНИЕ по единицам: price_per_stem — цена за ШТ (стебель),
 stock_packs — остаток в УПАКОВКАХ, package_size — штук в упаковке.
@@ -43,7 +52,7 @@ from datetime import datetime, timezone
 
 from fastapi import (APIRouter, BackgroundTasks, Body, Depends, HTTPException,
                      Query, Request)
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy.orm import Session, joinedload, selectinload
 from starlette.concurrency import run_in_threadpool
@@ -52,15 +61,15 @@ from ..config import config
 from ..database import get_db
 from ..models import (ORDER_STATUSES, Order, Product, SupplyItem, User)
 from ..security import _client_ip, check_rate_limit, safe_equal
-from ..services import api_keys, onec_photos
+from ..services import api_keys, onec_photos, taxonomy
 from ..services.audit import log_action
 from ..services.catalog_files import decode_text, parse_catalog_text
 from ..services.catalog_sync import (MAX_ERRORS_IN_REPLY, MAX_PRODUCTS_PER_SYNC,
                                      RowError, SyncCommitError, apply_products,
                                      clean, to_number)
 from ..services.exchange_export import (
-    ORDER_CSV_HEADER, ORDER_NUMBER_PREFIX, PRODUCT_CSV_HEADER, csv_response,
-    orders_csv_rows, orders_to_payloads, product_payload, products_csv_rows)
+    ORDER_CSV_HEADER, ORDER_NUMBER_PREFIX, PRODUCT_CSV_HEADER, counterparty_payload,
+    csv_response, orders_csv_rows, orders_to_payloads, product_payload, products_csv_rows)
 from ..services.exchange_log import DRY_RUN_MARK, note
 from ..services.orders import (apply_status_change, load_order_for_update,
                                notify_client_of_status)
@@ -348,6 +357,7 @@ async def _read_limited(request: Request, limit: int, what: str) -> bytes:
 async def upload_product_photo(
     request: Request,
     product_id: str = Query("", alias="id"),
+    barcode: str = "",
     sku: str = "",
     name: str = "",
     n: int = 1,
@@ -356,16 +366,16 @@ async def upload_product_photo(
     _auth: bool = Depends(_verify_basic),
 ):
     """Фото товара из 1С. Тело запроса — САМА картинка (двоичные данные JPEG/PNG/WEBP),
-    не JSON и не base64. Товар — в адресе: ?id=<код или GUID из 1С> (или sku, или name).
-    n — номер фото по порядку (1 — главное): занятый номер заменяется, следующий —
-    добавляется. dry_run=1 — проверить, ничего не сохраняя. Подробности — в памятке
-    (раздел «Фото товаров»). Доступа на сервер для этого не нужно.
+    не JSON и не base64. Товар — в адресе: ?id=<id товара в 1С, как в products/sync>
+    (или barcode, sku, name). n — номер фото по порядку (1 — главное): занятый номер
+    заменяется, следующий — добавляется. dry_run=1 — проверить, ничего не сохраняя.
+    Подробности — в памятке (раздел «Фото товаров»). Доступа на сервер для этого не нужно.
     """
     try:
         body = await _read_limited(request, onec_photos.MAX_PHOTO_BYTES, "Файл")
         result = await run_in_threadpool(
-            onec_photos.apply_product_photo, db, ext=product_id, sku=sku, name=name,
-            position=n, content=body, dry_run=bool(dry_run))
+            onec_photos.apply_product_photo, db, ext=product_id, barcode=barcode, sku=sku,
+            name=name, position=n, content=body, dry_run=bool(dry_run))
     except HTTPException as e:
         note(request, f"фото: {e.detail}")      # причина видна в журнале обмена в админке
         raise
@@ -387,6 +397,23 @@ def ping(request: Request, _auth: bool = Depends(_verify_basic)):
         "reserve_unexported": config.ONEC_RESERVE_UNEXPORTED,
         "formats": ["json", "csv"],
     }
+
+
+@router.get("/dictionaries")
+def export_dictionaries(
+    request: Request,
+    db: Session = Depends(get_db),
+    _auth: bool = Depends(_verify_basic),
+):
+    """Справочники сайта, по которым фильтруется каталог: виды, цвета, рост, страны.
+
+    У каждой записи: id (на сайте), external_id (в 1С, пусто, если не сверяли), name;
+    у роста ещё cm, у цвета ещё hex. Только чтение: новые значения создаются сами, когда
+    приходят в товарах (products/sync), а править список может владелец на сайте.
+    """
+    data = taxonomy.dictionaries_payload(db)
+    note(request, "справочники: " + ", ".join(f"{k} {len(v)}" for k, v in data.items()))
+    return JSONResponse(data)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -659,7 +686,11 @@ def export_clients_to_1c(
     db: Session = Depends(get_db),
     _auth: bool = Depends(_verify_basic),
 ):
-    """Клиенты сайта (без сотрудников) — для сопоставления с контрагентами 1С."""
+    """Клиенты сайта (без сотрудников) — для сопоставления с контрагентами 1С.
+
+    Контрагент: id (на сайте), external_id (в 1С, пусто, пока 1С не сообщила), name, inn,
+    email, address, phone — те же поля, что в заказе (`counterparty`), и discount_percent.
+    """
     limit = max(1, min(int(limit), 1000))
     users = (
         db.query(User)
@@ -674,24 +705,24 @@ def export_clients_to_1c(
         "count": len(users),
         "has_more": len(users) == limit,
         "last_id": users[-1].id if users else after_id,
-        "clients": [
-            {
-                "id": u.id,                              # id на сайте
-                "external_id": u.external_id or "",      # id контрагента в 1С
-                "email": u.email,
-                "company": u.company_name,               # название контрагента
-                "contact": u.full_name,
-                "inn": u.inn or "",
-                "address": u.address or "",
-                "phone": u.phone or "",
-                "city": u.city or "",
-                "discount_percent": u.discount_percent or 0,
-                "is_approved": bool(u.is_approved),
-                "created_at_utc": utc_iso(u.created_at),
-            }
-            for u in users
-        ],
+        "clients": [{**counterparty_payload(u), "discount_percent": u.discount_percent or 0}
+                    for u in users],
     })
+
+
+def _find_clients(db: Session, email: str, ext: str, inn: str) -> list[User]:
+    """Клиент ищется по email; нет такого — по id в 1С; нет и такого — по ИНН.
+    Администраторов по id в 1С и ИНН не ищем (по email находим, чтобы честно отказать)."""
+    if email:
+        found = db.query(User).filter(User.email == email).all()
+        if found:
+            return found
+    for column, value in ((User.external_id, ext), (User.inn, inn)):
+        if value:
+            found = db.query(User).filter(column == value, User.is_admin.is_(False)).all()
+            if found:
+                return found
+    return []
 
 
 @router.post("/clients/sync")
@@ -709,9 +740,9 @@ def sync_clients(
                         "discount_percent": 5},
                        {"inn": "7701234567", "discount_percent": 7.5},
                        {"external_id": "000001234", "discount_percent": 3}]}
-    Клиент ищется по email; если его нет — по external_id; если нет и его — по ИНН
-    (должен быть ровно один клиент с таким ИНН). discount_percent можно не
-    присылать, если присылается external_id (тогда запоминается только он).
+    Клиент ищется по email; не нашёлся — по external_id; не нашёлся и так — по ИНН
+    (должен быть ровно один клиент). discount_percent можно не присылать, если
+    присылается external_id (тогда запоминается только он).
     Новых клиентов и права доступа 1С не создаёт и не меняет: регистрацию и
     одобрение делает менеджер на сайте.
     dry_run=1 — «проверка без сохранения»: ответ тот же, но данные не меняются.
@@ -738,16 +769,9 @@ def sync_clients(
                     raise RowError(f"discount_percent {pct} вне диапазона 0…100")
             elif not ext:
                 raise RowError("нет discount_percent")
-            if email:
-                matches = db.query(User).filter(User.email == email).all()
-            elif ext:
-                matches = db.query(User).filter(
-                    User.external_id == ext, User.is_admin.is_(False)).all()
-            elif inn:
-                matches = db.query(User).filter(
-                    User.inn == inn, User.is_admin.is_(False)).all()
-            else:
+            if not (email or ext or inn):
                 raise RowError("нужен email, external_id или inn")
+            matches = _find_clients(db, email, ext, inn)
             if not matches:
                 raise RowError("клиент не найден")
             if len(matches) > 1:

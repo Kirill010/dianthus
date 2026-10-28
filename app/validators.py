@@ -116,6 +116,18 @@ def validate_city(city: str, required: bool = True) -> str | None:
     return None
 
 
+def validate_address(address: str) -> str | None:
+    """Адрес контрагента (необязательный): попадает в заказ для 1С."""
+    address = (address or "").strip()
+    if not address:
+        return None
+    if len(address) > 300:
+        return "Адрес слишком длинный (до 300 символов)"
+    if _contains_injection(address):
+        return "Адрес содержит недопустимые символы"
+    return None
+
+
 def validate_price(value: float | None) -> str | None:
     if value is None:
         return "Укажите цену"

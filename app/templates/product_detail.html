@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block title %}{{ product.name }} — оптом · Диантус{% endblock %}
-{% block description %}{{ product.name }}{% if product.country %} из {{ product.country }}{% endif %} — оптовые поставки упаковками от {{ product.package_size or 1 }} шт. Цены — после регистрации. Диантус, оптовый магазин цветов.{% endblock %}
+{% block description %}{{ product.name }}{% if product.country_name %} из {{ product.country_name }}{% endif %} — оптовые поставки упаковками от {{ product.package_size or 1 }} шт. Цены — после регистрации. Диантус, оптовый магазин цветов.{% endblock %}
 
 {% block content %}
 <a href="/catalog" class="btn btn-outline-secondary btn-sm mb-3">
@@ -68,18 +68,17 @@
             <span class="badge bg-warning text-dark mb-3"><i class="fas fa-truck-fast me-1"></i>В пути — можно оформить предзаказ</span>
         {% endif %}
         <div class="product-detail__specs mb-3">
-            {% if product.country %}
+            {% for label, value in (('Вид', product.kind_name), ('Цвет', product.color_name),
+                                    ('Рост', (product.height_cm ~ ' см') if product.height_cm else ''),
+                                    ('Страна', product.country_name), ('Артикул', product.sku),
+                                    ('Штрихкод', product.barcode)) %}
+                {% if value %}
                 <div class="spec-row d-flex justify-content-between py-2 border-bottom">
-                    <span class="spec-label text-muted">Страна:</span>
-                    <span class="spec-value fw-medium">{{ product.country }}</span>
+                    <span class="spec-label text-muted">{{ label }}:</span>
+                    <span class="spec-value fw-medium">{{ value }}</span>
                 </div>
-            {% endif %}
-            {% if product.length_cm %}
-                <div class="spec-row d-flex justify-content-between py-2 border-bottom">
-                    <span class="spec-label text-muted">Длина стебля:</span>
-                    <span class="spec-value fw-medium">{{ product.length_cm }} см</span>
-                </div>
-            {% endif %}
+                {% endif %}
+            {% endfor %}
             <div class="spec-row d-flex justify-content-between py-2 border-bottom">
                 <span class="spec-label text-muted">В упаковке:</span>
                 <span class="spec-value fw-medium">{{ pack }} шт</span>

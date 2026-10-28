@@ -14,7 +14,6 @@
 
 На боевой базе (ENV=prod) скрипт отказывается работать.
 """
-import os
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -29,28 +28,29 @@ from app.database import SessionLocal  # noqa: E402
 from app.migrations import prepare_database  # noqa: E402
 from app import models  # noqa: E402
 from app.services.passwords import hash_password  # noqa: E402
+from app.services.taxonomy import Taxonomy, set_taxonomy  # noqa: E402
 
 UPLOADS = Path(__file__).resolve().parent / "app" / "static" / "uploads"
 
-# название, цвет, страна, длина, категория, шт/упак., цена/шт, упаковок
+# название, цвет картинки (RGB), цвет, страна, рост, вид, шт/упак., цена/шт, упаковок
 SHELF = [
-    ("Роза Freedom 60",       (190, 30, 45),   "Эквадор",  60, "Роза Эквадор",  25, 95.0, 120),
-    ("Роза Explorer 60",      (140, 20, 40),   "Эквадор",  60, "Роза Эквадор",  25, 105.0, 80),
-    ("Роза Pink Floyd 60",    (235, 120, 170), "Эквадор",  60, "Роза Эквадор",  25, 132.0, 45),
-    ("Роза Playa Blanca 60",  (245, 240, 230), "Эквадор",  60, "Роза Эквадор",  25, 105.0, 60),
-    ("Роза Mondial 70",       (250, 250, 245), "Эквадор",  70, "Роза Эквадор",  25, 118.0, 30),
-    ("Роза кустовая Bombastic", (240, 170, 190), "Эквадор", 50, "Роза кустовая", 10, 160.0, 20),
-    ("Хризантема Бигуди",     (240, 215, 90),  "Колумбия", 70, "Хризантема",    10, 85.0, 40),
-    ("Гвоздика микс",         (220, 90, 120),  "Колумбия", 55, "Гвоздика",      20, 45.0, 200),
-    ("Тюльпан Strong Gold",   (245, 190, 40),  "Голландия", 40, "Тюльпан",      50, 38.0, 90),
-    ("Пион Sarah Bernhardt",  (245, 180, 200), "Голландия", 55, "Пион",         10, 310.0, 6),
-    ("Эвкалипт Цинерея",      (130, 160, 140), "Колумбия", 80, "Зелень",        10, 70.0, 3),
-    ("Гортензия белая",       (230, 235, 245), "Эквадор",  60, "Прочее",        10, 240.0, 0),
+    ("Роза Freedom 60",       (190, 30, 45),   "Красный",   "Эквадор",  60, "Роза",          25, 95.0, 120),
+    ("Роза Explorer 60",      (140, 20, 40),   "Бордовый",  "Эквадор",  60, "Роза",          25, 105.0, 80),
+    ("Роза Pink Floyd 60",    (235, 120, 170), "Розовый",   "Эквадор",  60, "Роза",          25, 132.0, 45),
+    ("Роза Playa Blanca 60",  (245, 240, 230), "Кремовый",  "Эквадор",  60, "Роза",          25, 105.0, 60),
+    ("Роза Mondial 70",       (250, 250, 245), "Белый",     "Эквадор",  70, "Роза",          25, 118.0, 30),
+    ("Роза кустовая Bombastic", (240, 170, 190), "Розовый", "Эквадор",  50, "Роза кустовая", 10, 160.0, 20),
+    ("Хризантема Бигуди",     (240, 215, 90),  "Жёлтый",    "Колумбия", 70, "Хризантема",    10, 85.0, 40),
+    ("Гвоздика микс",         (220, 90, 120),  "Микс",      "Колумбия", 55, "Гвоздика",      20, 45.0, 200),
+    ("Тюльпан Strong Gold",   (245, 190, 40),  "Жёлтый",    "Голландия", 40, "Тюльпан",      50, 38.0, 90),
+    ("Пион Sarah Bernhardt",  (245, 180, 200), "Розовый",   "Голландия", 55, "Пион",         10, 310.0, 6),
+    ("Эвкалипт Цинерея",      (130, 160, 140), "Зелёный",   "Колумбия", 80, "Зелень",        10, 70.0, 3),
+    ("Гортензия белая",       (230, 235, 245), "Белый",     "Эквадор",  60, "Прочее",        10, 240.0, 0),
 ]
 INCOMING = [
-    ("Роза Avalanche 60",     (252, 252, 250), "Эквадор",  60, "Роза Эквадор",  25, 110.0, 150),
-    ("Роза Orange Crush 60",  (240, 120, 40),  "Эквадор",  60, "Роза Эквадор",  25, 125.0, 70),
-    ("Лилия восточная",       (250, 200, 215), "Голландия", 80, "Прочее",       10, 190.0, 40),
+    ("Роза Avalanche 60",     (252, 252, 250), "Белый",     "Эквадор",  60, "Роза",          25, 110.0, 150),
+    ("Роза Orange Crush 60",  (240, 120, 40),  "Оранжевый", "Эквадор",  60, "Роза",          25, 125.0, 70),
+    ("Лилия восточная",       (250, 200, 215), "Розовый",   "Голландия", 80, "Прочее",       10, 190.0, 40),
 ]
 
 
@@ -112,15 +112,19 @@ def main(force: bool = False) -> int:
         db.add_all([shipped, incoming])
         db.flush()
 
+        tax = Taxonomy(db)
+
         def add(rows, supply, active):
             items = []
-            for i, (name, color, country, length, cat, pack, price, packs) in enumerate(rows):
-                photo = draw_photo(name, color, f"{supply.id}_{i}")
+            for i, (name, rgb, color, country, height, kind, pack, price, packs) in enumerate(rows):
+                photo = draw_photo(name, rgb, f"{supply.id}_{i}")
                 p = models.Product(
-                    name=name, country=country, length_cm=length, category=cat,
+                    name=name, sku=f"DEMO-{supply.id}-{i + 1:02d}",
+                    barcode=f"46000000{supply.id:02d}{i + 1:02d}",
                     package_size=pack, min_quantity=1, unit="упаковка",
                     image_url=photo, photos=[photo],
-                    description=f"{name} — свежесрезанные цветы. Длина стебля {length} см.")
+                    description=f"{name} — свежесрезанные цветы. Длина стебля {height} см.")
+                set_taxonomy(db, p, kind=kind, color=color, height=height, country=country, tax=tax)
                 db.add(p)
                 db.flush()
                 item = models.SupplyItem(supply_id=supply.id, product_id=p.id,

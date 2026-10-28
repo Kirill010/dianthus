@@ -3,8 +3,7 @@ import json
 from datetime import datetime, timezone
 
 from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey, Index,
-                        Integer, JSON, String, Text, func, select)
-from sqlalchemy.ext.hybrid import hybrid_property
+                        Integer, JSON, String, Text)
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
 from .database import Base
@@ -38,8 +37,6 @@ DEFAULT_HEIGHTS = [40, 50, 60, 70, 80, 90, 100]
 DEFAULT_COUNTRIES = [
     "Эквадор", "Колумбия", "Кения", "Голландия", "Россия", "Эфиопия", "Израиль",
 ]
-# Старое имя списка категорий (теперь это виды); оставлено, чтобы старый код не падал
-PRODUCT_CATEGORIES = DEFAULT_KINDS
 
 QUANTITY_LEVELS = [
     ("available", "В наличии"),
@@ -182,8 +179,8 @@ class Product(Base):
     )
     # Классификация — ссылки на справочники (kinds, colors, heights, countries).
     # Раньше здесь лежали текстовые country / category / length_cm: колонки в
-    # старых базах остаются, но код их больше не читает (см. ниже совместимые
-    # свойства и миграцию «taxonomy_v1»).
+    # старых базах остаются, но код их больше не читает (значения переносит
+    # миграция «taxonomy_v1»).
     kind_id = Column(Integer, ForeignKey("kinds.id"), nullable=True, index=True)
     color_id = Column(Integer, ForeignKey("colors.id"), nullable=True, index=True)
     height_id = Column(Integer, ForeignKey("heights.id"), nullable=True, index=True)
@@ -196,54 +193,23 @@ class Product(Base):
     supply_items = relationship("SupplyItem", back_populates="product",
                                 cascade="all, delete-orphan")
 
-    # ── Совместимость со старым кодом: названия вместо ссылок ──
-    # На экземпляре отдают текст («Эквадор», «Роза», 60); в запросе
-    # (Product.country == "Эквадор") превращаются в подзапрос к справочнику.
-    # Записывать через них нельзя: класть значения надо через
-    # app.services.taxonomy (там же создаются недостающие записи справочников).
-    @hybrid_property
-    def country(self) -> str:
-        return self.country_ref.name if self.country_ref is not None else ""
-
-    @country.expression
-    def country(cls):
-        return select(Country.name).where(Country.id == cls.country_id).scalar_subquery()
-
-    @country.setter
-    def country(self, value):
-        raise AttributeError("Страну товара задают через taxonomy.set_taxonomy()")
-
-    @hybrid_property
-    def category(self) -> str:
-        return self.kind_ref.name if self.kind_ref is not None else ""
-
-    @category.expression
-    def category(cls):
-        return select(Kind.name).where(Kind.id == cls.kind_id).scalar_subquery()
-
-    @category.setter
-    def category(self, value):
-        raise AttributeError("Вид товара задают через taxonomy.set_taxonomy()")
-
-    @hybrid_property
-    def length_cm(self) -> int:
-        return self.height_ref.cm if self.height_ref is not None else 0
-
-    @length_cm.expression
-    def length_cm(cls):
-        return select(Height.cm).where(Height.id == cls.height_id).scalar_subquery()
-
-    @length_cm.setter
-    def length_cm(self, value):
-        raise AttributeError("Рост товара задают через taxonomy.set_taxonomy()")
-
+    # Названия из справочников для шаблонов («Роза», «Красный», 60, «Эквадор»);
+    # пусто, если значение не указано. Менять значения — через app.services.taxonomy.
     @property
     def kind_name(self) -> str:
-        return self.category
+        return self.kind_ref.name if self.kind_ref is not None else ""
 
     @property
     def color_name(self) -> str:
         return self.color_ref.name if self.color_ref is not None else ""
+
+    @property
+    def height_cm(self) -> int:
+        return self.height_ref.cm if self.height_ref is not None else 0
+
+    @property
+    def country_name(self) -> str:
+        return self.country_ref.name if self.country_ref is not None else ""
 
     @property
     def all_photos(self) -> list:

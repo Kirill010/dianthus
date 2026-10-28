@@ -2,9 +2,7 @@
 """Обмен с 1С: устойчивость загрузки, подтверждение заказов, статусы, скидки."""
 import base64
 
-import pytest
-
-from app.models import Notification, Order, Product, Supply, SupplyItem, User
+from app.models import Notification, Product, Supply, SupplyItem
 from tests.helpers import make_order, make_user, seed_item
 
 AUTH = {"Authorization": "Basic " + base64.b64encode(b"1c_dianthus:test-1c-pass").decode()}
@@ -18,7 +16,7 @@ def sync(web, products, **kw):
 
 def row(i=1, **over):
     base = {"id": f"G-{i}", "sku": f"SKU-{i}", "name": f"Роза {i}", "package_size": 25,
-            "price_per_stem": 40.0, "stock_packs": 10, "category": "Роза Эквадор"}
+            "price_per_stem": 40.0, "stock_packs": 10, "kind": "Роза"}
     base.update(over)
     return base
 
@@ -44,12 +42,13 @@ def test_bad_rows_are_reported_and_good_rows_are_loaded(web, mem_db):
 
 
 def test_text_is_clamped_to_column_sizes_and_nul_removed(web, mem_db):
-    r = sync(web, [row(1, name="Н" * 500, sku="S" * 300, country="Э" * 200,
-                       description="D" * 9000, category="К" * 300)])
+    r = sync(web, [row(1, name="Н" * 500, sku="S" * 300, barcode="1" * 200, country="Э" * 200,
+                       description="D" * 9000, kind="К" * 300)])
     assert r.json()["created"] == 1, r.text
     p = mem_db.query(Product).one()
-    assert len(p.name) == 200 and len(p.sku) == 100 and len(p.country) == 100
-    assert len(p.description) == 5000 and len(p.category) == 100
+    assert len(p.name) == 200 and len(p.sku) == 100 and len(p.barcode) == 64
+    assert len(p.country_name) == 100 and len(p.kind_name) == 100
+    assert len(p.description) == 5000
 
     r = sync(web, [row(2, name="Тест" + chr(0) + "овый")])
     assert mem_db.query(Product).filter(Product.name == "Тестовый").count() == 1
@@ -168,7 +167,7 @@ def test_orders_export_new_and_ack(web, mem_db):
     _, _, order = _order(web, mem_db)
     first = web.get("/api/1c/orders/export?new=1", headers=AUTH).json()
     assert first["count"] == 1 and first["orders"][0]["number"] == f"САЙТ-{order.id}"
-    assert first["orders"][0]["exported"] is False
+    assert first["orders"][0]["id"] == order.id                     # id заказа на сайте
 
     # пока 1С не подтвердила — заказ приходит снова (ничего не теряется)
     assert web.get("/api/1c/orders/export?new=1", headers=AUTH).json()["count"] == 1
@@ -178,8 +177,9 @@ def test_orders_export_new_and_ack(web, mem_db):
     assert ack.json()["acked"] == 1
 
     assert web.get("/api/1c/orders/export?new=1", headers=AUTH).json()["count"] == 0
-    shown = web.get("/api/1c/orders/export", headers=AUTH).json()["orders"][0]
-    assert shown["exported"] is True and shown["onec_number"] == "00000000123"
+    assert web.get("/api/1c/orders/export", headers=AUTH).json()["count"] == 1   # весь список по-прежнему виден
+    mem_db.refresh(order)
+    assert order.exported_at is not None and order.onec_number == "00000000123"
 
 
 def test_ack_accepts_plain_numbers_and_reports_unknown(web, mem_db):
@@ -191,10 +191,12 @@ def test_ack_accepts_plain_numbers_and_reports_unknown(web, mem_db):
 
 
 def test_orders_export_time_fields_and_since_with_z(web, mem_db):
-    _order(web, mem_db)
+    _, _, order = _order(web, mem_db)
     o = web.get("/api/1c/orders/export", headers=AUTH).json()["orders"][0]
-    assert o["created_at_utc"].endswith("+00:00")
-    assert o["created_at_local"].endswith("+03:00")
+    # date — время магазина (Москва, UTC+3) БЕЗ смещения, как его читает 1С
+    from datetime import timedelta
+    assert o["date"] == (order.created_at + timedelta(hours=3)).isoformat(timespec="seconds")
+    assert "+" not in o["date"] and not o["date"].endswith("Z")
     ok = web.get("/api/1c/orders/export?since=2000-01-01T00:00:00Z", headers=AUTH)
     assert ok.status_code == 200 and ok.json()["count"] == 1
     future = web.get("/api/1c/orders/export?since=2999-01-01T00:00:00%2B03:00", headers=AUTH)
