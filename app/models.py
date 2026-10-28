@@ -3,8 +3,7 @@ import json
 from datetime import datetime, timezone
 
 from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey, Index,
-                        Integer, JSON, String, Text, func, select)
-from sqlalchemy.ext.hybrid import hybrid_property
+                        Integer, JSON, String, Text)
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
 from .database import Base
@@ -19,27 +18,11 @@ ORDER_STATUSES = ["Новый", "Подтверждён", "В работе",
                   "Отправлен", "Выполнен", "Отменён"]
 SUPPLY_STATUSES = ["Ожидается", "В пути", "Прибыл", "Разгружен"]
 
-# Что кладётся в справочники при первом запуске (дальше их ведёт владелец и 1С).
-# Фильтры каталога — «вид», «цвет», «рост», «страна» — это ОТДЕЛЬНЫЕ ТАБЛИЦЫ
-# (kinds, colors, heights, countries); товар ссылается на них по id.
-DEFAULT_KINDS = [
-    "Роза", "Роза кустовая", "Хризантема", "Гвоздика", "Тюльпан", "Пион",
+PRODUCT_CATEGORIES = [
+    "Роза Эквадор", "Роза", "Роза кустовая", "Хризантема",
+    "Гвоздика", "Тюльпан", "Пион",
     "Горшечные", "Зелень", "Прочее",
 ]
-# (название, цвет кружка в фильтре)
-DEFAULT_COLORS = [
-    ("Белый", "#ffffff"), ("Кремовый", "#f5ecd2"), ("Жёлтый", "#f4d03f"),
-    ("Оранжевый", "#f08a24"), ("Персиковый", "#f7b896"), ("Розовый", "#f1a7c1"),
-    ("Красный", "#c0392b"), ("Бордовый", "#7b1e2b"), ("Сиреневый", "#b39ddb"),
-    ("Фиолетовый", "#6c3483"), ("Голубой", "#8ecae6"), ("Зелёный", "#52a35a"),
-    ("Микс", ""),
-]
-DEFAULT_HEIGHTS = [40, 50, 60, 70, 80, 90, 100]
-DEFAULT_COUNTRIES = [
-    "Эквадор", "Колумбия", "Кения", "Голландия", "Россия", "Эфиопия", "Израиль",
-]
-# Старое имя списка категорий (теперь это виды); оставлено, чтобы старый код не падал
-PRODUCT_CATEGORIES = DEFAULT_KINDS
 
 QUANTITY_LEVELS = [
     ("available", "В наличии"),
@@ -82,9 +65,6 @@ class User(Base):
     company_name = Column(String(200), nullable=False)
     inn = Column(String(12), default="")
     city = Column(String(100), default="")
-    # Контрагент для 1С: адрес и идентификатор в 1С (пусто, пока 1С не сообщила его)
-    address = Column(String(300), default="")
-    external_id = Column(String(64), default="", index=True)
     is_admin = Column(Boolean, default=False, nullable=False)
     is_approved = Column(Boolean, default=False, nullable=False)
     discount_percent = Column(Float, default=0, nullable=False)
@@ -117,59 +97,18 @@ class User(Base):
         return bool(self.is_admin or self.is_manager)
 
 
-# ═══════════════════════════════════════════════════════════
-# Справочники-фильтры: каждый — отдельная таблица с id
-# ═══════════════════════════════════════════════════════════
-
-class _DictionaryMixin:
-    """Общие поля справочника: id на сайте, id в 1С, порядок показа."""
-    id = Column(Integer, primary_key=True, index=True)
-    external_id = Column(String(64), default="", index=True)      # идентификатор в 1С
-    sort_order = Column(Integer, default=0, nullable=False)
-    created_at = Column(DateTime, default=_utcnow)
-
-
-class Kind(_DictionaryMixin, Base):
-    """Вид цветка: роза, хризантема, гвоздика…"""
-    __tablename__ = "kinds"
-    name = Column(String(100), nullable=False, unique=True)
-
-
-class Color(_DictionaryMixin, Base):
-    """Цвет: белый, жёлтый… (hex — цвет кружка в фильтре, необязательно)."""
-    __tablename__ = "colors"
-    name = Column(String(100), nullable=False, unique=True)
-    hex = Column(String(7), default="")
-
-
-class Height(_DictionaryMixin, Base):
-    """Рост (длина стебля), см: 50, 60, 70, 80…"""
-    __tablename__ = "heights"
-    cm = Column(Integer, nullable=False, unique=True)
-
-    @property
-    def name(self) -> str:
-        return f"{self.cm} см"
-
-
-class Country(_DictionaryMixin, Base):
-    """Страна происхождения."""
-    __tablename__ = "countries"
-    name = Column(String(100), nullable=False, unique=True)
-
-
 class Product(Base):
     __tablename__ = "products"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(200), nullable=False, index=True)
     sku = Column(String(100), default="", index=True)
-    # Штрихкод (EAN-13 и т. п.): по нему товар тоже находится при обмене
-    barcode = Column(String(64), default="", index=True)
-    # Идентификатор товара В 1С (GUID или код номенклатуры) — поле "external_id"
+    # Идентификатор товара В 1С (GUID или код номенклатуры) — то самое поле "id"
     # в JSON-обмене. По нему товары сопоставляются при синхронизации, поэтому
     # переименование в 1С больше не создаёт дубль. Пусто = заведён вручную.
     external_id = Column(String(64), default="", index=True)
     description = Column(Text, default="")
+    country = Column(String(100), default="", index=True)
+    length_cm = Column(Integer, default=0)
     unit = Column(String(30), default="упаковка")
     package_size = Column(Integer, default=1)
     min_quantity = Column(Integer, default=1)
@@ -180,70 +119,10 @@ class Product(Base):
         server_default="[]",
         nullable=False,
     )
-    # Классификация — ссылки на справочники (kinds, colors, heights, countries).
-    # Раньше здесь лежали текстовые country / category / length_cm: колонки в
-    # старых базах остаются, но код их больше не читает (см. ниже совместимые
-    # свойства и миграцию «taxonomy_v1»).
-    kind_id = Column(Integer, ForeignKey("kinds.id"), nullable=True, index=True)
-    color_id = Column(Integer, ForeignKey("colors.id"), nullable=True, index=True)
-    height_id = Column(Integer, ForeignKey("heights.id"), nullable=True, index=True)
-    country_id = Column(Integer, ForeignKey("countries.id"), nullable=True, index=True)
-    kind_ref = relationship("Kind", lazy="joined")
-    color_ref = relationship("Color", lazy="joined")
-    height_ref = relationship("Height", lazy="joined")
-    country_ref = relationship("Country", lazy="joined")
+    category = Column(String(100), default="Прочее", index=True)
     created_at = Column(DateTime, default=_utcnow)
     supply_items = relationship("SupplyItem", back_populates="product",
                                 cascade="all, delete-orphan")
-
-    # ── Совместимость со старым кодом: названия вместо ссылок ──
-    # На экземпляре отдают текст («Эквадор», «Роза», 60); в запросе
-    # (Product.country == "Эквадор") превращаются в подзапрос к справочнику.
-    # Записывать через них нельзя: класть значения надо через
-    # app.services.taxonomy (там же создаются недостающие записи справочников).
-    @hybrid_property
-    def country(self) -> str:
-        return self.country_ref.name if self.country_ref is not None else ""
-
-    @country.expression
-    def country(cls):
-        return select(Country.name).where(Country.id == cls.country_id).scalar_subquery()
-
-    @country.setter
-    def country(self, value):
-        raise AttributeError("Страну товара задают через taxonomy.set_taxonomy()")
-
-    @hybrid_property
-    def category(self) -> str:
-        return self.kind_ref.name if self.kind_ref is not None else ""
-
-    @category.expression
-    def category(cls):
-        return select(Kind.name).where(Kind.id == cls.kind_id).scalar_subquery()
-
-    @category.setter
-    def category(self, value):
-        raise AttributeError("Вид товара задают через taxonomy.set_taxonomy()")
-
-    @hybrid_property
-    def length_cm(self) -> int:
-        return self.height_ref.cm if self.height_ref is not None else 0
-
-    @length_cm.expression
-    def length_cm(cls):
-        return select(Height.cm).where(Height.id == cls.height_id).scalar_subquery()
-
-    @length_cm.setter
-    def length_cm(self, value):
-        raise AttributeError("Рост товара задают через taxonomy.set_taxonomy()")
-
-    @property
-    def kind_name(self) -> str:
-        return self.category
-
-    @property
-    def color_name(self) -> str:
-        return self.color_ref.name if self.color_ref is not None else ""
 
     @property
     def all_photos(self) -> list:
