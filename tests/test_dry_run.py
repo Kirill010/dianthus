@@ -18,9 +18,9 @@ def key_header(db):
 def rows():
     return [
         {"id": "G-1", "sku": "S-1", "name": "Роза 1", "package_size": 25,
-         "price_per_stem": 40, "stock_packs": 10},
+         "price": 40, "quantity": 250},
         {"id": "G-2", "sku": "S-2", "name": "Роза 2", "package_size": 25,
-         "price_per_stem": "abc", "stock_packs": 10},            # плохая строка
+         "price": "abc", "quantity": 250},                       # плохая строка
     ]
 
 
@@ -53,7 +53,7 @@ def test_dry_run_full_snapshot_shows_what_would_be_hidden(web, mem_db):
     h = key_header(mem_db)
     r = web.post("/api/1c/products/sync?dry_run=1&full=1", headers=h,
                  json={"products": [{"id": "NEW-1", "name": "Роза Новая", "package_size": 25,
-                                     "price_per_stem": 40, "stock_packs": 5}]})
+                                     "price": 40, "quantity": 125}]})
     data = r.json()
     assert data["dry_run"] is True and data["deactivated"] == 1 and data["created"] == 1
     mem_db.expire_all()

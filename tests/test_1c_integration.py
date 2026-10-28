@@ -22,7 +22,7 @@ AUTH = {
     + base64.b64encode(b"1c_dianthus:test-1c-pass").decode()
 }
 
-# Ровно тот формат, который согласован с 1С (образец владельца, только с одним фото).
+# Товар «без поставки» в формате обмена: price — за штуку, quantity — в штуках (3000 шт = 120 упаковок).
 # "id" здесь — идентификатор товара В 1С; он сохраняется в Product.external_id.
 PRODUCTS_PAYLOAD = {
     "products": [
@@ -38,9 +38,9 @@ PRODUCTS_PAYLOAD = {
             "country": "Эквадор",
             "unit": "упаковка",
             "package_size": 25,
-            "min_quantity": 1,
-            "price_per_stem": 42.50,
-            "stock_packs": 120,
+            "min_quantity": 25,
+            "price": 42.50,
+            "quantity": 3000,
             "photos": ["https://dianthus-opt.ru/static/uploads/abc.webp"],
         }
     ],
@@ -134,6 +134,7 @@ def test_sync_creates_product_with_external_id(client, test_db):
     assert product.sku == "ROSA-FREEDOM-60"
     assert product.barcode == "4600000000001"
     assert product.package_size == 25 and product.unit == "упаковка"
+    assert product.min_quantity == 1                   # 25 шт при упаковке 25 = одна упаковка
     # вид, цвет, рост и страна — записи отдельных справочников (создались сами)
     assert (product.kind_name, product.color_name, product.height_cm, product.country_name) == (
         "Роза", "Красный", 60, "Эквадор")
@@ -169,8 +170,8 @@ def test_sync_is_idempotent_by_external_id(client, test_db):
             {
                 **PRODUCTS_PAYLOAD["products"][0],
                 "name": "Роза Freedom 60 см (новая упаковка)",
-                "price_per_stem": 45.0,
-                "stock_packs": 80,
+                "price": 45.0,
+                "quantity": 2000,                          # 80 упаковок
             }
         ]
     }
@@ -203,21 +204,19 @@ def test_products_export_has_agreed_format(client, test_db):
     p = data["products"][0]
     product = test_db.query(Product).one()
 
-    # обязательные поля согласованного формата
-    assert set(p) >= {
-        "id", "external_id", "sku", "barcode", "name", "description", "kind", "color",
-        "height", "country", "unit", "package_size", "min_quantity", "price_per_stem",
-        "stock_packs", "photos",
+    # справочник товара: цен и остатков тут нет — они живут в поставках
+    assert set(p) == {
+        "id", "external_id", "sku", "barcode", "name", "description", "kind", "kind_id",
+        "color", "color_id", "height", "height_id", "country", "country_id", "unit",
+        "package_size", "min_quantity", "photos",
     }
     assert p["id"] == product.id               # id товара на сайте
     assert p["external_id"] == "00000012345"   # id товара в 1С
     assert p["sku"] == "ROSA-FREEDOM-60"
     assert p["barcode"] == "4600000000001"
     assert p["name"] == "Роза Freedom 60 см"
-    assert p["price_per_stem"] == 42.50
-    assert p["stock_packs"] == 120
     assert p["package_size"] == 25
-    assert p["min_quantity"] == 1
+    assert p["min_quantity"] == 25             # в штуках, как и присылала 1С
     assert (p["kind"], p["color"], p["height"], p["country"]) == ("Роза", "Красный", 60, "Эквадор")
     # рядом с названиями — id записей справочников на сайте
     assert (p["kind_id"], p["color_id"], p["height_id"], p["country_id"]) == (
@@ -225,17 +224,13 @@ def test_products_export_has_agreed_format(client, test_db):
     assert p["photos"] == ["https://dianthus-opt.ru/static/uploads/abc.webp"]
 
 
-def test_products_export_all_includes_out_of_stock(client, test_db):
+def test_products_export_lists_every_product_even_when_nothing_is_on_the_shelf(client, test_db):
     client.post("/api/1c/products/sync", json=PRODUCTS_PAYLOAD, headers=AUTH)
     test_db.query(SupplyItem).update({SupplyItem.is_active: False})
     test_db.commit()
 
-    # на полке ничего нет
-    assert client.get("/api/1c/products/export", headers=AUTH).json()["count"] == 0
-    # но весь справочник доступен по ?all=1
-    assert client.get(
-        "/api/1c/products/export?all=1", headers=AUTH
-    ).json()["count"] == 1
+    # справочник не зависит от полки: товар на месте и без остатка
+    assert client.get("/api/1c/products/export", headers=AUTH).json()["count"] == 1
 
 
 # ── ВЫГРУЗКА ЗАКАЗОВ В 1С ────────────────────────────────────────
@@ -281,10 +276,13 @@ def test_orders_export(client, test_db):
     assert line["external_id"] == "00000012345"
     assert line["sku"] == "ROSA-FREEDOM-60"
     assert line["barcode"] == "4600000000001"
-    assert line["quantity_packs"] == 2
     assert line["package_size"] == 25
-    assert line["stems"] == 50
+    assert line["price"] == 42.5
+    assert line["quantity"] == 50                      # в штуках: 2 упаковки по 25
     assert line["sum"] == 2125.0
+    assert o["sum"] == 2125.0                          # сумма заказа до скидки
+    # остаток «без поставки» — поставка без id в 1С
+    assert line["supply"] == {"id": item.supply_id, "external_id": "", "number": "", "date": ""}
 
 
 def test_orders_export_rejects_unknown_status(client):

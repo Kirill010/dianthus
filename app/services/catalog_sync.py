@@ -1,5 +1,9 @@
 # app/services/catalog_sync.py
-"""Загрузка каталога (товары, цены, остатки) в базу сайта.
+"""Загрузка товаров (карточки; при желании цена и остаток «без поставки») в базу сайта.
+
+Основной путь цен и остатков — инвойсы (supply_sync.py): у каждой партии своя цена и свой остаток.
+Здесь же — справочник товаров и «остаток без поставки» (служебная партия). Везде одни названия:
+price — цена за ШТУКУ, quantity — количество в ШТУКАХ.
 
 Одна и та же логика обслуживает ВСЕ способы доставки данных:
   * JSON от 1С           — POST /api/1c/products/sync
@@ -184,28 +188,53 @@ def ext_id_of(item: dict) -> str:
     return ""
 
 
+# Прежние названия полей: 1С, у которой в коде остались они, получает понятную ошибку, а не
+# тихо нулевую цену и остаток.
+RENAMED_FIELDS = {"price_per_stem": "price", "stock_packs": "quantity", "stock_stems": "quantity",
+                  "quantity_packs": "quantity", "quantity_stems": "quantity"}
+
+
+def min_packs(min_stems: int | None, pack: int) -> int | None:
+    """Минимальный заказ из штук в упаковки, с округлением вверх: при упаковке 25 шт
+    25 → 1 упаковка, 26 → 2 упаковки."""
+    if min_stems is None:
+        return None
+    return max(1, -(-min_stems // max(1, pack)))
+
+
 def parse_product_row(item: dict) -> dict:
-    """Проверка и очистка одной строки каталога. Бросает RowError."""
+    """Проверка и очистка одной строки: товара или строки поставки. Бросает RowError.
+
+    Цена и количество одинаковы во всём обмене: price — цена за ШТУКУ (стебель),
+    quantity — количество в ШТУКАХ. Строка без price и quantity — просто карточка
+    товара (справочник): ни остатка, ни цены она не меняет.
+    """
+    for old, new in RENAMED_FIELDS.items():
+        if old in item and new not in item:
+            raise RowError(f"поле {old} теперь называется {new} "
+                           f"({'цена за штуку' if new == 'price' else 'количество в штуках'})")
     name = clean(item.get("name"), 200)
     if not name:
         raise RowError("нет name")
 
-    price = to_number(item.get("price_per_stem"), "price_per_stem")
-    if not (0 <= price <= 10_000_000):
-        raise RowError(f"недопустимая цена {price}")
+    price = None
+    if item.get("price") not in (None, ""):
+        price = round(to_number(item["price"], "price"), 2)
+        if not (0 <= price <= 10_000_000):
+            raise RowError(f"недопустимая цена {price}")
 
     row = {
         "ext": ext_id_of(item),
         "sku": clean(item.get("sku"), 100),
         "name": name,
-        "price": round(price, 2),
+        "price": price,                            # None = не передана
         "photos": extract_photos(item),
         # необязательные поля: None = «не передано, не трогать»
         "barcode": (clean(item.get("barcode"), 64) if "barcode" in item else None),
         "unit": clean(item.get("unit"), 30),       # пусто = не менять (у нового — «упаковка»)
         "description": (clean(item.get("description"), 5000)
                         if "description" in item else None),
-        "package_size": None, "min_quantity": None,
+        "package_size": None, "min_stems": None,
         "stock_packs": None, "stock_stems": None,
     }
     # Вид, цвет, рост, страна — значения справочников (отдельные таблицы): по id на
@@ -232,22 +261,19 @@ def parse_product_row(item: dict) -> dict:
                 item["package_size_hint"], "package_size_hint", 1, 10_000, 1)
         except RowError:
             pass
-    if "min_quantity" in item:
-        row["min_quantity"] = bounded_int(
-            item["min_quantity"], "min_quantity", 1, 10_000, 1)
+    if "min_quantity" in item:                     # в штуках; в упаковки переводится при сохранении
+        row["min_stems"] = bounded_int(item["min_quantity"], "min_quantity", 1, 1_000_000, 1)
 
-    if item.get("stock_packs") not in (None, ""):
-        n = int(to_number(item["stock_packs"], "stock_packs"))
-        if not (0 <= n <= 1_000_000):
-            raise RowError(f"недопустимый остаток {n}")
-        row["stock_packs"] = n
-    elif item.get("stock_stems") not in (None, ""):
-        n = int(to_number(item["stock_stems"], "stock_stems"))
-        if not (0 <= n <= 100_000_000):
-            raise RowError(f"недопустимый остаток {n} шт")
-        row["stock_stems"] = n
-    else:
-        row["stock_packs"] = 0
+    if item.get("quantity") not in (None, ""):
+        # quantity_unit: "packs" — только у файлов Excel/CSV, где остаток записан в упаковках
+        in_packs = item.get("quantity_unit") == "packs"
+        n = int(to_number(item["quantity"], "quantity"))
+        if not (0 <= n <= (1_000_000 if in_packs else 100_000_000)):
+            raise RowError(f"недопустимое quantity {n}")
+        row["stock_packs" if in_packs else "stock_stems"] = n
+    # есть ли в строке что-то про цену и остаток («позиция на полке»), или это только карточка товара
+    row["has_shelf"] = (price is not None or row["stock_packs"] is not None
+                        or row["stock_stems"] is not None)
     return row
 
 
@@ -355,12 +381,12 @@ class Catalog:
 def new_product(row: dict, main_image: str = "", photos: list | None = None) -> Product:
     """Новый товар из разобранной строки (без классификации: вид, цвет, рост и страну
     потом кладёт apply_classification — по справочникам)."""
+    pack = row["package_size"] or row.get("package_size_hint") or 1
     return Product(
         sku=row["sku"], barcode=row.get("barcode") or "", external_id=row["ext"],
         name=row["name"], description=row["description"] or "",
         unit=row.get("unit") or "упаковка",
-        package_size=row["package_size"] or row.get("package_size_hint") or 1,
-        min_quantity=row["min_quantity"] or 1,
+        package_size=pack, min_quantity=min_packs(row["min_stems"], pack) or 1,
         image_url=main_image, photos=photos or [],
     )
 
@@ -381,12 +407,14 @@ def apply_classification(tax: Taxonomy, product: Product, resolved: dict, row: d
         product.kind_ref = tax.by_name("kind", "Прочее")
 
 
-def duplicates_with_manual_supplies(db: Session) -> int:
-    """Сколько товаров одновременно лежит на полке и из 1С, и из ручной поставки.
+def duplicates_with_other_supplies(db: Session) -> int:
+    """Сколько товаров одновременно лежит на полке «без поставки» (products/sync) и в
+    какой-то поставке (ручной или из 1С).
 
     Каталог показывает каждую позицию склада отдельной карточкой, поэтому такой
     товар виден дважды (возможно, с разными ценами). Это бывает при переходе на
-    1С, пока старые ручные партии ещё не сняты с полок.
+    1С, пока старые ручные партии ещё не сняты с полок, или когда остатки
+    присылают обоими способами сразу.
     """
     from sqlalchemy.orm import aliased
     svc_item, man_item = aliased(SupplyItem), aliased(SupplyItem)
@@ -516,6 +544,15 @@ def apply_products(db: Session, items: list[dict], *, full: bool,
             if product is not None:
                 seen.add(id(product))                       # битая строка не обнуляет товар при «полном снимке»
             continue
+        # Остаток без поставки: чтобы выставить товар, нужна цена (своя или уже известная)
+        line = item_of.get(product) if product is not None else None
+        if ((row["stock_packs"] or row["stock_stems"] or 0) > 0 and not row["price"]
+                and not (line is not None and line.price)):
+            result.errors.append(f"#{idx} ({row['name'][:60]}): нет price (цена за штуку), "
+                                 f"без неё остаток не выставить")
+            if product is not None:
+                seen.add(id(product))
+            continue
         photos = row["photos"]
         main_image = photos[0] if photos else ""
 
@@ -538,8 +575,8 @@ def apply_products(db: Session, items: list[dict], *, full: bool,
                 product.unit = row["unit"]
             if row["package_size"] is not None:
                 product.package_size = row["package_size"]
-            if row["min_quantity"] is not None:
-                product.min_quantity = row["min_quantity"]
+            if row["min_stems"] is not None:
+                product.min_quantity = min_packs(row["min_stems"], product.package_size or 1)
             if photos:
                 product.photos = photos
                 product.image_url = main_image
@@ -548,24 +585,29 @@ def apply_products(db: Session, items: list[dict], *, full: bool,
             result.updated += 1
         seen.add(id(product))
 
-        pack = max(1, product.package_size or 1)
-        if row["stock_packs"] is not None:
-            stock = row["stock_packs"]
-        else:
-            stock = row["stock_stems"] // pack          # неполную упаковку не продаём
+        if row["has_shelf"]:
+            pack = max(1, product.package_size or 1)
+            if row["stock_packs"] is not None:
+                stock = row["stock_packs"]
+            elif row["stock_stems"] is not None:
+                stock = row["stock_stems"] // pack      # неполную упаковку не продаём
+            else:
+                stock = None                            # прислали только цену: остаток прежний
 
-        si = item_of.get(product)
-        if si is not None and pending:
-            stock = max(0, stock - pending.get(si.id, 0))
-        if si is None:
-            si = SupplyItem(supply=supply, product=product, price=row["price"],
-                            stock=stock, is_active=stock > 0)
-            db.add(si)
-            item_of[product] = si
-        else:
-            si.price = row["price"]
-            si.stock = stock
-            si.is_active = stock > 0
+            si = item_of.get(product)
+            if si is not None and pending and stock is not None:
+                stock = max(0, stock - pending.get(si.id, 0))
+            if si is None:
+                si = SupplyItem(supply=supply, product=product, price=row["price"] or 0.0,
+                                stock=stock or 0, is_active=(stock or 0) > 0)
+                db.add(si)
+                item_of[product] = si
+            else:
+                if row["price"] is not None:
+                    si.price = row["price"]
+                if stock is not None:
+                    si.stock = stock
+                    si.is_active = stock > 0
         result.processed += 1
 
     if full:
@@ -592,11 +634,11 @@ def apply_products(db: Session, items: list[dict], *, full: bool,
         logger.exception("1С: ошибка коммита")
         raise SyncCommitError(str(e)) from e
 
-    duplicates = duplicates_with_manual_supplies(db)
+    duplicates = duplicates_with_other_supplies(db)
     if duplicates:
         result.warnings.append(
-            f"{duplicates} тов. одновременно лежат на полке из 1С и из ручной "
-            f"поставки — в каталоге они видны дважды. Снимите ручные партии с "
-            f"полок (Админка → Поставки → «Снять с полок»).")
+            f"{duplicates} тов. одновременно лежат на полке «без поставки» (из этой выгрузки) "
+            f"и в поставках — в каталоге они видны дважды. Присылайте остатки одним способом: "
+            f"по поставкам (supplies/sync) или без них (price и quantity в products/sync).")
         logger.warning("1С sync: %s", result.warnings[0])
     return result

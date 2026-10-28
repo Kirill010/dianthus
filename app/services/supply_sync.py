@@ -1,23 +1,26 @@
 # app/services/supply_sync.py
-"""Инвойсы из 1С → «товары в пути» на сайте.
+"""Поставки (инвойсы) из 1С: остатки и цены ПО ПОСТАВКАМ.
 
 В 1С приход цветов от поставщика оформляют документом «Инвойс …» (рейс, поставщик,
-дата, валюта, строки товаров). Сайт показывает такие рейсы клиентам как «Товары в
-пути»: клиент может сделать предзаказ, пока цветы летят.
+дата, строки товаров). Сайт работает по поставкам: каждая строка инвойса — отдельная
+позиция каталога со своей ценой и своим остатком; клиент заказывает конкретную позицию
+конкретной поставки, а в заказе для 1С у каждой строки указана эта поставка — по ней 1С
+списывает товар из нужной партии.
 
 Как это устроено:
-  * 1С присылает инвойсы за последние недели вместе с их ТЕКУЩИМ состоянием:
-      "in_transit" — ещё в пути (не оприходован),
-      "received"   — оприходован: цветы приехали и числятся в остатках 1С,
+  * 1С присылает инвойсы вместе с их ТЕКУЩИМ состоянием:
+      "in_transit" — ещё в пути: клиенты могут сделать предзаказ;
+      "received"   — оприходован: товар на полке, quantity строки — ОСТАТОК партии
+                     (сколько штук ещё не продано), а не количество по инвойсу;
       "cancelled"  — отменён / удалён.
-    Сайт создаёт или обновляет поставку по идентификатору инвойса (повторная
-    отправка ничего не дублирует).
-  * Остатки «на полке» по-прежнему приходят из 1С отдельно (products/sync). Поэтому
-    поставка из 1С НИКОГДА не «разгружается» на полку сама и вручную: иначе товар был
-    бы виден дважды. Когда инвойс получает статус «received», поставка закрывается,
-    а клиентам с предзаказом резервируется товар с полки и уходит уведомление.
+    Сайт создаёт или обновляет поставку по идентификатору инвойса (повторная отправка
+    ничего не дублирует). Строка с остатком 0 снимается с полки.
+  * Когда инвойс получает статус «received», клиентам с предзаказом резервируется товар
+    этой же строки и уходит уведомление.
   * Пустой список ничего не закрывает: статус приходит явно, а не «по отсутствию».
-  * Забытые поставки (1С давно не присылала инвойс) закрываются сами через 21 день.
+    Чтобы закрыть сразу все поставки, которых 1С больше не присылает, список отправляют
+    с полем full=true.
+  * Забытые «в пути» (1С давно не присылала инвойс) закрываются сами через 21 день.
 """
 import logging
 import re
@@ -30,14 +33,17 @@ from sqlalchemy.orm import Session, joinedload
 from ..models import Notification, OrderItem, Preorder, Product, Supply, SupplyItem
 from .exchange_log import DRY_RUN_MARK
 from .catalog_sync import (MAX_ERRORS_IN_REPLY, Catalog, RowError, SyncCommitError,
-                           apply_classification, clean, lock_exchange, new_product,
-                           parse_product_row, resolve_classification)
+                           apply_classification, clean, ext_id_of, lock_exchange,
+                           new_product, parse_product_row, pending_packs,
+                           resolve_classification)
 from .taxonomy import Taxonomy, TaxonomyError, describe
 
 logger = logging.getLogger(__name__)
 
 IN_TRANSIT = "В пути"
-CLOSED = "Разгружен"            # для поставки из 1С значит «закрыта: принята в 1С»
+# Поставка из 1С приехала: позиции с остатком лежат на полке. Тот же статус получает
+# закрытая поставка (позиции сняты с полки), поэтому о полке судят по самим позициям.
+ARRIVED = "Разгружен"
 MAX_SUPPLIES_PER_SYNC = 200
 MAX_LINES_PER_SUPPLY = 2000
 STALE_DAYS = 21
@@ -58,11 +64,12 @@ _STATUS_ALIASES = {
 @dataclass
 class SupplySyncResult:
     processed: int = 0          # инвойсов обработано
-    created: int = 0            # новых поставок «в пути»
-    updated: int = 0            # обновлено поставок «в пути»
-    received: int = 0           # закрыто как принятые в 1С
+    created: int = 0            # новых поставок
+    updated: int = 0            # обновлено поставок
+    received: int = 0           # стали «оприходованы» (товар на полке)
     cancelled: int = 0          # отменено
-    skipped: int = 0            # «принят/отменён», а на сайте такой поставки не было
+    closed: int = 0             # закрыто при full=true (1С их больше не присылает)
+    skipped: int = 0            # «отменён», а на сайте такой поставки не было
     lines: int = 0              # строк товаров принято
     products_created: int = 0   # новых товаров в справочнике
     preorders_fulfilled: int = 0
@@ -82,6 +89,7 @@ class SupplySyncResult:
             "updated": self.updated,
             "received": self.received,
             "cancelled": self.cancelled,
+            "closed": self.closed,
             "skipped": self.skipped,
             "lines": self.lines,
             "products_created": self.products_created,
@@ -93,10 +101,12 @@ class SupplySyncResult:
         }
 
     def summary(self) -> str:
-        text = (f"инвойсов: {self.processed}, новых в пути: {self.created}, "
-                f"обновлено: {self.updated}, принято: {self.received}")
+        text = (f"инвойсов: {self.processed}, новых: {self.created}, "
+                f"обновлено: {self.updated}, на полке: {self.received}")
         if self.cancelled:
             text += f", отменено: {self.cancelled}"
+        if self.closed:
+            text += f", закрыто: {self.closed}"
         if self.preorders_fulfilled:
             text += f", предзаказов выполнено: {self.preorders_fulfilled}"
         if self.dictionaries:
@@ -160,12 +170,10 @@ def parse_supply(item: dict) -> dict:
     arrival = parse_arrival(item.get("date") or item.get("arrival_date"))
     if status == "in_transit" and arrival is None:
         raise RowError("нет date (дата прибытия) в формате 2026-10-29")
-    lines = item.get("items")
-    if lines is None:
-        lines = []
-    if not isinstance(lines, list):
+    lines = item.get("items")                        # None — строки не присылали: состав не меняем
+    if lines is not None and not isinstance(lines, list):
         raise RowError("items должен быть массивом")
-    if len(lines) > MAX_LINES_PER_SUPPLY:
+    if lines is not None and len(lines) > MAX_LINES_PER_SUPPLY:
         raise RowError(f"слишком много строк ({len(lines)}), максимум {MAX_LINES_PER_SUPPLY}")
     return {
         "ext": ext,
@@ -176,18 +184,8 @@ def parse_supply(item: dict) -> dict:
         "city": clean(item.get("city"), 100),
         "supplier": clean(item.get("supplier"), 120),
         "comment": clean(item.get("comment") or item.get("notes"), 300),
-        "lines": [ln for ln in lines if isinstance(ln, dict)],
+        "lines": None if lines is None else [ln for ln in lines if isinstance(ln, dict)],
     }
-
-
-def _line_to_product_item(line: dict) -> dict:
-    """Строка инвойса → то же, что строка каталога (quantity_* → stock_*)."""
-    mapped = dict(line)
-    if "quantity_packs" in line and "stock_packs" not in line:
-        mapped["stock_packs"] = line["quantity_packs"]
-    if "quantity_stems" in line and "stock_stems" not in line:
-        mapped["stock_stems"] = line["quantity_stems"]
-    return mapped
 
 
 def _notes(sp: dict) -> str:
@@ -213,51 +211,65 @@ def _known_price(db: Session, product: Product) -> float:
 # ПРИМЕНЕНИЕ
 # ═══════════════════════════════════════════════════════════
 
-def _has_open_preorders(db: Session, item_ids: list[int]) -> int:
-    if not item_ids:
-        return 0
-    return (db.query(Preorder)
-            .filter(Preorder.supply_item_id.in_(item_ids), Preorder.is_fulfilled.is_(False))
-            .count())
+def _referenced(db: Session, item_id: int) -> bool:
+    """На позицию ссылаются заказы или предзаказы: удалить её нельзя, только снять с полки."""
+    return bool(db.query(OrderItem.id).filter(OrderItem.supply_item_id == item_id).first()
+                or db.query(Preorder.id).filter(Preorder.supply_item_id == item_id).first())
 
 
-def _upsert_lines(db: Session, supply: Supply, sp: dict, catalog: Catalog,
-                  tax: Taxonomy, result: SupplySyncResult) -> None:
+def _upsert_lines(db: Session, supply: Supply, sp: dict, catalog: Catalog, tax: Taxonomy,
+                  result: SupplySyncResult, *, on_shelf: bool, pending: dict[int, int]) -> None:
+    """Строки инвойса → позиции поставки. on_shelf — поставка оприходована: позиции с остатком
+    видны в каталоге; иначе (в пути) они только для предзаказа."""
     by_product: dict[Product, SupplyItem] = {si.product: si for si in supply.items}
-    seen: set[int] = set()
+    wanted: dict[int, list] = {}             # id(Product) → [товар, упаковок, цена]
+    protected: set[int] = set()              # строка пришла с ошибкой — позицию не трогаем
     for idx, line in enumerate(sp["lines"], start=1):
         label = clean(line.get("name"), 60) or "?"
+        where = f"инвойс {sp['number']}, строка {idx} ({label})"
         try:
-            row = parse_product_row(_line_to_product_item(line))
+            row = parse_product_row(line)
         except RowError as e:
-            result.errors.append(f"инвойс {sp['number']}, строка {idx} ({label}): {e}")
+            result.errors.append(f"{where}: {e}")
+            known = catalog.find(ext_id_of(line), clean(line.get("sku"), 100),
+                                 clean(line.get("name"), 200), clean(line.get("barcode"), 64))
+            if known is not None:
+                protected.add(id(known))
             continue
         product = catalog.find(row["ext"], row["sku"], row["name"], row["barcode"] or "")
         try:
             resolved = resolve_classification(tax, row)
         except TaxonomyError as e:
-            result.errors.append(f"инвойс {sp['number']}, строка {idx} ({label}): {e}")
+            result.errors.append(f"{where}: {e}")
+            if product is not None:
+                protected.add(id(product))
             continue
         if product is not None:
             pack = max(1, product.package_size or 1)
         else:
             pack = max(1, row["package_size"] or row.get("package_size_hint") or 1)
-        packs = row["stock_packs"] if row["stock_packs"] is not None else row["stock_stems"] // pack
-        if packs <= 0:
-            result.warnings.append(
-                f"инвойс {sp['number']}, строка {idx} ({label}): меньше одной упаковки "
-                f"({pack} шт) — пропущена")
+        if row["stock_packs"] is not None:
+            packs = row["stock_packs"]
+        elif row["stock_stems"] is not None:
+            packs = row["stock_stems"] // pack            # неполную упаковку не продаём
+        else:
+            result.errors.append(f"{where}: нет quantity (количество в штуках)")
+            if product is not None:
+                protected.add(id(product))
             continue
         price = row["price"] or (_known_price(db, product) if product is not None else 0.0)
-        if price <= 0:
-            result.errors.append(
-                f"инвойс {sp['number']}, строка {idx} ({label}): нет цены продажи "
-                f"(price_per_stem) и на сайте её тоже нет")
+        if packs > 0 and price <= 0:
+            result.errors.append(f"{where}: нет price (цена продажи за штуку) и на сайте её тоже нет")
+            if product is not None:
+                protected.add(id(product))
+            continue
+        if packs <= 0 and not on_shelf:
+            result.warnings.append(f"{where}: меньше одной упаковки ({pack} шт) — пропущена")
             continue
 
         if product is None:
             product = new_product(row, photos=row["photos"],
-                                 main_image=row["photos"][0] if row["photos"] else "")
+                                  main_image=row["photos"][0] if row["photos"] else "")
             apply_classification(tax, product, resolved, row)
             db.add(product)
             catalog.add(product)
@@ -271,56 +283,73 @@ def _upsert_lines(db: Session, supply: Supply, sp: dict, catalog: Catalog,
             except TaxonomyError:
                 pass
 
+        got = wanted.get(id(product))
+        if got is None:
+            wanted[id(product)] = [product, packs, price]
+        else:
+            got[1] += packs                                # один товар в двух строках — складываем
+
+    for product, packs, price in wanted.values():
         item = by_product.get(product)
+        stock = packs
+        if on_shelf and item is not None and item.id is not None and pending:
+            stock = max(0, stock - pending.get(item.id, 0))   # заказы, которые 1С ещё не забрала
+        active = on_shelf and stock > 0
         if item is None:
-            item = SupplyItem(supply=supply, product=product, price=price,
-                              stock=packs, is_active=False)
+            if on_shelf and stock <= 0:
+                continue                                   # распродано, а у нас такой позиции и не было
+            item = SupplyItem(supply=supply, product=product, price=price, stock=stock,
+                              is_active=active)
             db.add(item)
             by_product[product] = item
         else:
-            item.price, item.stock, item.is_active = price, packs, False
-        seen.add(id(product))
+            item.price, item.stock, item.is_active = price or item.price, stock, active
         result.lines += 1
 
     # позиции, которых в инвойсе больше нет
+    in_payload = {id(p) for p, _packs, _price in wanted.values()} | protected
     for product, item in list(by_product.items()):
-        if id(product) in seen:
+        if id(product) in in_payload or item.id is None:
             continue
-        if item.id is not None and _has_open_preorders(db, [item.id]):
-            item.stock, item.is_active = 0, False          # клиенты ждут — не удаляем
-        elif item.id is not None:
+        if _referenced(db, item.id):
+            item.stock, item.is_active = 0, False          # заказы и клиенты ссылаются — не удаляем
+        else:
             supply.items.remove(item)                      # delete-orphan удалит строку
 
 
 def fulfil_preorders(db: Session, result: SupplySyncResult) -> None:
-    """Предзаказы по ПРИНЯТЫМ в 1С инвойсам: резервируем товар с полки и зовём клиента.
+    """Предзаказы по оприходованным поставкам: резервируем товар и зовём клиента.
 
-    Повторяется при каждом обмене, поэтому если остатки доехали позже инвойса,
-    предзаказ выполнится при следующем обмене. Очерёдность — по времени предзаказа.
+    Берём ту же позицию, на которую клиент делал предзаказ (она теперь на полке); если её
+    уже нет, — позицию «без поставки» (products/sync). Повторяется при каждом обмене, поэтому
+    если остатки доехали позже инвойса, предзаказ выполнится при следующем обмене.
+    Очерёдность — по времени предзаказа.
     """
     pending = (
         db.query(Preorder)
-        .options(joinedload(Preorder.user), joinedload(Preorder.product))
+        .options(joinedload(Preorder.user), joinedload(Preorder.product),
+                 joinedload(Preorder.supply_item))
         .join(SupplyItem, SupplyItem.id == Preorder.supply_item_id)
         .join(Supply, Supply.id == SupplyItem.supply_id)
         .filter(Preorder.is_fulfilled.is_(False), Supply.external_id != "",
-                Supply.status == CLOSED)
+                Supply.status == ARRIVED)
         .order_by(Preorder.created_at, Preorder.id)
         .all()
     )
     if not pending:
         return
     service_ids = [s.id for s in db.query(Supply.id).filter(Supply.is_service.is_(True)).all()]
-    if not service_ids:
-        return
     live: dict[int, SupplyItem] = {}
-    for si in (db.query(SupplyItem).options(joinedload(SupplyItem.product))
-               .filter(SupplyItem.supply_id.in_(service_ids), SupplyItem.is_active.is_(True))
-               .order_by(SupplyItem.id).all()):
-        live.setdefault(si.product_id, si)
+    if service_ids:
+        for si in (db.query(SupplyItem).options(joinedload(SupplyItem.product))
+                   .filter(SupplyItem.supply_id.in_(service_ids), SupplyItem.is_active.is_(True))
+                   .order_by(SupplyItem.id).all()):
+            live.setdefault(si.product_id, si)
 
     for p in pending:
-        item = live.get(p.product_id)
+        own = p.supply_item
+        item = own if (own is not None and own.is_active and own.available_stock > 0) \
+            else live.get(p.product_id)
         if item is None:
             continue
         take = min(p.quantity, item.available_stock)
@@ -353,11 +382,25 @@ def fulfil_preorders(db: Session, result: SupplySyncResult) -> None:
             pass
 
 
-def apply_supplies(db: Session, supplies: list[dict], *, dry_run: bool = False) -> SupplySyncResult:
-    """Применяет присланные инвойсы. Делает commit (или rollback при dry_run)."""
+def _close(supply: Supply, why: str) -> None:
+    supply.status = ARRIVED
+    supply.notes = ((supply.notes or "")[:440] + f" ({why})")
+    for item in supply.items:
+        item.is_active = False
+
+
+def apply_supplies(db: Session, supplies: list[dict], *, dry_run: bool = False,
+                   full: bool = False, reserve_unexported: bool = False) -> SupplySyncResult:
+    """Применяет присланные инвойсы. Делает commit (или rollback при dry_run).
+
+    full=True — «полный список»: все поставки из 1С, которых в этой выгрузке нет,
+    закрываются (позиции снимаются с полки). Включайте, только когда присылаете ВСЕ
+    поставки, которые ещё в пути или имеют остаток.
+    """
     lock_exchange(db)
     result = SupplySyncResult(dry_run=dry_run)
     now = _utcnow()
+    pending = pending_packs(db) if reserve_unexported else {}
 
     parsed: list[tuple[int, dict]] = []
     for idx, raw in enumerate(supplies, start=1):
@@ -369,29 +412,48 @@ def apply_supplies(db: Session, supplies: list[dict], *, dry_run: bool = False) 
             label = clean(raw.get("number") or raw.get("id"), 40) or "?"
             result.errors.append(f"#{idx} (инвойс {label}): {e}")
 
-    all_lines = [_line_to_product_item(ln) for _, sp in parsed if sp["status"] == "in_transit"
-                 for ln in sp["lines"]]
+    all_lines = [ln for _, sp in parsed if sp["status"] != "cancelled" for ln in (sp["lines"] or [])]
     catalog = Catalog(db, all_lines)
     tax = Taxonomy(db)
+    listed: set[str] = set()
 
     for idx, sp in parsed:
         result.processed += 1
+        listed.add(sp["ext"])
         supply = db.query(Supply).filter(Supply.external_id == sp["ext"],
                                          Supply.is_service.is_(False)).first()
 
-        if sp["status"] == "in_transit":
+        if sp["status"] in ("in_transit", "received"):
+            on_shelf = sp["status"] == "received"
             fresh = supply is None
             if fresh:
                 supply = Supply(external_id=sp["ext"], is_service=False)
                 db.add(supply)
+            was_arrived = (not fresh) and supply.status == ARRIVED
             supply.country = sp["country"] or sp["supplier"] or "Поставка из 1С"
             supply.city = sp["city"]
-            supply.arrival_date = sp["arrival"]
-            supply.status = IN_TRANSIT
+            supply.number = sp["number"]
+            supply.arrival_date = sp["arrival"] or supply.arrival_date
+            supply.status = ARRIVED if on_shelf else IN_TRANSIT
             supply.notes = _notes(sp)
             supply.external_synced_at = now
             db.flush()
-            _upsert_lines(db, supply, sp, catalog, tax, result)
+            if sp["lines"] is None:
+                # строки не присылали: состав и количества остаются прежними, меняется только
+                # статус — оприходованный инвойс выкладывает на полку то, что в нём уже было
+                for line_item in supply.items:
+                    line_item.is_active = on_shelf and line_item.available_stock > 0
+            else:
+                _upsert_lines(db, supply, sp, catalog, tax, result, on_shelf=on_shelf,
+                              pending=pending)
+            if fresh and not supply.items:
+                db.delete(supply)                              # пустую поставку не заводим
+                result.skipped += 1
+                result.warnings.append(f"инвойс {sp['number']}: нет ни одной подходящей строки "
+                                       f"товара — не создан")
+                continue
+            if on_shelf and not was_arrived:
+                result.received += 1
             result.created += 1 if fresh else 0
             result.updated += 0 if fresh else 1
             continue
@@ -400,31 +462,39 @@ def apply_supplies(db: Session, supplies: list[dict], *, dry_run: bool = False) 
             result.skipped += 1
             continue
         supply.external_synced_at = now
-        if sp["status"] == "received":
-            if supply.status != CLOSED:
-                result.received += 1
-            supply.status = CLOSED
+        item_ids = [i.id for i in supply.items if i.id is not None]
+        waiting = db.query(Preorder).filter(
+            Preorder.supply_item_id.in_(item_ids), Preorder.is_fulfilled.is_(False)).count() \
+            if item_ids else 0
+        if waiting:
+            supply.status = ARRIVED
+            supply.notes = (supply.notes or "")[:440] + " (отменён в 1С)"
             for item in supply.items:
-                item.is_active = False
-        else:                                                # cancelled
-            item_ids = [i.id for i in supply.items if i.id is not None]
-            waiting = _has_open_preorders(db, item_ids)
-            if waiting:
-                supply.status = CLOSED
-                supply.notes = (supply.notes or "")[:440] + " (отменён в 1С)"
-                for item in supply.items:
-                    item.stock, item.is_active = 0, False
-                result.warnings.append(
-                    f"инвойс {sp['number']} отменён, но {waiting} предзаказ(ов) ждали его "
-                    f"товар: они останутся в ожидании")
-            else:
-                if item_ids:
-                    db.query(OrderItem).filter(OrderItem.supply_item_id.in_(item_ids)).update(
-                        {OrderItem.supply_item_id: None}, synchronize_session=False)
-                    db.query(Preorder).filter(Preorder.supply_item_id.in_(item_ids)).update(
-                        {Preorder.supply_item_id: None}, synchronize_session=False)
-                db.delete(supply)
-            result.cancelled += 1
+                item.stock, item.is_active = 0, False
+            result.warnings.append(
+                f"инвойс {sp['number']} отменён, но {waiting} предзаказ(ов) ждали его "
+                f"товар: они останутся в ожидании")
+        else:
+            if item_ids:
+                db.query(OrderItem).filter(OrderItem.supply_item_id.in_(item_ids)).update(
+                    {OrderItem.supply_item_id: None}, synchronize_session=False)
+                db.query(Preorder).filter(Preorder.supply_item_id.in_(item_ids)).update(
+                    {Preorder.supply_item_id: None}, synchronize_session=False)
+            db.delete(supply)
+        result.cancelled += 1
+
+    if full:
+        if not listed:
+            result.warnings.append("full=true без поставок не применяется (он закрыл бы все поставки)")
+        else:
+            for supply in (db.query(Supply)
+                           .filter(Supply.external_id != "", Supply.is_service.is_(False),
+                                   Supply.status.in_([IN_TRANSIT, ARRIVED])).all()):
+                if supply.external_id in listed or not (
+                        supply.status == IN_TRANSIT or supply.active_items_count):
+                    continue
+                _close(supply, "закрыта: 1С не прислала её в полном списке")
+                result.closed += 1
 
     db.flush()
     fulfil_preorders(db, result)
@@ -455,7 +525,7 @@ def apply_supplies(db: Session, supplies: list[dict], *, dry_run: bool = False) 
 # ═══════════════════════════════════════════════════════════
 
 def close_stale_supplies(db: Session, days: int = STALE_DAYS, now: datetime | None = None) -> int:
-    """Закрывает «поставки из 1С», про которые 1С давно ничего не присылала
+    """Закрывает «поставки в пути» из 1С, про которые 1С давно ничего не присылала
     (инвойс удалили или обмен остановился): иначе они бы вечно висели «в пути»."""
     now = now or _utcnow()
     cutoff = now - timedelta(days=days)
@@ -465,11 +535,7 @@ def close_stale_supplies(db: Session, days: int = STALE_DAYS, now: datetime | No
                          and_(Supply.external_synced_at.is_(None), Supply.created_at < cutoff)))
              .all())
     for supply in stale:
-        supply.status = CLOSED
-        supply.notes = ((supply.notes or "")[:440] +
-                        f" (закрыта автоматически: 1С {days}+ дн. не присылала этот инвойс)")
-        for item in supply.items:
-            item.is_active = False
+        _close(supply, f"закрыта автоматически: 1С {days}+ дн. не присылала этот инвойс")
     if stale:
         db.commit()
         logger.info("Закрыто забытых поставок из 1С: %d", len(stale))

@@ -136,7 +136,7 @@ def export_customers_to_excel(customers: list[dict]) -> BytesIO:
 # ИМПОРТ СПРАВОЧНИКА ТОВАРОВ
 
 PRODUCT_IMPORT_HEADERS = ["Название", "Артикул", "Штрихкод", "Вид", "Цвет", "Рост, см",
-                          "Страна", "Единица", "В упаковке", "Мин. заказ", "Описание"]
+                          "Страна", "Единица", "В упаковке, шт", "Мин. заказ, упак.", "Описание"]
 
 
 def import_products_from_excel(content: bytes) -> tuple[list[dict], list[str]]:

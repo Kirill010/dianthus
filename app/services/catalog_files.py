@@ -8,7 +8,7 @@
 что и при обмене по API.
 
 Названия колонок угадываются по-русски и по-английски («Артикул», «Номенклатура»,
-«Цена опт.», «В пач.», «Остаток», sku, name, price_per_stem …). Строки-«заголовки
+«Цена опт.», «В пач.», «Остаток», sku, name, price …). Строки-«заголовки
 групп» и итоговые строки пропускаются.
 """
 import csv
@@ -37,7 +37,7 @@ ALIASES: dict[str, list[str]] = {
     "stock_packs": ["остаток уп", "остаток упак", "остаток в упаковках",
                     "кол-во упак", "количество упак", "stock packs", "stock_packs"],
     "stock": ["остаток", "остатки", "количество", "кол-во", "колво", "stock",
-              "в наличии", "свободный остаток", "доступно", "qty"],
+              "в наличии", "свободный остаток", "доступно", "qty", "quantity"],
     "package_size": ["в пач", "в пачке", "шт в пач", "шт в пачке", "в упак",
                      "в упаковке", "шт в упаковке", "шт/упак", "упаковка",
                      "пачка", "package size", "package_size", "кратность"],
@@ -201,17 +201,20 @@ def rows_from_table(table: list[list], *, stock_unit: str = "stems",
             price = to_number(price_raw, "Цена")
             if price_unit == "pack":
                 price = price / max(1, pack or 1)
-            item["price_per_stem"] = round(price, 4)
+            item["price"] = round(price, 4)
 
+            # quantity — в штуках; «в упаковках» помечается отдельно (quantity_unit)
             if cell("stock_packs") not in (None, ""):
-                item["stock_packs"] = to_number(cell("stock_packs"), "Остаток, упак.")
+                item["quantity"] = to_number(cell("stock_packs"), "Остаток, упак.")
+                item["quantity_unit"] = "packs"
             elif cell("stock_stems") not in (None, ""):
-                item["stock_stems"] = to_number(cell("stock_stems"), "Остаток, шт.")
+                item["quantity"] = to_number(cell("stock_stems"), "Остаток, шт.")
             elif stock_raw not in (None, ""):
-                qty = to_number(stock_raw, "Остаток")
-                item["stock_packs" if stock_unit == "packs" else "stock_stems"] = max(0, qty)
+                item["quantity"] = max(0, to_number(stock_raw, "Остаток"))
+                if stock_unit == "packs":
+                    item["quantity_unit"] = "packs"
             else:
-                item["stock_packs"] = 0
+                item["quantity"] = 0
 
             for field in ("barcode", "kind", "color", "height", "country", "description"):
                 put(field, _to_str_preserve(cell(field)))

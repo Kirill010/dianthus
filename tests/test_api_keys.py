@@ -24,7 +24,7 @@ def new_key(db, name="Программист", ips=""):
 
 def product_row(i=1, **over):
     base = {"id": f"G-{i}", "sku": f"SKU-{i}", "name": f"Роза {i}", "package_size": 25,
-            "price_per_stem": 40.0, "stock_packs": 10}
+            "price": 40.0, "quantity": 250}
     base.update(over)
     return base
 
@@ -349,8 +349,11 @@ def test_products_csv_export(web, mem_db):
     seed_item(mem_db, name="Роза CSV", stock=4, price=11.5, sku="CSV-1")
     r = web.get("/api/1c/products/export?format=csv", headers={"X-API-Key": raw})
     assert r.status_code == 200
-    body = r.content.decode("utf-8-sig")
-    assert "Роза CSV" in body and "CSV-1" in body and ";11.5;" in body
+    header, line = r.content.decode("utf-8-sig").strip().splitlines()
+    cols = dict(zip(header.split(";"), line.split(";")))
+    assert cols["name"] == "Роза CSV" and cols["sku"] == "CSV-1" and cols["package_size"] == "25"
+    assert cols["min_quantity"] == "25"                    # в штуках: одна упаковка по 25
+    assert "price" not in cols and "quantity" not in cols  # справочник: цены и остатки — в поставках
 
 
 def test_ack_and_status_without_json(web, mem_db):
@@ -514,10 +517,40 @@ def test_brief_is_public_has_real_url_and_no_secrets(web, mem_db, monkeypatch):
 
 def test_brief_documents_every_endpoint_and_error_code(web):
     text = web.get("/1c-docs.md").text
-    for needle in ("/api/1c/ping", "/products/sync", "/orders/export", "/orders/ack",
-                   "/orders/status", "/clients/sync", "X-API-Key", "stock_stems",
-                   "price_per_stem", "full", "401", "403", "413", "429", "503"):
+    for needle in ("/api/1c/ping", "/supplies/sync", "/products/sync", "/orders/export",
+                   "/orders/ack", "/orders/status", "/clients/sync", "X-API-Key", "supply",
+                   "price", "quantity", "sum", "total", "full", "401", "403", "413", "429", "503"):
         assert needle in text, needle
+
+
+def test_brief_answers_the_approach_question_and_has_no_unresolved_placeholders(web):
+    text = web.get("/1c-docs.md").text
+    assert "по поставкам" in text and "инвойс" in text
+    assert "{{" not in text                                              # ни {{URL}}, ни {{json:…}}
+    # прежние названия упомянуты один раз — в предупреждении, что они больше не принимаются
+    for old in ("price_per_stem", "stock_packs", "stock_stems", "quantity_packs", "quantity_stems"):
+        assert text.count(old) == 1, old
+
+
+def test_formats_json_is_public_valid_and_has_the_real_url(web, monkeypatch):
+    import json
+    monkeypatch.setattr(config, "APP_URL", "https://dianthus-opt.ru")
+    r = web.get("/1c-docs.json")
+    assert r.status_code == 200 and r.headers["x-robots-tag"].startswith("noindex")
+    assert r.headers["content-type"].startswith("application/json")
+    data = json.loads(r.text)
+    assert data["endpoints"]["supplies_sync"]["url"] == "https://dianthus-opt.ru/api/1c/supplies/sync"
+    assert "{{" not in r.text
+    assert set(data) >= {"about", "names", "exchange_order", "endpoints", "statuses", "errors"}
+
+
+def test_brief_embeds_the_same_examples_as_the_formats_file():
+    from app.services import onec_brief
+    text = onec_brief.render_brief(onec_brief.CONTENT.read_text(encoding="utf-8"), "https://x.ru")
+    for endpoint, part in (("orders_export", "response"), ("supplies_sync", "request"),
+                           ("orders_status", "request"), ("clients_sync", "request")):
+        example = onec_brief.formats()["endpoints"][endpoint][part]
+        assert onec_brief.pretty(example) in text, (endpoint, part)
 
 
 def test_markdown_code_blocks_tables_and_inline_code_are_safe():
@@ -530,12 +563,18 @@ def test_markdown_code_blocks_tables_and_inline_code_are_safe():
     assert "<b>" not in out and "<script>" not in out
 
 
-def test_brief_docs_copy_is_fresh():
-    """Памятка живёт в app/content, а готовая копия для пересылки — в docs/
-    (её собирает scripts/export_1c_brief.py; если тест упал — запустите скрипт)."""
+def test_brief_docs_copies_are_fresh():
+    """Памятка и форматы живут в app/content, а готовые копии для пересылки — в docs/
+    (их собирает scripts/export_1c_brief.py; если тест упал — запустите скрипт)."""
     import pathlib
+    from app.services import onec_brief
     root = pathlib.Path(__file__).resolve().parent.parent
-    copy = root / "docs" / "1C_PROGRAMMER_BRIEF.md"
-    source = (root / "app" / "content" / "1c_brief.md").read_text(encoding="utf-8")
-    assert copy.exists(), "нет docs/1C_PROGRAMMER_BRIEF.md — запустите scripts/export_1c_brief.py"
-    assert copy.read_text(encoding="utf-8") == source.replace("{{URL}}", "https://dianthus-opt.ru")
+    url = "https://dianthus-opt.ru"
+    brief = root / "docs" / "1C_PROGRAMMER_BRIEF.md"
+    assert brief.exists(), "нет docs/1C_PROGRAMMER_BRIEF.md — запустите scripts/export_1c_brief.py"
+    assert brief.read_text(encoding="utf-8") == onec_brief.render_brief(
+        onec_brief.CONTENT.read_text(encoding="utf-8"), url)
+    formats = root / "docs" / "1C_FORMATS.json"
+    assert formats.exists(), "нет docs/1C_FORMATS.json — запустите scripts/export_1c_brief.py"
+    assert formats.read_text(encoding="utf-8") == onec_brief.FORMATS.read_text(
+        encoding="utf-8").replace("{{URL}}", url)

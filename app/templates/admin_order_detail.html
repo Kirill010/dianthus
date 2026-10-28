@@ -159,7 +159,7 @@
                     {% set stems = item.quantity * pack %}
                     <tr>
                         <td>{{ loop.index }}</td>
-                        <td>{{ item.product_name }}</td>
+                        <td>{{ item.product_name }}{% if item.supply_label %}<div class="small text-muted">поставка {{ item.supply_label }}</div>{% endif %}</td>
                         <td>{{ item.quantity }}</td>
                         <td>{{ pack }}</td>
                         <td>{{ stems }}</td>

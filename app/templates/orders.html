@@ -53,7 +53,7 @@
                 <tbody>
                 {% for it in order.items %}
                 <tr>
-                    <td>{{ it.product_name }}</td>
+                    <td>{{ it.product_name }}{% if it.supply_label %}<div class="small text-muted">поставка {{ it.supply_label }}</div>{% endif %}</td>
                     <td class="text-end text-nowrap">{{ it.quantity }} упак. × {{ it.package_size or 1 }} шт</td>
                     <td class="text-end text-nowrap">{{ it.subtotal|price }} ₽</td>
                 </tr>

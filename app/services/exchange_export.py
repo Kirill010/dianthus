@@ -4,10 +4,12 @@
 Общий код для двух мест: интернет-обмена (/api/1c/*) и ручной выгрузки из
 админки («Интеграция» → «Заказы для 1С»).
 
+Названия одинаковы во всём обмене: price — цена за ШТУКУ (стебель), quantity — количество
+в ШТУКАХ, sum — сумма, total — итог.
 У каждой сущности есть два идентификатора: `id` — на САЙТЕ и `external_id` — в 1С
 (пусто, пока 1С не сообщила свой). Контрагент: id, external_id, name, inn, email,
 address, phone. Товар: id, external_id, sku, barcode, name. Заказ: id (на сайте),
-number («САЙТ-57»), date.
+number («САЙТ-57»), date; у каждой строки заказа — поставка (supply), из которой взят товар.
 """
 import csv
 import io
@@ -15,7 +17,7 @@ import io
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from ..models import Order, Product, SupplyItem, User
+from ..models import Order, Product, Supply, SupplyItem, User
 from ..timeutils import to_local
 
 ORDER_NUMBER_PREFIX = "САЙТ-"
@@ -54,6 +56,12 @@ def shop_time_iso(dt) -> str:
     return local.replace(tzinfo=None).isoformat(timespec="seconds") if local else ""
 
 
+def _in_chunks(values, size: int = 500):
+    values = list(values)
+    for i in range(0, len(values), size):
+        yield values[i:i + size]
+
+
 # ───────────────────────── контрагенты ─────────────────────────
 
 def counterparty_payload(user: User | None) -> dict:
@@ -69,18 +77,20 @@ def counterparty_payload(user: User | None) -> dict:
     }
 
 
-# ───────────────────────── товары ─────────────────────────
+# ───────────────────────── товары (справочник) ─────────────────────────
 
-def product_payload(product: Product, item: SupplyItem | None) -> dict:
-    """Одна запись каталога в формате обмена с 1С.
+def product_payload(product: Product) -> dict:
+    """Одна карточка товара в формате обмена с 1С — без цены и остатка (они живут в поставках).
 
     Те же поля (и те же названия), что принимает POST /api/1c/products/sync: выгрузку можно
     поправить в 1С и отправить обратно. Исключение одно: в выгрузке `id` — товар НА САЙТЕ,
     а идентификатор 1С лежит в `external_id` (в ответной загрузке он главнее `id`).
-    Вид, цвет, страна — названия (рядом их id в справочниках), рост — число сантиметров.
+    Вид, цвет, страна — названия (рядом их id в справочниках), рост — число сантиметров,
+    min_quantity — минимальный заказ в штуках.
     """
     kind, color = product.kind_ref, product.color_ref
     height, country = product.height_ref, product.country_ref
+    pack = max(1, product.package_size or 1)
     return {
         "id": product.id,
         "external_id": product.external_id or "",
@@ -93,33 +103,43 @@ def product_payload(product: Product, item: SupplyItem | None) -> dict:
         "height": height.cm if height else 0, "height_id": product.height_id,
         "country": country.name if country else "", "country_id": product.country_id,
         "unit": product.unit or "упаковка",
-        "package_size": product.package_size or 1,
-        "min_quantity": product.min_quantity or 1,
-        # Цена за ШТ (стебель), остаток — в УПАКОВКАХ
-        "price_per_stem": float(item.price) if item else 0.0,
-        "stock_packs": int(item.stock) if item else 0,
-        "reserved_packs": int(item.reserved_stock or 0) if item else 0,
-        "available_packs": int(item.available_stock) if item else 0,
+        "package_size": pack,
+        "min_quantity": max(1, product.min_quantity or 1) * pack,
         "photos": product.all_photos,
     }
 
 
 PRODUCT_CSV_HEADER = ["id", "external_id", "sku", "barcode", "name", "kind", "color", "height",
-                      "country", "unit", "package_size", "min_quantity", "price_per_stem",
-                      "stock_packs", "reserved_packs", "available_packs", "photos"]
+                      "country", "unit", "package_size", "min_quantity", "photos"]
 
 
 def products_csv_rows(products: list[dict]) -> list[list]:
     return [[p["id"], p["external_id"], p["sku"], p["barcode"], safe_text(p["name"]), p["kind"],
              p["color"], p["height"], p["country"], p["unit"], p["package_size"],
-             p["min_quantity"], p["price_per_stem"], p["stock_packs"], p["reserved_packs"],
-             p["available_packs"], ",".join(p["photos"])] for p in products]
+             p["min_quantity"], ",".join(p["photos"])] for p in products]
 
 
 # ───────────────────────── заказы ─────────────────────────
 
-def order_payload(o: Order, products: dict) -> dict:
-    """Заказ для 1С. products — {id товара: (external_id, sku, barcode)}."""
+NO_SUPPLY = {"id": None, "external_id": "", "number": "", "date": ""}
+
+
+def supply_ref(supply: Supply | None) -> dict:
+    """Поставка, из которой взят товар: id на сайте, id инвойса в 1С, номер, дата прибытия.
+    У товара «без поставки» (products/sync) external_id пустой."""
+    if supply is None:
+        return dict(NO_SUPPLY)
+    return {
+        "id": supply.id,
+        "external_id": supply.external_id or "",
+        "number": supply.invoice_no,
+        "date": supply.arrival_date.date().isoformat() if supply.external_id and supply.arrival_date else "",
+    }
+
+
+def order_payload(o: Order, products: dict, supplies: dict) -> dict:
+    """Заказ для 1С. products — {id товара: (external_id, sku, barcode)};
+    supplies — {id позиции поставки: {supply}}."""
     items = []
     for i in o.items:
         external_id, sku, barcode = products.get(i.product_id, ("", "", ""))
@@ -129,10 +149,10 @@ def order_payload(o: Order, products: dict) -> dict:
             "sku": sku or "",
             "barcode": barcode or "",
             "name": i.product_name,
-            "quantity_packs": i.quantity,
+            "supply": supplies.get(i.supply_item_id) or dict(NO_SUPPLY),
             "package_size": i.package_size or 1,
-            "stems": i.total_stems,
-            "price_per_stem": i.price,
+            "price": i.price,                              # за одну штуку
+            "quantity": i.total_stems,                     # в штуках
             "sum": i.subtotal,
         })
     return {
@@ -146,32 +166,42 @@ def order_payload(o: Order, products: dict) -> dict:
         # pickup — самовывоз, delivery — доставка (тогда адрес в delivery_address), пусто — не указано
         "delivery_method": o.delivery_method or "",
         "delivery_address": o.delivery_address or "",
-        "subtotal": o.subtotal,
+        "sum": o.subtotal,                                  # сумма товаров до скидки
         "discount_percent": o.discount_percent,
-        "total": o.total_price,
+        "total": o.total_price,                             # итог со скидкой
         "counterparty": counterparty_payload(o.user),
         "items": items,
     }
 
 
 def orders_to_payloads(db: Session, orders: list[Order]) -> list[dict]:
-    """Заказы → словари. Идентификаторы товаров подтягиваются ОДНИМ запросом (без N+1)."""
+    """Заказы → словари. Идентификаторы товаров и поставок подтягиваются несколькими
+    запросами на всю выгрузку (без N+1)."""
     product_ids = {i.product_id for o in orders for i in o.items if i.product_id}
-    products = (
-        {pid: (ext, sku, barcode) for pid, ext, sku, barcode in
-         db.query(Product.id, Product.external_id, Product.sku, Product.barcode)
-         .filter(Product.id.in_(product_ids)).all()}
-        if product_ids else {}
-    )
-    return [order_payload(o, products) for o in orders]
+    products: dict = {}
+    for chunk in _in_chunks(product_ids):
+        products.update(
+            {pid: (ext, sku, barcode) for pid, ext, sku, barcode in
+             db.query(Product.id, Product.external_id, Product.sku, Product.barcode)
+             .filter(Product.id.in_(chunk)).all()})
+    item_ids = {i.supply_item_id for o in orders for i in o.items if i.supply_item_id}
+    supplies: dict = {}
+    for chunk in _in_chunks(item_ids):
+        for row in (db.query(SupplyItem.id, Supply)
+                    .join(Supply, Supply.id == SupplyItem.supply_id)
+                    .filter(SupplyItem.id.in_(chunk)).all()):
+            supplies[row[0]] = supply_ref(row[1])
+    return [order_payload(o, products, supplies) for o in orders]
 
 
 ORDER_CSV_HEADER = ["order_number", "order_id", "date", "desired_date", "delivery_method",
-                    "delivery_address", "status", "comment", "subtotal", "discount_percent", "total",
-                    "counterparty_id", "counterparty_external_id", "counterparty_name",
-                    "counterparty_inn", "counterparty_email", "counterparty_address",
-                    "counterparty_phone", "product_id", "external_id", "sku", "barcode", "name",
-                    "packs", "pieces_per_pack", "pieces", "price_per_piece", "line_sum"]
+                    "delivery_address", "status", "comment", "order_sum", "discount_percent",
+                    "order_total", "counterparty_id", "counterparty_external_id",
+                    "counterparty_name", "counterparty_inn", "counterparty_email",
+                    "counterparty_address", "counterparty_phone", "supply_id",
+                    "supply_external_id", "supply_number", "supply_date", "product_id",
+                    "external_id", "sku", "barcode", "name", "package_size", "price",
+                    "quantity", "sum"]
 
 
 def orders_csv_rows(payloads: list[dict]) -> list[list]:
@@ -180,13 +210,15 @@ def orders_csv_rows(payloads: list[dict]) -> list[list]:
     for p in payloads:
         c = p["counterparty"]
         for it in p["items"]:
+            s = it["supply"]
             lines.append([
                 p["number"], p["id"], p["date"], p["desired_date"], p["delivery_method"],
                 safe_text(p["delivery_address"]), p["status"], safe_text(p["comment"]),
-                p["subtotal"], p["discount_percent"], p["total"],
+                p["sum"], p["discount_percent"], p["total"],
                 c["id"], c["external_id"], safe_text(c["name"]), c["inn"], safe_text(c["email"]),
                 safe_text(c["address"]), c["phone"],
+                s["id"], s["external_id"], s["number"], s["date"],
                 it["product_id"], it["external_id"], it["sku"], it["barcode"], safe_text(it["name"]),
-                it["quantity_packs"], it["package_size"], it["stems"], it["price_per_stem"], it["sum"],
+                it["package_size"], it["price"], it["quantity"], it["sum"],
             ])
     return lines

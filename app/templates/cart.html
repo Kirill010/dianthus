@@ -29,6 +29,8 @@
             <div class="cart-item__price">
                 {{ item.price|price }} ₽/шт × {{ pack }} шт в упаковке
             </div>
+            {% set supply_label = (supply_labels or {}).get(item.supply_item_id) %}
+            {% if supply_label %}<div class="cart-item__price">поставка {{ supply_label }}</div>{% endif %}
 
             {# Количество в упаковках: меняется прямо здесь, страница обновится сама #}
             <form action="/cart/update" method="post" class="cart-qty" data-autosubmit-form>

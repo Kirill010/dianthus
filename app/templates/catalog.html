@@ -181,7 +181,7 @@
                 <div class="price-row__main">
                     <a href="/product/{{ item.id }}" class="price-row__name">{{ product.name }}</a>
                     <span class="price-row__meta">
-                        {% if product.country_name %}{{ product.country_name }} · {% endif %}{% if product.color_name %}{{ product.color_name }} · {% endif %}{% if product.height_cm %}{{ product.height_cm }} см · {% endif %}в упаковке {{ pack }} шт
+                        {% if product.country_name %}{{ product.country_name }} · {% endif %}{% if product.color_name %}{{ product.color_name }} · {% endif %}{% if product.height_cm %}{{ product.height_cm }} см · {% endif %}в упаковке {{ pack }} шт{% if item.supply and item.supply.label %} · поставка {{ item.supply.label }}{% endif %}
                     </span>
                 </div>
                 <div class="price-row__stock">{{ stems }} шт</div>
@@ -299,6 +299,12 @@
                                 {{ stems }}шт
                             </span>
                         </div>
+                        {% if item.supply and item.supply.label %}
+                            <div class="spec-line">
+                                <span class="spec-line__label">Поставка:</span>
+                                <span class="spec-line__value">{{ item.supply.label }}</span>
+                            </div>
+                        {% endif %}
                     </div>
 
                     {% if public %}
@@ -424,6 +430,12 @@
                                 <span class="spec-line__label">Кол-во в уп:</span>
                                 <span class="spec-line__value">{{ pack }}шт</span>
                             </div>
+                            {% if item.supply and item.supply.invoice_no %}
+                            <div class="spec-line">
+                                <span class="spec-line__label">Поставка:</span>
+                                <span class="spec-line__value">№ {{ item.supply.invoice_no }}</span>
+                            </div>
+                            {% endif %}
                             <div class="spec-line">
                                 <span class="spec-line__label">Откуда:</span>
                                 <span class="spec-line__value">

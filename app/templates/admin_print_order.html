@@ -32,7 +32,7 @@
         {% for i in order.items %}
         <tr>
             <td class="text-center">☐</td>
-            <td><strong>{{ i.product_name }}</strong></td>
+            <td><strong>{{ i.product_name }}</strong>{% if i.supply_label %}<br><small>поставка {{ i.supply_label }}</small>{% endif %}</td>
             <td class="text-end h5 mb-0">{{ i.quantity }}</td>
             <td class="text-end">{{ i.package_size or 1 }}</td>
             <td class="text-end">{{ i.total_stems }}</td>

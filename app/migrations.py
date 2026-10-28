@@ -72,6 +72,7 @@ EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
         # Инвойсы из 1С («товары в пути»): идентификатор документа в 1С и время последнего обмена
         "external_id":        "VARCHAR(64) DEFAULT ''",
         "external_synced_at": "TIMESTAMP",
+        "number":             "VARCHAR(64) DEFAULT ''",
     },
     "supply_items": {
         "is_active":      "BOOLEAN DEFAULT FALSE",

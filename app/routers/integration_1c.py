@@ -9,41 +9,33 @@
 тоже работает, но считается устаревшим.
 
   1С → сайт
-    POST /api/1c/products/sync      каталог, цены, остатки (JSON или CSV; опц. «полный снимок»)
-    POST /api/1c/supplies/sync      инвойсы поставщиков → «товары в пути» (предзаказ)
+    POST /api/1c/supplies/sync      ПОСТАВКИ (инвойсы): остатки и цены по партиям (основной путь)
+    POST /api/1c/products/sync      товары-справочник (и, если нужно, остаток «без поставки»)
     POST /api/1c/products/photo     фото товара (тело — сама картинка; ?id=…&n=1)
-    POST /api/1c/orders/status      статусы заказов (+ номер документа в 1С)
+    POST /api/1c/orders/status      статусы заказов (+ номер документа в 1С, комментарий)
     POST /api/1c/orders/ack         «заказы получены» (чтобы не выгружать повторно)
-    POST /api/1c/clients/sync       скидки клиентов и их id (external_id) в 1С
+    POST /api/1c/clients/sync       id контрагента в 1С и скидка клиента
   сайт → 1С
-    GET  /api/1c/products/export    каталог сайта            (?format=csv — таблица)
     GET  /api/1c/orders/export      заказы (?new=1 — только ещё не забранные; ?format=csv)
+    GET  /api/1c/products/export    товары-справочник        (?format=csv — таблица)
     GET  /api/1c/clients/export     клиенты (контрагенты)
     GET  /api/1c/dictionaries       справочники: виды, цвета, рост, страны (только чтение)
   служебное
     GET  /api/1c/ping               проверка связи и ключа
 
+Сайт работает ПО ПОСТАВКАМ: каждая строка поставки — позиция каталога со своей ценой и своим
+остатком, клиент заказывает конкретную позицию конкретной поставки, а в заказе для 1С у каждой
+строки указана поставка (`supply`) — по ней 1С списывает товар из нужной партии.
+
+Одни и те же короткие названия во всём обмене: price — цена за одну ШТУКУ (стебель), ₽;
+quantity — количество в ШТУКАХ; sum — сумма; total — итог. Ни упаковок, ни «price_per_stem» в
+обмене больше нет: штук в упаковке — package_size, сайт продаёт целыми упаковками сам.
+
 У каждой сущности есть id. Товар: id, sku (артикул), barcode (штрихкод), name. Контрагент: id,
 name, inn, email, address, phone. Заказ: id (на сайте), number («САЙТ-57»), date.
 В выгрузке С САЙТА `id` — номер на сайте, а идентификатор 1С лежит в `external_id`
-(пусто, пока 1С его не сообщила).
-
-Формат товара из 1С (`id` — идентификатор товара в 1С):
-
-    {"id": "00000012345", "sku": "ROSA-FREEDOM-60", "barcode": "4600000000001",
-     "name": "Роза Freedom 60 см", "description": "Классическая красная роза",
-     "kind": "Роза", "color": "Красный", "height": 60, "country": "Эквадор",
-     "unit": "упаковка", "package_size": 25, "min_quantity": 1,
-     "price_per_stem": 42.5, "stock_packs": 120, "photos": []}
-
-kind (вид), color (цвет), height (рост, см) и country (страна) — значения справочников сайта
-(у каждого справочника своя таблица). Нового значения на сайте ещё нет — оно создаётся само,
-без дублей. Точнее можно указать id: kind_id (на сайте) или kind_external_id (в 1С).
-
-ВНИМАНИЕ по единицам: price_per_stem — цена за ШТ (стебель),
-stock_packs — остаток в УПАКОВКАХ, package_size — штук в упаковке.
-Если в 1С остаток ведётся в штуках — пришлите stock_stems (в упаковки
-сайт переведёт сам: stock_stems // package_size).
+(пусто, пока 1С его не сообщила). Все форматы и примеры: app/content/1c_formats.json
+(открыт на сайте по адресу /1c-docs.json).
 """
 import json
 import logging
@@ -54,12 +46,12 @@ from fastapi import (APIRouter, BackgroundTasks, Body, Depends, HTTPException,
                      Query, Request)
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy.orm import Session, selectinload
 from starlette.concurrency import run_in_threadpool
 
 from ..config import config
 from ..database import get_db
-from ..models import (ORDER_STATUSES, Order, Product, SupplyItem, User)
+from ..models import ORDER_STATUSES, Order, Product, User
 from ..security import _client_ip, check_rate_limit, safe_equal
 from ..services import api_keys, onec_photos, taxonomy
 from ..services.audit import log_action
@@ -72,9 +64,9 @@ from ..services.exchange_export import (
     csv_response, orders_csv_rows, orders_to_payloads, product_payload, products_csv_rows)
 from ..services.exchange_log import DRY_RUN_MARK, note
 from ..services.orders import (apply_status_change, load_order_for_update,
-                               notify_client_of_status)
+                               normalize_status, notify_client_of_status)
 from ..services.supply_sync import MAX_SUPPLIES_PER_SYNC, apply_supplies
-from ..timeutils import utc_iso
+from ..timeutils import fmt_local, utc_iso
 
 logger = logging.getLogger(__name__)
 
@@ -222,12 +214,15 @@ async def sync_products(
     db: Session = Depends(get_db),
     _auth: bool = Depends(_verify_basic),
 ):
-    """Приём каталога, цен и остатков из 1С.
+    """Приём товаров (справочник) из 1С; при желании — ещё и остаток «без поставки».
 
     Тело — JSON  {"products": [...], "full": false}  ИЛИ таблица CSV
     (Content-Type: text/csv; колонки: Артикул;Наименование;Цена;Остаток;В пач. …).
-    full=1 (или "full": true) — «полный снимок»: все позиции каталога, которых НЕТ
-    в этой выгрузке, снимаются с остатка (stock=0) и с полки. Включайте только
+    Строка без price и quantity — просто карточка товара: цену и остаток она не трогает
+    (остатки и цены по поставкам приходят в supplies/sync). Строка с price и quantity
+    выставляет остаток «без поставки» (отдельная служебная партия).
+    full=1 (или "full": true) — «полный снимок»: все позиции «без поставки», которых НЕТ
+    в этой выгрузке, снимаются с остатка и с полки. Включайте только
     когда присылаете ВЕСЬ каталог одним запросом.
     dry_run=1 — «проверка без сохранения»: ответ тот же (сколько будет создано,
     обновлено, снято с полки, какие строки с ошибками), но в базе ничего не меняется.
@@ -305,21 +300,25 @@ async def sync_products(
 @router.post("/supplies/sync")
 async def sync_supplies(
     request: Request,
+    full: int = 0,
     dry_run: int = 0,
     db: Session = Depends(get_db),
     _auth: bool = Depends(_verify_basic),
 ):
-    """Инвойсы поставщиков из 1С → «товары в пути» на сайте.
+    """Поставки (инвойсы) из 1С: остатки и цены ПО ПОСТАВКАМ.
 
     Тело: {"supplies": [{"id": "00000622", "number": "00000622", "date": "2026-10-29",
                          "country": "Эквадор", "supplier": "ECUANROS S.A",
                          "status": "in_transit",
                          "items": [{"id": "…", "sku": "…", "name": "Роза Фридом 60",
-                                    "package_size": 25, "price_per_stem": 42.5,
-                                    "quantity_stems": 3000}]}]}
-    status: in_transit (ещё в пути) | received (оприходован в 1С) | cancelled.
+                                    "package_size": 25, "price": 42.5,
+                                    "quantity": 3000}]}],
+           "full": false}
+    status: in_transit (ещё в пути: предзаказ) | received (оприходован: товар на полке,
+    quantity — ОСТАТОК партии в штуках) | cancelled.
     Повторная отправка ничего не дублирует: поставка ищется по id инвойса.
-    dry_run=1 — проверка без сохранения.
+    full=1 (или "full": true) — в списке ВСЕ поставки, которые ещё в пути или имеют остаток;
+    остальные поставки из 1С закрываются. dry_run=1 — проверка без сохранения.
     """
     body = await request.body()
     if len(body) > MAX_BODY_BYTES:
@@ -330,11 +329,14 @@ async def sync_supplies(
         raise HTTPException(400, "Поле 'supplies' должно быть массивом")
     if len(supplies) > MAX_SUPPLIES_PER_SYNC:
         raise HTTPException(413, f"Слишком много инвойсов за раз (максимум {MAX_SUPPLIES_PER_SYNC}).")
+    full_list = bool(full) or payload.get("full") is True
     try:
-        result = await run_in_threadpool(apply_supplies, db, supplies, dry_run=bool(dry_run))
+        result = await run_in_threadpool(
+            apply_supplies, db, supplies, dry_run=bool(dry_run), full=full_list,
+            reserve_unexported=config.ONEC_RESERVE_UNEXPORTED)
     except SyncCommitError:
         raise HTTPException(500, "Ошибка БД при сохранении инвойсов. Повторите позже.")
-    note(request, result.summary())
+    note(request, result.summary() + (", полный список" if full_list else ""))
     return JSONResponse(result.as_dict())
 
 
@@ -423,38 +425,20 @@ def export_dictionaries(
 @router.get("/products/export")
 def export_products_to_1c(
     request: Request,
-    all: int = 0,
     format: str = "json",
     encoding: str = "utf-8",
     db: Session = Depends(get_db),
     _auth: bool = Depends(_verify_basic),
 ):
-    """Каталог сайта для 1С — одна запись на товар.
+    """Справочник товаров сайта для 1С — одна запись на товар (без цен и остатков:
+    они живут в поставках).
 
-        GET /api/1c/products/export          — товары, которые сейчас на полке
-        GET /api/1c/products/export?all=1    — весь справочник (включая отсутствующие)
+        GET /api/1c/products/export
         GET /api/1c/products/export?format=csv[&encoding=cp1251] — то же таблицей
 
-    Цена и остаток берутся из активной партии поставки.
+    Поля те же, что принимает products/sync; `id` — номер на сайте, id из 1С — в `external_id`.
     """
-    rows: dict[int, dict] = {}
-    items = (
-        db.query(SupplyItem)
-        .options(joinedload(SupplyItem.product))
-        .filter(SupplyItem.is_active.is_(True))
-        .order_by(SupplyItem.id.desc())
-        .all()
-    )
-    for item in items:
-        product = item.product
-        if product and product.id not in rows:
-            rows[product.id] = product_payload(product, item)
-
-    if all:
-        for product in db.query(Product).order_by(Product.id).all():
-            rows.setdefault(product.id, product_payload(product, None))
-
-    products = [rows[pid] for pid in sorted(rows)]
+    products = [product_payload(p) for p in db.query(Product).order_by(Product.id).all()]
     note(request, f"выгружено товаров: {len(products)}")
     if format.lower() == "csv":
         return csv_response(PRODUCT_CSV_HEADER, products_csv_rows(products),
@@ -613,13 +597,15 @@ def update_orders_status(
 ):
     """1С меняет статусы заказов сайта (и сообщает номер своего документа).
 
-    Тело: {"orders": [{"number": "САЙТ-57", "status": "Подтверждён",
-                       "onec_number": "00000000123"}]}
+    Тело: {"orders": [{"number": "САЙТ-57", "status": "Отгружен",
+                       "comment": "Передан в доставку", "onec_number": "00000000123"}]}
     Для старых 1С без JSON — один заказ в адресе:
         POST /api/1c/orders/status?number=САЙТ-57&status=Подтверждён&onec_number=123
-    Допустимые статусы: Новый, Подтверждён, В работе, Отправлен, Выполнен,
-    Отменён. Отмена возвращает товар на склад; клиент получает уведомление
-    и письмо — как при смене статуса менеджером в админке.
+    Статусы: Новый, Подтверждён, В работе, Отправлен, Выполнен, Отменён; понимаются и
+    привычные названия («Отгружен» = Отправлен, «Доставлен» = Выполнен, «В обработке» = В работе).
+    Отмена возвращает товар на склад; клиент получает уведомление и письмо — как при смене
+    статуса менеджером в админке. comment (необязательно) сохраняется в заметке сотрудников
+    к заказу — клиент его не видит.
     """
     if number.strip():
         payload = {"orders": [{"number": number.strip(), "status": status,
@@ -631,13 +617,18 @@ def update_orders_status(
     for item in _orders_list(payload):
         try:
             order_id = _parse_order_id(item)
-            if not isinstance(item, dict) or not item.get("status"):
-                raise RowError("не указан status")
-            new_status = _clean(item["status"], 30)
         except RowError as e:
             errors.append(str(e))
             continue
         label = f"{ORDER_NUMBER_PREFIX}{order_id}"
+        if not isinstance(item, dict) or not item.get("status"):
+            errors.append(f"{label}: не указан status")
+            continue
+        new_status = normalize_status(item["status"])
+        if new_status is None:
+            errors.append(f"{label}: неизвестный статус «{_clean(item['status'], 30)}» "
+                          f"(нужен один из: {', '.join(ORDER_STATUSES)})")
+            continue
 
         order = load_order_for_update(db, order_id)
         if order is None:
@@ -655,6 +646,10 @@ def update_orders_status(
             order.exported_at = now
         if item.get("onec_number"):
             order.onec_number = _clean(item["onec_number"], 64)
+        remark = _clean(item.get("comment"), 500)
+        if remark:
+            order.staff_note = ((order.staff_note or "") + ("\n" if order.staff_note else "")
+                                + f"1С, {fmt_local(now)}: {remark}")[-2000:]
         db.commit()
 
         if result.changed:
@@ -710,9 +705,14 @@ def export_clients_to_1c(
     })
 
 
-def _find_clients(db: Session, email: str, ext: str, inn: str) -> list[User]:
-    """Клиент ищется по email; нет такого — по id в 1С; нет и такого — по ИНН.
-    Администраторов по id в 1С и ИНН не ищем (по email находим, чтобы честно отказать)."""
+def _find_clients(db: Session, site_id: int | None, email: str, ext: str, inn: str) -> list[User]:
+    """Клиент ищется по id на сайте (как в выгрузке clients/export); нет такого — по email;
+    нет и такого — по id в 1С; нет и такого — по ИНН. Администраторов по id в 1С и ИНН не ищем
+    (по id сайта и email находим, чтобы честно отказать)."""
+    if site_id:
+        found = db.query(User).filter(User.id == site_id).all()
+        if found:
+            return found
     if email:
         found = db.query(User).filter(User.email == email).all()
         if found:
@@ -734,15 +734,20 @@ def sync_clients(
     _auth: bool = Depends(_verify_basic),
 ):
     """Скидки и идентификатор контрагента из 1С. Меняются ТОЛЬКО discount_percent
-    и external_id (id контрагента в 1С).
+    и external_id (id контрагента в 1С); адрес — только если на сайте он пуст.
 
-    Тело: {"clients": [{"email": "shop@test.ru", "external_id": "000001234",
+    Тело: {"clients": [{"id": 8, "external_id": "000001234", "name": "ООО Ромашка",
+                        "inn": "7701234567", "email": "shop@test.ru",
+                        "address": "Москва, ул. Цветочная, 1", "phone": "+79001234567",
                         "discount_percent": 5},
-                       {"inn": "7701234567", "discount_percent": 7.5},
-                       {"external_id": "000001234", "discount_percent": 3}]}
-    Клиент ищется по email; не нашёлся — по external_id; не нашёлся и так — по ИНН
-    (должен быть ровно один клиент). discount_percent можно не присылать, если
-    присылается external_id (тогда запоминается только он).
+                       {"inn": "7701234567", "discount_percent": 7.5}]}
+    То есть можно отправить обратно запись из clients/export (count, has_more и last_id
+    игнорируются). `id` — ЧИСЛО: номер клиента на сайте (как в выгрузке); `id` строкой —
+    код контрагента в 1С (то же, что external_id). Клиент ищется по id на сайте; не нашёлся —
+    по email; не нашёлся — по external_id; не нашёлся и так — по ИНН (должен быть ровно один
+    клиент). Если id, email и inn в строке указывают на разных клиентов — строка с ошибкой.
+    discount_percent можно не присылать, если присылается external_id (тогда запоминается
+    только он). Название, ИНН, email и телефон 1С не меняет.
     Новых клиентов и права доступа 1С не создаёт и не меняет: регистрацию и
     одобрение делает менеджер на сайте.
     dry_run=1 — «проверка без сохранения»: ответ тот же, но данные не меняются.
@@ -761,6 +766,12 @@ def sync_clients(
         email = _clean(c.get("email"), 120).lower()
         inn = _clean(c.get("inn"), 12)
         ext = _clean(c.get("external_id"), 64)
+        raw_id = c.get("id")
+        site_id = None
+        if isinstance(raw_id, int) and not isinstance(raw_id, bool):
+            site_id = raw_id                 # число — номер клиента на сайте (как в clients/export)
+        elif not ext:
+            ext = _clean(raw_id, 64)         # строка — код контрагента в 1С (как `id` в products/sync)
         pct = None
         try:
             if "discount_percent" in c:
@@ -769,20 +780,26 @@ def sync_clients(
                     raise RowError(f"discount_percent {pct} вне диапазона 0…100")
             elif not ext:
                 raise RowError("нет discount_percent")
-            if not (email or ext or inn):
-                raise RowError("нужен email, external_id или inn")
-            matches = _find_clients(db, email, ext, inn)
+            if not (site_id or email or ext or inn):
+                raise RowError("нужен id, email, external_id или inn")
+            matches = _find_clients(db, site_id, email, ext, inn)
             if not matches:
                 raise RowError("клиент не найден")
             if len(matches) > 1:
-                raise RowError("найдено несколько клиентов — укажите email")
+                raise RowError("найдено несколько клиентов — укажите id или email")
         except RowError as e:
-            errors.append(f"#{idx} ({email or ext or inn or '?'}): {e}")
+            errors.append(f"#{idx} ({email or ext or inn or site_id or '?'}): {e}")
             continue
 
         user = matches[0]
         if user.is_admin:
             errors.append(f"#{idx} ({user.email}): у администратора данные не меняются")
+            continue
+        if site_id and user.id == site_id and (
+                (email and (user.email or "").lower() != email)
+                or (inn and user.inn and user.inn != inn)):
+            errors.append(f"#{idx} ({email or inn}): id {site_id} — это другой клиент "
+                          f"({user.email}); проверьте id, email и inn в строке")
             continue
 
         changes = []
@@ -795,6 +812,10 @@ def sync_clients(
         if ext and (user.external_id or "") != ext:
             changes.append(f"id в 1С «{user.external_id or '—'}» → «{ext}»")
             user.external_id = ext
+        address = _clean(c.get("address"), 300)
+        if address and not (user.address or "").strip():
+            user.address = address
+            changes.append("адрес из 1С")
         if not changes:
             unchanged += 1
             continue

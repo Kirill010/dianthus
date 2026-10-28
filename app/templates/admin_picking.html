@@ -50,7 +50,7 @@
             <td>{{ o.user.company_name if o.user else 'Гость' }}</td>
             <td>{{ o.desired_date.strftime('%d.%m') if o.desired_date else '—' }}</td>
             <td>{% if o.delivery_method == 'delivery' %}доставка{% elif o.delivery_method == 'pickup' %}самовывоз{% else %}—{% endif %}</td>
-            <td class="small">{% for i in o.items %}{{ i.product_name }} × {{ i.quantity }}{% if not loop.last %}; {% endif %}{% endfor %}</td>
+            <td class="small">{% for i in o.items %}{{ i.product_name }} × {{ i.quantity }}{% if i.supply_label %} [{{ i.supply_label }}]{% endif %}{% if not loop.last %}; {% endif %}{% endfor %}</td>
         </tr>
         {% endfor %}
         </tbody>

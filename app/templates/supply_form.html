@@ -11,10 +11,10 @@
 
 {% if supply and supply.is_from_1c %}
 <div class="alert alert-info mb-3">
-    <strong><i class="fas fa-link me-1"></i>Эту поставку ведёт 1С</strong> (инвойс № {{ supply.external_id }}).
-    <div class="small">Состав, цены и дата обновляются обменом с 1С, ручные правки при следующем обмене перезапишутся.
-        Разгружать её не нужно: когда цветы оприходуют в 1С, поставка закроется сама, а клиентам с предзаказом придёт уведомление.
-        Статус: <strong>{{ supply.status }}</strong>{% if supply.status == 'Разгружен' %} (принята в 1С){% endif %}.</div>
+    <strong><i class="fas fa-link me-1"></i>Эту поставку ведёт 1С</strong> (инвойс № {{ supply.invoice_no }}).
+    <div class="small">Состав, цены, остатки и дата обновляются обменом с 1С, ручные правки при следующем обмене перезапишутся.
+        Разгружать её не нужно: когда цветы оприходуют в 1С, товар встаёт на полку сам, а клиентам с предзаказом приходит уведомление.
+        Статус: <strong>{{ supply.status }}</strong>{% if supply.status == 'Разгружен' %} (оприходована в 1С: товар на полке, пока в поставке есть остаток){% endif %}.</div>
 </div>
 {% elif supply and supply.items %}
 <div class="alert {% if supply.status == 'Разгружен' %}alert-success{% else %}alert-warning{% endif %} mb-3">

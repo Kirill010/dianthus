@@ -14,9 +14,10 @@ def sync(web, products, **kw):
     return web.post("/api/1c/products/sync", json=body, headers=AUTH, **kw)
 
 
-def row(i=1, **over):
+def row(i=1, packs=10, **over):
+    """Строка товара «без поставки»: price — за штуку, quantity — в штуках (packs упаковок по 25)."""
     base = {"id": f"G-{i}", "sku": f"SKU-{i}", "name": f"Роза {i}", "package_size": 25,
-            "price_per_stem": 40.0, "stock_packs": 10, "kind": "Роза"}
+            "price": 40.0, "quantity": packs * 25, "kind": "Роза"}
     base.update(over)
     return base
 
@@ -27,10 +28,10 @@ def test_bad_rows_are_reported_and_good_rows_are_loaded(web, mem_db):
     """Было: на PostgreSQL одна «мусорная» строка роняла весь обмен (500)."""
     r = sync(web, [
         row(1),
-        row(2, price_per_stem="abc"),                  # не число
-        row(3, price_per_stem=-5),                     # отрицательная цена
+        row(2, price="abc"),                           # не число
+        row(3, price=-5),                              # отрицательная цена
         row(4, name=""),                               # нет названия
-        row(5, stock_packs=10 ** 9),                   # нереальный остаток
+        row(5, quantity=10 ** 12),                     # нереальный остаток
         row(6, package_size=-3),                       # недопустимая упаковка → ошибка строки
         row(7),
     ])
@@ -56,9 +57,9 @@ def test_text_is_clamped_to_column_sizes_and_nul_removed(web, mem_db):
 
 def test_numbers_may_come_as_strings_and_stems_convert_to_packs(web, mem_db):
     r = sync(web, [
-        row(1, price_per_stem="42,50", stock_packs="12"),
+        row(1, price="42,50", quantity="300"),             # 300 шт = 12 упаковок
         {"id": "G-2", "name": "Гвоздика", "package_size": 25,
-         "price_per_stem": 30, "stock_stems": 130},       # 130 шт = 5 упаковок + 5 шт
+         "price": 30, "quantity": 130},                    # 130 шт = 5 упаковок + 5 шт
     ])
     assert r.json()["processed"] == 2, r.text
     items = {i.product.name: i for i in mem_db.query(SupplyItem).all()}
@@ -126,7 +127,7 @@ def test_photos_are_filtered_without_dns_lookups(web, mem_db, monkeypatch):
 
 def test_full_snapshot_zeroes_items_missing_from_upload(web, mem_db):
     sync(web, [row(1), row(2)])
-    r = sync(web, [row(1, stock_packs=4)], body={"full": True})
+    r = sync(web, [row(1, packs=4)], body={"full": True})
     assert r.status_code == 200 and r.json()["deactivated"] == 1, r.text
     items = {i.product.name: i for i in mem_db.query(SupplyItem).all()}
     assert items["Роза 1"].stock == 4 and items["Роза 1"].is_active
@@ -135,7 +136,7 @@ def test_full_snapshot_zeroes_items_missing_from_upload(web, mem_db):
 
 def test_partial_upload_does_not_touch_other_items(web, mem_db):
     sync(web, [row(1), row(2)])
-    sync(web, [row(1, stock_packs=4)])                      # без full
+    sync(web, [row(1, packs=4)])                            # без full
     items = {i.product.name: i for i in mem_db.query(SupplyItem).all()}
     assert items["Роза 2"].stock == 10 and items["Роза 2"].is_active
 
@@ -143,7 +144,7 @@ def test_partial_upload_does_not_touch_other_items(web, mem_db):
 def test_full_snapshot_keeps_item_whose_row_was_broken(web, mem_db):
     """Битая строка при полном снимке не должна обнулить сам товар."""
     sync(web, [row(1), row(2)])
-    r = sync(web, [row(1), row(2, price_per_stem="oops")], body={"full": True})
+    r = sync(web, [row(1), row(2, price="oops")], body={"full": True})
     assert r.json()["errors_total"] == 1 and r.json()["deactivated"] == 0
     assert mem_db.query(SupplyItem).filter(SupplyItem.stock == 10).count() == 2
 
@@ -307,23 +308,23 @@ def test_reserve_unexported_orders_when_enabled(web, mem_db, monkeypatch):
     """Опция: свежий заказ, которого 1С ещё не видела, вычитается из остатка 1С —
     иначе выгрузка вернула бы проданные упаковки на полку."""
     from app.config import config
-    sync(web, [row(1, stock_packs=10)])
+    sync(web, [row(1, packs=10)])
     item = mem_db.query(SupplyItem).one()
     client = make_user(mem_db, "c@test.ru")
     order = make_order(mem_db, client, item, packs=3)         # остаток на сайте: 7
 
     # по умолчанию (опция выключена) выгрузка 1С затирает остаток как есть
-    sync(web, [row(1, stock_packs=10)])
+    sync(web, [row(1, packs=10)])
     mem_db.refresh(item)
     assert item.stock == 10
 
     monkeypatch.setattr(config, "ONEC_RESERVE_UNEXPORTED", True)
-    sync(web, [row(1, stock_packs=10)])
+    sync(web, [row(1, packs=10)])
     mem_db.refresh(item)
     assert item.stock == 7                                   # 10 − 3 неподтверждённых
 
     web.post("/api/1c/orders/ack", headers=AUTH, json={"numbers": [f"САЙТ-{order.id}"]})
-    sync(web, [row(1, stock_packs=7)])                        # теперь 1С учла заказ сама
+    sync(web, [row(1, packs=7)])                              # теперь 1С учла заказ сама
     mem_db.refresh(item)
     assert item.stock == 7
 
@@ -336,6 +337,82 @@ def test_sync_warns_when_product_is_on_shelf_from_both_1c_and_manual_supply(web,
 
     clean = sync(web, [row(2, name="Роза Другая")])
     assert clean.json()["warnings"] == [] or "Роза Дубль" not in clean.json()["warnings"][0]
+
+
+# ═══════════════════ СТАТУСЫ: ПРИВЫЧНЫЕ НАЗВАНИЯ И КОММЕНТАРИЙ ═══════════════════
+
+def test_status_synonyms_and_comment_from_1c(web, mem_db):
+    """Образец программиста 1С: {"number": "САЙТ-57", "status": "Отгружен", "comment": "…"}."""
+    _, _, order = _order(web, mem_db)
+    r = web.post("/api/1c/orders/status", headers=AUTH, json={"orders": [
+        {"number": f"САЙТ-{order.id}", "status": "Отгружен", "comment": "Передан в доставку"}]})
+    assert r.json() == {"status": "ok", "updated": 1, "unchanged": 0, "errors": []}, r.text
+    mem_db.refresh(order)
+    assert order.status == "Отправлен"
+    assert order.staff_note.startswith("1С") and "Передан в доставку" in order.staff_note
+
+    # регистр и «ё» не важны
+    r = web.post("/api/1c/orders/status", headers=AUTH, json={"orders": [
+        {"number": f"САЙТ-{order.id}", "status": "ПОДТВЕРЖДЕН"}]})
+    assert r.json()["updated"] == 1
+    mem_db.refresh(order)
+    assert order.status == "Подтверждён"
+
+
+def test_unknown_status_error_lists_the_allowed_ones(web, mem_db):
+    _, _, order = _order(web, mem_db)
+    r = web.post("/api/1c/orders/status", headers=AUTH, json={"orders": [
+        {"number": f"САЙТ-{order.id}", "status": "Улетел на Марс"}]})
+    error = r.json()["errors"][0]
+    assert "Улетел на Марс" in error and "Выполнен" in error and "Отменён" in error
+
+
+# ═══════════════════ КОНТРАГЕНТЫ: ТЕЛО КАК В ВЫГРУЗКЕ ═══════════════════
+
+def test_clients_sync_accepts_the_export_shape_by_site_id(web, mem_db):
+    """Запись из clients/export можно отправить обратно, добавив external_id и скидку."""
+    a = make_user(mem_db, "a@test.ru", inn="7701234567", address="Москва, ул. Цветочная, 1")
+    exported = web.get("/api/1c/clients/export", headers=AUTH).json()
+    client = exported["clients"][0]
+    assert set(client) == {"id", "external_id", "name", "inn", "email", "address", "phone",
+                           "discount_percent"}
+    client.update(external_id="000001234", discount_percent=7.5)
+    body = {"count": 1, "has_more": False, "last_id": a.id, "clients": [client]}   # как в образце
+    r = web.post("/api/1c/clients/sync", headers=AUTH, json=body)
+    assert r.json()["updated"] == 1 and r.json()["errors"] == [], r.text
+    mem_db.refresh(a)
+    assert a.external_id == "000001234" and a.discount_percent == 7.5
+    assert a.address == "Москва, ул. Цветочная, 1"
+
+
+def test_clients_sync_string_id_is_the_1c_code_and_conflicting_ids_are_errors(web, mem_db):
+    a = make_user(mem_db, "a@test.ru", inn="7701234567")
+    b = make_user(mem_db, "b@test.ru", inn="7707654321")
+    a.external_id = "000001234"
+    mem_db.commit()
+    r = web.post("/api/1c/clients/sync", headers=AUTH, json={"clients": [
+        # id строкой — код контрагента в 1С, а не номер клиента на сайте
+        {"id": "000001234", "discount_percent": 3},
+        # id одного клиента, email другого — не угадываем, чью скидку менять
+        {"id": b.id, "email": "a@test.ru", "discount_percent": 9},
+    ]})
+    data = r.json()
+    assert data["updated"] == 1 and len(data["errors"]) == 1, r.text
+    mem_db.refresh(a)
+    mem_db.refresh(b)
+    assert a.discount_percent == 3 and b.discount_percent == 0
+
+
+def test_clients_sync_fills_the_address_only_when_the_site_has_none(web, mem_db):
+    empty = make_user(mem_db, "a@test.ru", inn="7701234567")
+    filled = make_user(mem_db, "b@test.ru", inn="7707654321", address="Наш адрес")
+    web.post("/api/1c/clients/sync", headers=AUTH, json={"clients": [
+        {"id": empty.id, "address": "Адрес из 1С", "discount_percent": 1},
+        {"id": filled.id, "address": "Адрес из 1С", "discount_percent": 1},
+    ]})
+    mem_db.refresh(empty)
+    mem_db.refresh(filled)
+    assert empty.address == "Адрес из 1С" and filled.address == "Наш адрес"
 
 
 def test_json_body_with_utf8_bom_is_accepted(web, mem_db):

@@ -74,11 +74,14 @@ def do_unload(db: Session, supply) -> int:
         .all()
     )
 
-    # «Старые партии» — это активные позиции ОБЫЧНЫХ поставок. Служебную
-    # партию 1С (весь живой каталог, который ведёт обмен) не трогаем: раньше
-    # ручная разгрузка любой поставки снимала с полок и её, и клиенты видели
+    # «Старые партии» — это активные позиции РУЧНЫХ поставок. Служебную партию
+    # и инвойсы из 1С (остатки на полке, которые ведёт обмен) не трогаем: раньше
+    # ручная разгрузка любой поставки снимала с полок и их, и клиенты видели
     # пустой каталог до ближайшей выгрузки из 1С.
-    regular_supplies = db.query(Supply.id).filter(Supply.is_service.is_(False))
+    regular_supplies = db.query(Supply.id).filter(
+        Supply.is_service.is_(False),
+        or_(Supply.external_id == "", Supply.external_id.is_(None)),
+    )
     old_active = db.query(SupplyItem).filter(
         SupplyItem.is_active.is_(True),
         SupplyItem.supply_id.in_(regular_supplies),

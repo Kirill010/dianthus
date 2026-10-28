@@ -191,7 +191,10 @@ def test_data_export_contains_only_own_data(web, mem_db):
     assert r.headers["cache-control"] == "no-store"
     data = json.loads(r.text)
     assert data["profile"]["email"] == "me@test.ru"
-    assert len(data["orders"]) == 1 and data["orders"][0]["items"][0]["packs"] == 2
+    assert len(data["orders"]) == 1
+    line = data["orders"][0]["items"][0]
+    assert (line["quantity"], line["package_size"], line["price"]) == (50, 25, 50.0)   # 2 упаковки по 25 шт
+    assert line["sum"] == 2500.0 and data["orders"][0]["sum"] == 2500.0
     assert "other@test.ru" not in r.text and "ООО Чужая" not in r.text
     assert "hashed_password" not in r.text and "totp" not in r.text
 

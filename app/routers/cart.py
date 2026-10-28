@@ -289,6 +289,7 @@ def cart_page(request: Request, db: Session = Depends(get_db)):
 
     cart = _clean_cart(request.session.get("cart", []))
     preorder = get_user_preorders(db, user.id)
+    supply_labels: dict[int, str] = {}        # «№ 00000622 от 29.10.2026» — из какой поставки позиция
 
     if not cart and not preorder:
         return render(
@@ -375,6 +376,7 @@ def cart_page(request: Request, db: Session = Depends(get_db)):
             c["package_size"] = max(1, item.product.package_size or 1)
             if not c.get("from_preorder"):
                 c["quantity"] = min(c["quantity"], item.available_stock)
+            supply_labels[item.id] = item.supply.label if item.supply is not None else ""
 
             if c["quantity"] <= 0:
                 removed_names.append(c.get("name", "?"))
@@ -409,7 +411,7 @@ def cart_page(request: Request, db: Session = Depends(get_db)):
 
     return render(
         request, "cart.html", db,
-        user=user, cart=cart, preorder=preorder,
+        user=user, cart=cart, preorder=preorder, supply_labels=supply_labels,
         subtotal=subtotal,
         discount_percent=discount_percent,
         discount_amount=discount_amount,

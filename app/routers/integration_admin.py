@@ -6,7 +6,7 @@
     /admin/integration/keys …              создать / отключить / удалить ключ
     /admin/integration/import              загрузить прайс-лист (CSV / Excel)
     /admin/integration/orders.csv|mark     заказы для 1С вручную
-    /1c-docs, /1c-docs.md                  памятка программисту (без входа)
+    /1c-docs, /1c-docs.md, /1c-docs.json   памятка и форматы программисту (без входа)
 """
 import logging
 from datetime import datetime, timezone
@@ -20,7 +20,7 @@ from starlette.concurrency import run_in_threadpool
 from ..config import config
 from ..database import get_db
 from ..deps import require_admin
-from ..models import ApiKey, ExchangeLog, Order, Product, SupplyItem
+from ..models import ApiKey, ExchangeLog, Order, Product
 from ..security import check_csrf
 from ..services import api_keys, exchange_log, onec_brief
 from ..services.audit import log_action
@@ -265,16 +265,8 @@ def orders_mark(request: Request, up_to: int = Form(0), db: Session = Depends(ge
 @router.get(PAGE + "/products.csv")
 def products_csv(encoding: str = "utf-8", db: Session = Depends(get_db),
                  admin=Depends(require_admin)):
-    from sqlalchemy.orm import joinedload
-    rows: dict[int, dict] = {}
-    for item in (db.query(SupplyItem).options(joinedload(SupplyItem.product))
-                 .filter(SupplyItem.is_active.is_(True)).order_by(SupplyItem.id.desc()).all()):
-        if item.product and item.product.id not in rows:
-            rows[item.product.id] = product_payload(item.product, item)
-    for product in db.query(Product).order_by(Product.id).all():
-        rows.setdefault(product.id, product_payload(product, None))
-    ordered = [rows[k] for k in sorted(rows)]
-    return csv_response(PRODUCT_CSV_HEADER, products_csv_rows(ordered),
+    products = [product_payload(p) for p in db.query(Product).order_by(Product.id).all()]
+    return csv_response(PRODUCT_CSV_HEADER, products_csv_rows(products),
                         "site-products.csv", encoding)
 
 
@@ -293,5 +285,16 @@ def brief_markdown():
         content=onec_brief.brief_markdown(),
         media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": 'attachment; filename="1c-obmen-pamyatka.md"',
+                 "X-Robots-Tag": "noindex, nofollow"},
+    )
+
+
+@router.get("/1c-docs.json")
+def brief_formats():
+    """Все форматы обмена одним JSON-файлом (запросы и ответы, примеры)."""
+    return Response(
+        content=onec_brief.formats_json(),
+        media_type="application/json; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="1c-obmen-formaty.json"',
                  "X-Robots-Tag": "noindex, nofollow"},
     )

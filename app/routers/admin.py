@@ -1309,8 +1309,8 @@ def supply_unload(
         return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit", status_code=303)
     if supply.is_from_1c:
         request.session["flash"] = (
-            "❌ Эту поставку ведёт 1С (инвойс «в пути»), вручную её разгружать нельзя: "
-            "товар появится на полке, когда его оприходуют в 1С, а клиентам с предзаказом "
+            "❌ Эту поставку ведёт 1С (инвойс), вручную её разгружать нельзя: "
+            "товар встанет на полку сам, когда инвойс оприходуют в 1С, а клиентам с предзаказом "
             "придёт уведомление."
         )
         return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit", status_code=303)
@@ -1349,6 +1349,12 @@ def supply_deactivate(
         request.session["flash"] = (
             "❌ Служебную поставку 1С нельзя снять с полок: "
             "её остатки управляются обменом с 1С."
+        )
+        return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit", status_code=303)
+    if supply.is_from_1c:
+        request.session["flash"] = (
+            "❌ Эту поставку ведёт 1С (инвойс): при следующем обмене товар снова встал бы на полку. "
+            "Уберите остаток этой партии в 1С или пришлите инвойс со статусом cancelled."
         )
         return RedirectResponse(url=f"/admin/supplies/{supply_id}/edit", status_code=303)
     for item in supply.items:

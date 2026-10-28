@@ -83,6 +83,12 @@
                 <span class="spec-label text-muted">В упаковке:</span>
                 <span class="spec-value fw-medium">{{ pack }} шт</span>
             </div>
+            {% if item.supply and item.supply.label %}
+            <div class="spec-row d-flex justify-content-between py-2 border-bottom">
+                <span class="spec-label text-muted">Поставка:</span>
+                <span class="spec-value fw-medium">{{ item.supply.label }}</span>
+            </div>
+            {% endif %}
             {% if preorder_mode %}
                 <div class="spec-row d-flex justify-content-between py-2 border-bottom">
                     <span class="spec-label text-muted">Откуда:</span>

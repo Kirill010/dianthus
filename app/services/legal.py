@@ -291,11 +291,11 @@ def export_user_data(db: Session, user: User) -> dict:
         },
         "orders": [{
             "number": o.id, "created_at": utc_iso(o.created_at), "status": o.status,
-            "total": o.total_price, "comment": o.comment or "",
+            "sum": o.subtotal, "total": o.total_price, "comment": o.comment or "",
             "desired_date": o.desired_date.date().isoformat() if o.desired_date else "",
             "items": [{
-                "name": i.product_name, "packs": i.quantity,
-                "pieces_per_pack": i.package_size, "price_per_piece": i.price,
+                "name": i.product_name, "package_size": i.package_size, "price": i.price,
+                "quantity": i.total_stems, "sum": i.subtotal,
             } for i in o.items],
         } for o in orders],
         "claims": [{

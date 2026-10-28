@@ -23,7 +23,7 @@ EXPECTED_ROUTERS = {
 PUBLIC = {
     "/", "/login", "/register", "/registration_pending", "/catalog", "/contacts",
     "/deadlines", "/terms", "/privacy", "/consent", "/marketing-consent", "/forgot",
-    "/1c-docs", "/1c-docs.md", "/sitemap.xml", "/health", "/sw.js",
+    "/1c-docs", "/1c-docs.md", "/1c-docs.json", "/sitemap.xml", "/health", "/sw.js",
     "/api/search-suggest", "/product/{item_id}", "/reset/{token}",
 }
 # Только для владельца (менеджеру — отказ)

@@ -298,7 +298,7 @@ def test_dry_run_through_the_api_does_not_refresh_the_strip(web, mem_db):
     from app.services import api_keys
     _, raw = api_keys.create_key(mem_db, "Проверка", "")
     body = {"products": [{"id": "G-1", "name": "Роза 1", "package_size": 25,
-                          "price_per_stem": 40, "stock_packs": 10}]}
+                          "price": 40, "quantity": 250}]}
     r = web.post("/api/1c/products/sync?dry_run=1", json=body, headers={"X-API-Key": raw})
     assert r.status_code == 200
     mem_db.expire_all()

@@ -528,7 +528,7 @@
                         <td>
                             <strong>{{ s.country }}</strong>
                             {% if s.city %}<br><small class="text-muted">г. {{ s.city }}</small>{% endif %}
-                            {% if s.is_from_1c %}<br><span class="badge bg-info text-dark" title="Инвойс из 1С: обновляется обменом">из 1С · {{ s.external_id }}</span>{% endif %}
+                            {% if s.is_from_1c %}<br><span class="badge bg-info text-dark" title="Инвойс из 1С (id {{ s.external_id }}): обновляется обменом">из 1С · № {{ s.invoice_no }}</span>{% endif %}
                         </td>
                         <td>
                             {% if s.arrival_date %}

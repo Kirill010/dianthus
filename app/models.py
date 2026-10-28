@@ -249,6 +249,8 @@ class Supply(Base):
     # в 1С. Пусто — поставка заведена вручную. Такие поставки обновляются только
     # обменом, не разгружаются автоматически и вручную (остатки ведёт 1С).
     external_id = Column(String(64), default="", index=True)
+    # Номер инвойса для людей («00000622»); у ручной поставки пусто
+    number = Column(String(64), default="")
     external_synced_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
     items = relationship("SupplyItem", back_populates="supply",
@@ -257,6 +259,19 @@ class Supply(Base):
     @property
     def is_from_1c(self) -> bool:
         return bool(self.external_id)
+
+    @property
+    def invoice_no(self) -> str:
+        """Номер инвойса в 1С («00000622»); у ручной поставки пусто."""
+        return (self.number or self.external_id or "") if self.external_id else ""
+
+    @property
+    def label(self) -> str:
+        """«№ 00000622 от 29.10.2026» — как поставка названа в 1С; у ручной поставки пусто."""
+        if not self.external_id:
+            return ""
+        date = f" от {self.arrival_date.strftime('%d.%m.%Y')}" if self.arrival_date else ""
+        return f"№ {self.invoice_no}{date}"
 
     @property
     def is_active(self) -> bool:
@@ -285,7 +300,7 @@ class SupplyItem(Base):
     reserved_stock = Column(Integer, default=0, nullable=False)
     is_active = Column(Boolean, default=False, nullable=False, index=True)
     created_at = Column(DateTime, default=_utcnow)
-    supply = relationship("Supply", back_populates="items")
+    supply = relationship("Supply", back_populates="items", lazy="selectin")
     product = relationship("Product", back_populates="supply_items")
 
     @property
@@ -371,6 +386,14 @@ class OrderItem(Base):
     package_size = Column(Integer, default=1)
     quantity = Column(Integer, default=1)
     order = relationship("Order", back_populates="items")
+    # позиция поставки, из которой собран товар: по ней видно, из какой партии (инвойса) брать
+    supply_item = relationship("SupplyItem", lazy="selectin")
+
+    @property
+    def supply_label(self) -> str:
+        """«№ 00000622 от 29.10.2026» — из какой поставки 1С взят товар (иначе пусто)."""
+        si = self.supply_item
+        return si.supply.label if si is not None and si.supply is not None else ""
 
     @property
     def total_stems(self) -> int:

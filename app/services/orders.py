@@ -23,6 +23,34 @@ logger = logging.getLogger(__name__)
 
 CANCELLED = "Отменён"
 
+# Как 1С может назвать статус: «Отгружен» — это наш «Отправлен» и т. д. Сравнение без
+# учёта регистра и «ё».
+_STATUS_SYNONYMS = {
+    "Новый": ("новый", "новая", "new"),
+    "Подтверждён": ("подтвержден", "подтверждено", "принят", "принято", "confirmed"),
+    "В работе": ("в работе", "в обработке", "обработка", "собирается", "в сборке", "сборка",
+                 "собран", "processing"),
+    "Отправлен": ("отправлен", "отгружен", "отгружено", "передан в доставку", "в доставке",
+                  "shipped"),
+    "Выполнен": ("выполнен", "выполнено", "доставлен", "получен", "завершен", "закрыт",
+                 "delivered", "done", "completed"),
+    CANCELLED: ("отменен", "отменено", "отказ", "cancelled", "canceled"),
+}
+
+
+def _fold_status(value) -> str:
+    return " ".join(str(value or "").split()).casefold().replace("ё", "е")
+
+
+_STATUS_LOOKUP = {_fold_status(name): name for name in ORDER_STATUSES}
+_STATUS_LOOKUP.update({word: name for name, words in _STATUS_SYNONYMS.items() for word in words})
+
+
+def normalize_status(value) -> str | None:
+    """Статус из 1С → наш статус (None — не поняли)."""
+    return _STATUS_LOOKUP.get(_fold_status(value))
+
+
 STATUS_TEXT = {
     "Подтверждён": "Ваш заказ подтверждён",
     "В работе": "Заказ собирается на складе",
@@ -71,6 +99,9 @@ def _put_back_on_shelf(db: Session, si: SupplyItem) -> None:
         si.is_active = True
         return
     if supply.status != "Разгружен":         # ещё не поступила — не трогаем
+        return
+    if supply.is_from_1c:                    # оприходованная поставка 1С: тоже по остатку
+        si.is_active = True
         return
     newer = (
         db.query(SupplyItem.id)

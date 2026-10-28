@@ -1,0 +1,471 @@
+{
+  "about": {
+    "title": "Обмен 1С ↔ сайт «Диантус»: форматы данных",
+    "site": "https://dianthus-opt.ru",
+    "api": "https://dianthus-opt.ru/api/1c/",
+    "approach": "По поставкам (инвойсам). 1С присылает инвойсы поставщиков: товар, цену и количество по каждой строке. Сайт показывает клиентам каждую строку инвойса отдельной карточкой (у разных поставок могут быть разные цены и сроки). Заказ уходит в 1С с указанием поставки (supply), из которой взят каждый товар.",
+    "docs": ["https://dianthus-opt.ru/1c-docs", "https://dianthus-opt.ru/1c-docs.md", "https://dianthus-opt.ru/1c-docs.json"],
+    "note": "Примеры ниже — одна связная история: инвойс 00000622 из Эквадора, роза Freedom 60, заказ САЙТ-57 от ООО «Ромашка»."
+  },
+  "names": {
+    "id": "Номер сущности. Когда его присылает 1С — её собственный (код или GUID). Когда его отдаёт сайт — номер на сайте, а id из 1С лежит рядом в external_id (пусто, пока 1С его не сообщила)",
+    "external_id": "id сущности в 1С",
+    "number": "номер документа: у инвойса — его номер в 1С; у заказа — «САЙТ-57» (его 1С записывает в документ)",
+    "date": "дата документа; время магазина (Москва) без смещения",
+    "sku": "артикул",
+    "barcode": "штрихкод",
+    "name": "наименование",
+    "price": "цена за одну ШТУКУ (стебель), ₽ — не за упаковку",
+    "quantity": "количество в ШТУКАХ (стеблях)",
+    "sum": "сумма: price × quantity (у заказа — до скидки)",
+    "total": "итог заказа со скидкой",
+    "package_size": "штук в упаковке; сайт продаёт только целыми упаковками",
+    "min_quantity": "минимальный заказ, в штуках",
+    "discount_percent": "скидка клиента, %"
+  },
+  "exchange_order": [
+    "1. supplies/sync — инвойсы (в пути и оприходованные). Каждые 10–15 минут",
+    "2. orders/export?new=1 → создать документы в 1С → orders/ack. Каждые 2–5 минут",
+    "3. orders/status — когда меняется состояние заказа в 1С",
+    "4. clients/sync — id контрагента и скидка (раз в сутки, необязательно)",
+    "products/sync нужен, только если хотите заранее описать карточки товаров (вид, цвет, рост, фото) или продавать товар без поставки"
+  ],
+  "endpoints": {
+    "ping": {
+      "title": "Проверка связи и ключа",
+      "direction": "1С → сайт",
+      "method": "GET",
+      "url": "https://dianthus-opt.ru/api/1c/ping",
+      "response": {
+        "status": "ok",
+        "service": "dianthus-1c",
+        "env": "production",
+        "auth": true,
+        "auth_name": "Иван из 1С",
+        "server_time_utc": "2026-10-28T09:00:00Z",
+        "reserve_unexported": false,
+        "formats": ["json", "csv"]
+      }
+    },
+    "supplies_sync": {
+      "title": "Поставки (инвойсы): товар, цена и количество по партиям — ОСНОВНОЙ ПУТЬ",
+      "direction": "1С → сайт",
+      "method": "POST",
+      "url": "https://dianthus-opt.ru/api/1c/supplies/sync",
+      "when": "каждые 10–15 минут; ?dry_run=1 — проверка без сохранения",
+      "request": {
+        "supplies": [
+          {
+            "id": "00000622",
+            "number": "00000622",
+            "date": "2026-10-29",
+            "status": "in_transit",
+            "country": "Эквадор",
+            "supplier": "ECUANROS S.A",
+            "items": [
+              {
+                "id": "00000012345",
+                "sku": "ROSA-FREEDOM-60",
+                "barcode": "4600000000001",
+                "name": "Роза Freedom 60 см",
+                "kind": "Роза",
+                "color": "Красный",
+                "height": 60,
+                "country": "Эквадор",
+                "package_size": 25,
+                "price": 42.5,
+                "quantity": 3000
+              },
+              {
+                "id": "00000012346",
+                "sku": "ROSA-AVALANCHE-70",
+                "barcode": "4600000000002",
+                "name": "Роза Avalanche 70 см",
+                "kind": "Роза",
+                "color": "Белый",
+                "height": 70,
+                "country": "Эквадор",
+                "package_size": 25,
+                "price": 48,
+                "quantity": 2500
+              }
+            ]
+          }
+        ],
+        "full": false
+      },
+      "request_received": {
+        "supplies": [
+          {
+            "id": "00000622",
+            "number": "00000622",
+            "date": "2026-10-29",
+            "status": "received",
+            "country": "Эквадор",
+            "supplier": "ECUANROS S.A",
+            "items": [
+              {
+                "id": "00000012345",
+                "name": "Роза Freedom 60 см",
+                "package_size": 25,
+                "price": 42.5,
+                "quantity": 2950
+              },
+              {
+                "id": "00000012346",
+                "name": "Роза Avalanche 70 см",
+                "package_size": 25,
+                "price": 48,
+                "quantity": 2500
+              }
+            ]
+          }
+        ],
+        "full": false
+      },
+      "response": {
+        "status": "ok",
+        "dry_run": false,
+        "processed": 1,
+        "created": 1,
+        "updated": 0,
+        "received": 0,
+        "cancelled": 0,
+        "closed": 0,
+        "skipped": 0,
+        "lines": 2,
+        "products_created": 2,
+        "preorders_fulfilled": 0,
+        "errors": [],
+        "errors_total": 0,
+        "warnings": [],
+        "dictionaries_created": {}
+      },
+      "notes": [
+        "id — идентификатор документа в 1С. Повторная отправка ничего не дублирует.",
+        "status: in_transit — ещё в пути (клиенты делают предзаказ); received — оприходован, товар на полке; cancelled — отменён.",
+        "При received quantity — ОСТАТОК партии в штуках (то, что ещё не продано), а не сколько пришло. Ушло 50 штук — в следующем обмене пришлите на 50 меньше.",
+        "price — цена продажи за штуку (как в каталоге), а не закупочная из инвойса. Нет price — сайт возьмёт последнюю известную цену товара.",
+        "Товара ещё нет на сайте — он создаётся; вид, цвет, рост и страну можно прислать в строке (kind, color, height, country) или они берутся из названия.",
+        "full: true — в списке ВСЕ поставки, которые ещё в пути или имеют остаток; остальные поставки из 1С закрываются.",
+        "items можно не присылать: тогда состав и количества не меняются, а оприходованный инвойс выкладывает на полку то, что в нём уже было. Пустой items: [] — «в партии ничего не осталось».",
+        "Тот же товар дважды в одном инвойсе — количества складываются. Новый инвойс без единой подходящей строки не создаётся (причина в warnings и errors)."
+      ]
+    },
+    "products_sync": {
+      "title": "Товары (справочник): карточки, фото, виды и цвета",
+      "direction": "1С → сайт",
+      "method": "POST",
+      "url": "https://dianthus-opt.ru/api/1c/products/sync",
+      "when": "по необходимости; ?dry_run=1 — проверка без сохранения",
+      "request": {
+        "products": [
+          {
+            "id": "00000012345",
+            "sku": "ROSA-FREEDOM-60",
+            "barcode": "4600000000001",
+            "name": "Роза Freedom 60 см",
+            "description": "Классическая красная роза",
+            "kind": "Роза",
+            "color": "Красный",
+            "height": 60,
+            "country": "Эквадор",
+            "unit": "упаковка",
+            "package_size": 25,
+            "min_quantity": 25,
+            "photos": []
+          }
+        ],
+        "full": false
+      },
+      "response": {
+        "status": "ok",
+        "dry_run": false,
+        "processed": 1,
+        "created": 1,
+        "updated": 0,
+        "deactivated": 0,
+        "errors": [],
+        "errors_total": 0,
+        "warnings": [],
+        "supply_id": 1,
+        "dictionaries_created": {}
+      },
+      "notes": [
+        "Строка без price и quantity — просто карточка товара: цену и остаток она не трогает (они приходят в supplies/sync).",
+        "Строка с price и quantity продаёт товар «без поставки»: остаток попадает в служебную партию «остаток без поставки». Нужно только если часть товара у вас лежит без инвойса.",
+        "Товар ищется так: id (1С) → barcode → sku → точное название. Переименование в 1С дубля не создаёт.",
+        "kind, color, height (число сантиметров), country — значения справочников сайта; нового значения нет — оно создаётся само. Вместо названия можно прислать kind_id / color_id / height_id / country_id (номер на сайте).",
+        "Не присланное поле на сайте не меняется; присланное пустым («» или 0 для роста) — убирается.",
+        "min_quantity — в штуках; сайт округляет вверх до целых упаковок.",
+        "Старые названия price_per_stem, stock_packs, stock_stems, quantity_packs, quantity_stems больше не принимаются: строка вернётся в errors."
+      ]
+    },
+    "products_export": {
+      "title": "Товары сайта (справочник) — для сверки",
+      "direction": "сайт → 1С",
+      "method": "GET",
+      "url": "https://dianthus-opt.ru/api/1c/products/export",
+      "when": "по необходимости; ?format=csv — таблицей",
+      "response": {
+        "count": 1,
+        "products": [
+          {
+            "id": 15,
+            "external_id": "00000012345",
+            "sku": "ROSA-FREEDOM-60",
+            "barcode": "4600000000001",
+            "name": "Роза Freedom 60 см",
+            "description": "Классическая красная роза",
+            "kind": "Роза",
+            "kind_id": 1,
+            "color": "Красный",
+            "color_id": 1,
+            "height": 60,
+            "height_id": 3,
+            "country": "Эквадор",
+            "country_id": 1,
+            "unit": "упаковка",
+            "package_size": 25,
+            "min_quantity": 25,
+            "photos": []
+          }
+        ]
+      },
+      "notes": [
+        "Здесь id — номер товара на сайте, id из 1С — в external_id. Цен и остатков нет: они живут в поставках."
+      ]
+    },
+    "orders_export": {
+      "title": "Заказы клиентов",
+      "direction": "сайт → 1С",
+      "method": "GET",
+      "url": "https://dianthus-opt.ru/api/1c/orders/export?new=1",
+      "when": "каждые 2–5 минут; до 200 за раз, has_more=true — повторить после ack; ?format=csv — таблицей (одна строка = одна позиция)",
+      "response": {
+        "count": 1,
+        "has_more": false,
+        "last_id": 57,
+        "orders": [
+          {
+            "id": 57,
+            "number": "САЙТ-57",
+            "date": "2026-10-27T09:31:00",
+            "status": "Новый",
+            "comment": "Позвонить за час",
+            "desired_date": "2026-10-30T00:00:00",
+            "delivery_method": "delivery",
+            "delivery_address": "Москва, ул. Цветочная, 1",
+            "sum": 2125.0,
+            "discount_percent": 5.0,
+            "total": 2018.75,
+            "counterparty": {
+              "id": 8,
+              "external_id": "000001234",
+              "name": "ООО Ромашка",
+              "inn": "7701234567",
+              "email": "shop@test.ru",
+              "address": "Москва, ул. Цветочная, 1",
+              "phone": "+79001234567"
+            },
+            "items": [
+              {
+                "product_id": 15,
+                "external_id": "00000012345",
+                "sku": "ROSA-FREEDOM-60",
+                "barcode": "4600000000001",
+                "name": "Роза Freedom 60 см",
+                "supply": {
+                  "id": 3,
+                  "external_id": "00000622",
+                  "number": "00000622",
+                  "date": "2026-10-29"
+                },
+                "package_size": 25,
+                "price": 42.5,
+                "quantity": 50,
+                "sum": 2125.0
+              }
+            ]
+          }
+        ]
+      },
+      "notes": [
+        "id — номер заказа на сайте; number — его номер для документа 1С («САЙТ-» + id). Номер запишите в реквизит документа: по нему вы отсеете дубль, если заказ придёт повторно.",
+        "supply — поставка, из которой взят товар: по ней 1С списывает из нужной партии. supply.external_id — id инвойса в 1С. У товара «без поставки» (products/sync) supply.external_id пустой.",
+        "sum — сумма товаров до скидки, total — итог со скидкой; в строке sum = price × quantity.",
+        "Контрагента ищите по external_id, затем по inn, затем по email; не нашли — создайте по этим реквизитам и сообщите его id обратно через clients/sync.",
+        "Товар ищите по external_id, затем по barcode, затем по sku.",
+        "delivery_method: pickup (самовывоз) или delivery (доставка; адрес в delivery_address); desired_date — когда клиенту нужны цветы (пусто, если не указано).",
+        "Другие фильтры: ?since=2026-10-25T00:00:00+03:00, ?status=Новый, ?after_id=57, ?limit=50, &encoding=cp1251 для CSV."
+      ]
+    },
+    "orders_ack": {
+      "title": "Подтверждение «заказы получены»",
+      "direction": "1С → сайт",
+      "method": "POST",
+      "url": "https://dianthus-opt.ru/api/1c/orders/ack",
+      "request": {
+        "orders": [
+          {"number": "САЙТ-57", "onec_number": "ЗК00000123"}
+        ]
+      },
+      "response": {
+        "status": "ok",
+        "acked": 1,
+        "errors": []
+      },
+      "notes": [
+        "Пока заказ не подтверждён, он приходит снова — ни один не потеряется. Повторное подтверждение безопасно.",
+        "onec_number — номер вашего документа (необязательно). Без JSON: POST …/orders/ack?numbers=САЙТ-57,САЙТ-58."
+      ]
+    },
+    "orders_status": {
+      "title": "Статус заказа",
+      "direction": "1С → сайт",
+      "method": "POST",
+      "url": "https://dianthus-opt.ru/api/1c/orders/status",
+      "when": "при смене состояния заказа в 1С",
+      "request": {
+        "orders": [
+          {
+            "number": "САЙТ-57",
+            "status": "Отгружен",
+            "comment": "Передан в доставку",
+            "onec_number": "ЗК00000123"
+          }
+        ]
+      },
+      "response": {
+        "status": "ok",
+        "updated": 1,
+        "unchanged": 0,
+        "errors": []
+      },
+      "notes": [
+        "Статусы сайта: Новый, Подтверждён, В работе, Отправлен, Выполнен, Отменён. Привычные названия понимаются: «Отгружен» = Отправлен, «Доставлен» = Выполнен, «В обработке» = В работе.",
+        "comment (необязательно) попадает в заметку сотрудников к заказу; клиент его не видит.",
+        "Клиент получает уведомление на сайте и письмо. Отмена возвращает товар в его поставку, поэтому «Отменён» ставьте, только когда заказ действительно отменён.",
+        "Без JSON (один заказ): POST …/orders/status?number=САЙТ-57&status=Отгружен&onec_number=ЗК00000123."
+      ]
+    },
+    "clients_export": {
+      "title": "Клиенты сайта (контрагенты)",
+      "direction": "сайт → 1С",
+      "method": "GET",
+      "url": "https://dianthus-opt.ru/api/1c/clients/export",
+      "when": "раз в сутки (необязательно); до 1000 за раз, ?after_id= — продолжить",
+      "response": {
+        "count": 1,
+        "has_more": false,
+        "last_id": 8,
+        "clients": [
+          {
+            "id": 8,
+            "external_id": "",
+            "name": "ООО Ромашка",
+            "inn": "7701234567",
+            "email": "shop@test.ru",
+            "address": "Москва, ул. Цветочная, 1",
+            "phone": "+79001234567",
+            "discount_percent": 5.0
+          }
+        ]
+      }
+    },
+    "clients_sync": {
+      "title": "Контрагент: id в 1С и скидка",
+      "direction": "1С → сайт",
+      "method": "POST",
+      "url": "https://dianthus-opt.ru/api/1c/clients/sync",
+      "when": "раз в сутки (необязательно); ?dry_run=1 — проверка без сохранения",
+      "request": {
+        "clients": [
+          {
+            "id": 8,
+            "external_id": "000001234",
+            "name": "ООО Ромашка",
+            "inn": "7701234567",
+            "email": "shop@test.ru",
+            "address": "Москва, ул. Цветочная, 1",
+            "phone": "+79001234567",
+            "discount_percent": 7.5
+          }
+        ]
+      },
+      "response": {
+        "status": "ok",
+        "dry_run": false,
+        "updated": 1,
+        "unchanged": 0,
+        "errors": []
+      },
+      "notes": [
+        "Можно отправить обратно запись из clients/export (поля count, has_more, last_id игнорируются).",
+        "id — ЧИСЛО: номер клиента на сайте. id строкой считается кодом контрагента в 1С (то же, что external_id).",
+        "Клиент ищется по id, потом по email, потом по external_id, потом по inn (ИНН должен быть ровно у одного клиента).",
+        "Меняются только external_id, discount_percent и адрес (если на сайте он пуст). Название, ИНН, email и телефон 1С не меняет; клиентов не создаёт: регистрацию и одобрение делает менеджер на сайте."
+      ]
+    },
+    "dictionaries": {
+      "title": "Справочники сайта: виды, цвета, рост, страны",
+      "direction": "сайт → 1С",
+      "method": "GET",
+      "url": "https://dianthus-opt.ru/api/1c/dictionaries",
+      "response": {
+        "kinds": [{"id": 1, "external_id": "", "name": "Роза"}],
+        "colors": [{"id": 3, "external_id": "", "name": "Жёлтый", "hex": "#f4d03f"}],
+        "heights": [{"id": 3, "external_id": "", "name": "60 см", "cm": 60}],
+        "countries": [{"id": 1, "external_id": "", "name": "Эквадор"}]
+      },
+      "notes": [
+        "Только чтение. Новое значение создаётся само, когда приходит в товаре (products/sync или supplies/sync); править список может владелец на сайте."
+      ]
+    },
+    "products_photo": {
+      "title": "Фото товара",
+      "direction": "1С → сайт",
+      "method": "POST",
+      "url": "https://dianthus-opt.ru/api/1c/products/photo?id=00000012345&n=1",
+      "when": "при изменении фото (необязательно); ?dry_run=1 — проверка",
+      "request": {
+        "headers": {"Content-Type": "application/octet-stream"},
+        "body": "сама картинка (двоичные данные JPEG / PNG / WEBP / GIF до 15 МБ), не JSON и не base64"
+      },
+      "response": {
+        "status": "ok",
+        "dry_run": false,
+        "result": "saved",
+        "product": {
+          "id": 12,
+          "external_id": "00000012345",
+          "sku": "ROSA-FREEDOM-60",
+          "barcode": "4600000000001",
+          "name": "Роза Freedom 60 см"
+        },
+        "position": 1,
+        "photos_total": 1,
+        "url": "/static/uploads/p12-3fa9c2d41b7e0a55.webp",
+        "width": 1600,
+        "height": 1067
+      },
+      "notes": [
+        "id — тот же идентификатор товара, что вы присылаете в товарах и поставках. Вместо него можно barcode, sku или name.",
+        "n — номер фото по порядку (1 — главное): занятый номер заменяется, следующий добавляется.",
+        "Товар должен уже быть на сайте (иначе 404). Запрос идемпотентен: то же фото на том же месте — result: unchanged."
+      ]
+    }
+  },
+  "statuses": ["Новый", "Подтверждён", "В работе", "Отправлен", "Выполнен", "Отменён"],
+  "errors": {
+    "200": "принято (смотрите errors в ответе: строки с ошибками не загрузились, остальные — да)",
+    "400": "неверный формат данных; причина в detail",
+    "401": "неверный или отключённый ключ",
+    "403": "ключ нельзя использовать с этого адреса",
+    "404": "(для фото) такого товара на сайте нет",
+    "413": "слишком много данных — отправляйте частями",
+    "429": "слишком часто (лимит 120 запросов в минуту) — подождите минуту",
+    "500": "ошибка на сайте — повторите позже",
+    "503": "обмен не настроен: владелец не создал ключ"
+  }
+}
