@@ -191,3 +191,11 @@ def test_usage_counts_and_the_catalog_names_in_the_report(mem_db):
     assert usage["kind"] == {rose.id: 2} and sorted(usage["height"].values()) == [1, 1] and usage["color"] == {}
     assert describe({"color": ["Белый"], "height": ["65 см"]}) == "цвет: Белый; рост: 65 см"
     assert describe({"kind": [f"К{i}" for i in range(7)]}).endswith("К4…")
+
+
+def test_locking_a_product_row_uses_no_joins(mem_db):
+    """На PostgreSQL «FOR UPDATE» нельзя применять к запросу с внешними соединениями. Раньше вид, цвет, рост
+    и страна подгружались JOIN-ами, и загрузка фото из 1С (она блокирует строку товара) падала бы на боевой базе;
+    SQLite этого не замечает, поэтому проверяем сам текст запроса."""
+    sql = str(mem_db.query(Product).filter(Product.id == 1).with_for_update())
+    assert "JOIN" not in sql.upper()

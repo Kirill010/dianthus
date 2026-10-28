@@ -185,10 +185,13 @@ class Product(Base):
     color_id = Column(Integer, ForeignKey("colors.id"), nullable=True, index=True)
     height_id = Column(Integer, ForeignKey("heights.id"), nullable=True, index=True)
     country_id = Column(Integer, ForeignKey("countries.id"), nullable=True, index=True)
-    kind_ref = relationship("Kind", lazy="joined")
-    color_ref = relationship("Color", lazy="joined")
-    height_ref = relationship("Height", lazy="joined")
-    country_ref = relationship("Country", lazy="joined")
+    # selectin, а не joined: с «joined» запрос с блокировкой строки товара (FOR UPDATE) на
+    # PostgreSQL падал («нельзя применить к внешнему соединению»), а каждая выборка товаров
+    # тянула четыре лишних JOIN.
+    kind_ref = relationship("Kind", lazy="selectin")
+    color_ref = relationship("Color", lazy="selectin")
+    height_ref = relationship("Height", lazy="selectin")
+    country_ref = relationship("Country", lazy="selectin")
     created_at = Column(DateTime, default=_utcnow)
     supply_items = relationship("SupplyItem", back_populates="product",
                                 cascade="all, delete-orphan")
