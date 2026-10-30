@@ -307,7 +307,7 @@ async def sync_supplies(
 ):
     """Поставки (инвойсы) из 1С: остатки и цены ПО ПОСТАВКАМ.
 
-    Тело: {"supplies": [{"id": "00000622", "number": "00000622", "date": "2026-10-29",
+    Тело: {"supplies": [{"id": "00000624", "number": "00000624", "date": "2026-10-29",
                          "country": "Эквадор", "supplier": "ECUANROS S.A",
                          "status": "in_transit",
                          "items": [{"id": "…", "sku": "…", "name": "Роза Фридом 60",

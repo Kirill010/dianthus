@@ -220,8 +220,7 @@ def add_to_preorder_route(
     packs = min(quantity_stems // pack, MAX_PREORDER_PACKS)
 
     if add_preorder_to_db(db, user.id, item.id, packs):
-        arrival = item.supply.arrival_date if item.supply else None
-        arrival_txt = arrival.strftime("%d.%m.%Y") if arrival else "—"
+        arrival_txt = item.supply.arrival_text if item.supply else "—"
         request.session["flash"] = (
             f"🌸 «{product.name}» в предзаказе: {packs} упак. "
             f"Прибытие: {arrival_txt}"
@@ -289,7 +288,7 @@ def cart_page(request: Request, db: Session = Depends(get_db)):
 
     cart = _clean_cart(request.session.get("cart", []))
     preorder = get_user_preorders(db, user.id)
-    supply_labels: dict[int, str] = {}        # «№ 00000622 от 29.10.2026» — из какой поставки позиция
+    supply_labels: dict[int, str] = {}        # «№ 00000624 от 29.10.2026» — из какой поставки позиция
 
     if not cart and not preorder:
         return render(

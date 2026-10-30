@@ -29,7 +29,7 @@ def line(name="Роза Фридом 60", **over):
     return base
 
 
-def invoice(number="00000622", date="2026-10-29", status="in_transit", items=None, **over):
+def invoice(number="00000624", date="2026-10-29", status="in_transit", items=None, **over):
     base = {"id": number, "number": number, "date": date, "country": "Эквадор",
             "supplier": "ECUANROS S.A", "status": status,
             "items": [line()] if items is None else items}
@@ -42,7 +42,7 @@ def post(web, headers, supplies, **params):
     return web.post("/api/1c/supplies/sync?x=1" + query, json={"supplies": supplies}, headers=headers)
 
 
-def item_of(db, ext="00000622", name=None):
+def item_of(db, ext="00000624", name=None):
     """Позиция поставки с этим id инвойса (одна, либо по названию товара)."""
     db.expire_all()
     q = db.query(SupplyItem).join(Supply).join(Product).filter(Supply.external_id == ext)
@@ -68,11 +68,11 @@ def test_invoice_becomes_in_transit_supply(web, mem_db):
 
     mem_db.expire_all()
     supply = mem_db.query(Supply).one()
-    assert supply.external_id == "00000622" and supply.is_from_1c and supply.number == "00000622"
+    assert supply.external_id == "00000624" and supply.is_from_1c and supply.number == "00000624"
     assert supply.status == "В пути" and supply.country == "Эквадор"
     assert supply.arrival_date == datetime(2026, 10, 29)
-    assert supply.label == "№ 00000622 от 29.10.2026"
-    assert "ECUANROS S.A" in supply.notes and "00000622" in supply.notes
+    assert supply.invoice_no == "00000624" and supply.label.startswith("№ 00000624")
+    assert "ECUANROS S.A" in supply.notes and "00000624" in supply.notes
     item = supply.items[0]
     assert item.stock == 3000 // 25 and item.price == 42.5 and item.is_active is False
     product = item.product
@@ -84,11 +84,24 @@ def test_invoice_becomes_in_transit_supply(web, mem_db):
 def test_number_is_kept_apart_from_the_1c_id(web, mem_db):
     """id — идентификатор документа в 1С (может быть GUID), number — номер для людей."""
     h = key_header(mem_db)
-    post(web, h, [invoice("00000622", id="3f9a0c1e-0000-4000-8000-000000000622")])
+    post(web, h, [invoice("00000624", id="3f9a0c1e-0000-4000-8000-000000000624")])
     mem_db.expire_all()
     supply = mem_db.query(Supply).one()
-    assert supply.external_id.startswith("3f9a0c1e") and supply.number == "00000622"
-    assert supply.invoice_no == "00000622" and supply.label == "№ 00000622 от 29.10.2026"
+    assert supply.external_id.startswith("3f9a0c1e") and supply.number == "00000624"
+    assert supply.invoice_no == "00000624" and supply.label.startswith("№ 00000624")
+
+
+def test_supply_label_shows_the_date_only_when_it_means_something(web, mem_db):
+    """У «в пути» дата плановая: прошла (машина задерживается) — не показываем; у оприходованного — дата документа."""
+    h = key_header(mem_db)
+    arrival = soon(5)
+    post(web, h, [invoice("A-1", date=arrival.isoformat()),                  # в пути, дата впереди
+                  invoice("A-2", date="2020-01-15"),                          # в пути, дата прошла
+                  invoice("A-3", date="2020-01-15", status="received", items=[line("Роза Я 60", quantity=250)])])
+    mem_db.expire_all()
+    labels = {s.external_id: s.label for s in mem_db.query(Supply).all()}
+    assert labels == {"A-1": f"№ A-1 от {arrival.strftime('%d.%m.%Y')}", "A-2": "№ A-2",
+                      "A-3": "№ A-3 от 15.01.2020"}
 
 
 def test_resending_the_same_invoice_does_not_duplicate(web, mem_db):
@@ -184,14 +197,21 @@ def test_the_same_product_twice_in_one_invoice_is_summed(web, mem_db):
 
 # ───────────────────────── витрина и предзаказ ─────────────────────────
 
+def soon(days=7):
+    """Дата прибытия в будущем (по времени магазина): пока она не прошла, клиенты видят её как есть."""
+    from app.timeutils import shop_tz
+    return datetime.now(shop_tz()).date() + timedelta(days=days)
+
+
 def test_in_transit_items_are_shown_and_can_be_preordered(web, mem_db):
     h = key_header(mem_db)
-    post(web, h, [invoice()])
+    arrival = soon()
+    post(web, h, [invoice(date=arrival.isoformat())])
     user = make_user(mem_db, "buyer@test.ru", password="Buyer1234")
     login(web, "buyer@test.ru", "Buyer1234")
     page = web.get("/catalog").text
-    assert "Роза Фридом 60" in page and "29.10.2026" in page          # блок «Товары в пути»
-    assert "Поставка:" in page and "№ 00000622" in page
+    assert "Роза Фридом 60" in page and arrival.strftime("%d.%m.%Y") in page    # блок «Товары в пути»
+    assert "Поставка:" in page and "№ 00000624" in page
 
     mem_db.expire_all()
     item = mem_db.query(SupplyItem).one()
@@ -199,16 +219,46 @@ def test_in_transit_items_are_shown_and_can_be_preordered(web, mem_db):
     assert mem_db.query(Preorder).one().quantity == 4
 
 
+def test_a_late_machine_shows_the_date_pending_instead_of_a_past_date(web, mem_db):
+    """В 1С «в пути» остаётся с плановой датой, пока документ не проведут: прошедшую дату клиентам не показываем."""
+    h = key_header(mem_db)
+    post(web, h, [invoice(date="2020-01-15")])
+    make_user(mem_db, "buyer@test.ru", password="Buyer1234")
+    login(web, "buyer@test.ru", "Buyer1234")
+    page = web.get("/catalog").text
+    assert "Машина уже в пути" in page and "дата уточняется" in page            # плашка и карточка
+    assert "15.01.2020" not in page and "№ 00000624" in page
+    detail = web.get(f"/product/{item_of(mem_db).id}").text
+    assert "дата уточняется" in detail and "15.01.2020" not in detail
+    # а в плашке сверху — ближайшая машина с датой впереди, а не задержавшаяся
+    arrival = soon(3)
+    post(web, h, [invoice("00000625", date=arrival.isoformat(), items=[line("Роза Ж 60")])])
+    banner = web.get("/catalog").text
+    assert f"прибытие <strong>{arrival.strftime('%d.%m.%Y')}</strong>" in banner
+
+
+def test_preorder_pages_show_the_supply(web, mem_db):
+    h = key_header(mem_db)
+    arrival = soon()
+    post(web, h, [invoice(date=arrival.isoformat())])
+    user = make_user(mem_db, "buyer@test.ru", password="Buyer1234")
+    assert add_preorder_to_db(mem_db, user.id, item_of(mem_db).id, 3)
+    login(web, "buyer@test.ru", "Buyer1234")
+    label = f"№ 00000624 от {arrival.strftime('%d.%m.%Y')}"
+    assert label in web.get("/preorders").text
+    assert label in web.get("/cart").text
+
+
 def test_each_received_line_is_its_own_card_with_the_supply_number(web, mem_db):
     h = key_header(mem_db)
-    post(web, h, [invoice("00000622", status="received", items=[line(quantity=500)]),
+    post(web, h, [invoice("00000624", status="received", items=[line(quantity=500)]),
                   invoice("00000700", date="2026-11-05", status="received",
                           items=[line(quantity=250, price=47)])])
     make_user(mem_db, "buyer@test.ru", password="Buyer1234")
     login(web, "buyer@test.ru", "Buyer1234")
     page = web.get("/catalog").text
     assert page.count("Роза Фридом 60") >= 2                           # одна роза — две партии, две карточки
-    assert "№ 00000622 от 29.10.2026" in page and "№ 00000700 от 05.11.2026" in page
+    assert "№ 00000624 от 29.10.2026" in page and "№ 00000700 от 05.11.2026" in page
     one = item_of(mem_db, "00000700")
     detail = web.get(f"/product/{one.id}").text
     assert "Поставка:" in detail and "№ 00000700 от 05.11.2026" in detail
@@ -233,7 +283,7 @@ def test_received_invoice_puts_the_line_on_the_shelf_and_fulfils_the_preorder(we
     assert data["received"] == 1 and data["preorders_fulfilled"] == 1
 
     mem_db.expire_all()
-    supply = mem_db.query(Supply).filter_by(external_id="00000622").one()
+    supply = mem_db.query(Supply).filter_by(external_id="00000624").one()
     assert supply.status == "Разгружен"
     item = supply.items[0]
     assert item.id == transit.id                                       # та же позиция, а не новая
@@ -297,7 +347,7 @@ def test_status_only_message_keeps_the_lines_and_an_empty_list_clears_them(web, 
     items: [] — другое дело: «в партии ничего не осталось»."""
     h = key_header(mem_db)
     _, transit = make_preorder(web, mem_db, h, qty=5)
-    data = post(web, h, [{"id": "00000622", "status": "received"}]).json()
+    data = post(web, h, [{"id": "00000624", "status": "received"}]).json()
     assert data["received"] == 1 and data["preorders_fulfilled"] == 1 and data["errors"] == []
     item = item_of(mem_db)
     assert item.id == transit.id and item.is_active and item.stock == 120
@@ -410,8 +460,8 @@ def test_order_from_a_received_line_goes_to_1c_with_its_supply_and_cancel_return
     assert item.stock == 0 and not item.is_active
 
     sent = web.get("/api/1c/orders/export?new=1", headers=h).json()["orders"][0]["items"][0]
-    assert sent["supply"] == {"id": item.supply_id, "external_id": "00000622",
-                              "number": "00000622", "date": "2026-10-29"}
+    assert sent["supply"] == {"id": item.supply_id, "external_id": "00000624",
+                              "number": "00000624", "date": "2026-10-29"}
     assert (sent["price"], sent["quantity"], sent["sum"]) == (42.5, 500, 21250.0)
 
     # отмена из 1С возвращает товар в ту же поставку и снова выкладывает его на полку
@@ -429,7 +479,7 @@ def test_supply_is_shown_on_the_order_pages(web, mem_db):
     item = item_of(mem_db)
     buyer = make_user(mem_db, "b@test.ru", password="Buyer1234")
     order = make_order(mem_db, buyer, item, packs=2)
-    label = "№ 00000622 от 29.10.2026"
+    label = "№ 00000624 от 29.10.2026"
 
     login(web, "b@test.ru", "Buyer1234")
     assert label in web.get("/orders").text                            # клиент видит, из какой поставки
@@ -510,7 +560,7 @@ def test_admin_cannot_unload_1c_supply_by_hand(web, mem_db):
     mem_db.expire_all()
     assert mem_db.get(Supply, supply.id).status == "В пути"
     assert not mem_db.query(SupplyItem).one().is_active
-    assert "из 1С · № 00000622" in web.get("/admin").text           # бейдж в списке поставок
+    assert "из 1С · № 00000624" in web.get("/admin").text           # бейдж в списке поставок
 
 
 # ───────────────────────── забытые инвойсы ─────────────────────────

@@ -445,7 +445,7 @@
                             <div class="spec-line">
                                 <span class="spec-line__label">Прибытие:</span>
                                 <span class="spec-line__value">
-                                    {{ item.supply.arrival_date.strftime('%d.%m.%Y') if item.supply and item.supply.arrival_date else '—' }}
+                                    {{ item.supply.arrival_text if item.supply else '—' }}
                                 </span>
                             </div>
                         </div>

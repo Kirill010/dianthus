@@ -249,7 +249,7 @@ class Supply(Base):
     # в 1С. Пусто — поставка заведена вручную. Такие поставки обновляются только
     # обменом, не разгружаются автоматически и вручную (остатки ведёт 1С).
     external_id = Column(String(64), default="", index=True)
-    # Номер инвойса для людей («00000622»); у ручной поставки пусто
+    # Номер инвойса для людей («00000624»); у ручной поставки пусто
     number = Column(String(64), default="")
     external_synced_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
@@ -262,16 +262,31 @@ class Supply(Base):
 
     @property
     def invoice_no(self) -> str:
-        """Номер инвойса в 1С («00000622»); у ручной поставки пусто."""
+        """Номер инвойса в 1С («00000624»); у ручной поставки пусто."""
         return (self.number or self.external_id or "") if self.external_id else ""
 
     @property
     def label(self) -> str:
-        """«№ 00000622 от 29.10.2026» — как поставка названа в 1С; у ручной поставки пусто."""
+        """«№ 00000624 от 29.10.2026» — как поставка названа в 1С; у ручной поставки пусто."""
         if not self.external_id:
             return ""
-        date = f" от {self.arrival_date.strftime('%d.%m.%Y')}" if self.arrival_date else ""
+        # у «в пути» дата — плановая: если она уже прошла (машина задерживается), её не показываем
+        in_transit = self.status in ("Ожидается", "В пути")
+        show_date = bool(self.arrival_date) and (not in_transit or self.arrival_known)
+        date = f" от {self.arrival_date.strftime('%d.%m.%Y')}" if show_date else ""
         return f"№ {self.invoice_no}{date}"
+
+    @property
+    def arrival_known(self) -> bool:
+        """Дата прибытия есть и ещё не прошла. Машина, которая задерживается, свою дату «теряет»:
+        в 1С документ «в пути» остаётся с плановой датой, пока его не оприходуют."""
+        from .timeutils import shop_tz
+        return bool(self.arrival_date) and self.arrival_date.date() >= datetime.now(shop_tz()).date()
+
+    @property
+    def arrival_text(self) -> str:
+        """Дата прибытия для клиентов: «29.10.2026» или «дата уточняется» (нет даты или она прошла)."""
+        return self.arrival_date.strftime("%d.%m.%Y") if self.arrival_known else "дата уточняется"
 
     @property
     def is_active(self) -> bool:
@@ -391,7 +406,7 @@ class OrderItem(Base):
 
     @property
     def supply_label(self) -> str:
-        """«№ 00000622 от 29.10.2026» — из какой поставки 1С взят товар (иначе пусто)."""
+        """«№ 00000624 от 29.10.2026» — из какой поставки 1С взят товар (иначе пусто)."""
         si = self.supply_item
         return si.supply.label if si is not None and si.supply is not None else ""
 

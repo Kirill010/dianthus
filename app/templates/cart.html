@@ -110,7 +110,7 @@
             </div>
             <div class="cart-item__price" style="color:#c97b4a;">
                 <i class="fas fa-truck-fast me-1"></i>
-                Откуда: <strong>{{ p.location or "—" }}</strong>
+                Откуда: <strong>{{ p.location or "—" }}</strong>{% if p.supply_label %} · поставка {{ p.supply_label }}{% endif %}
             </div>
             <div class="cart-item__price" style="color:#c97b4a;">
                 <i class="fas fa-clock me-1"></i>

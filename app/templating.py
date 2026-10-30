@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
 from jinja2 import FileSystemBytecodeCache
-from sqlalchemy import nulls_last
+from sqlalchemy import case, nulls_last
 from sqlalchemy.orm import Session, selectinload
 
 from .config import config
@@ -143,6 +143,8 @@ def render(request: Request, template: str, db: Session, **context):
 
     # Баннер активной поставки показываем всем — и анонимам на публичных
     # страницах (лендинг/каталог): это рабочий маркетинговый триггер.
+    # Сначала ближайшая машина с датой впереди; задержавшиеся (дата прошла) — после неё.
+    today = datetime.combine(datetime.now(shop_tz()).date(), datetime.min.time())
     active_supply = (
         db.query(models.Supply)
         .options(selectinload(models.Supply.items))
@@ -150,7 +152,8 @@ def render(request: Request, template: str, db: Session, **context):
             models.Supply.status.in_(["Ожидается", "В пути"]),
             models.Supply.is_service.is_(False),
         )
-        .order_by(nulls_last(models.Supply.arrival_date.asc()))
+        .order_by(case((models.Supply.arrival_date < today, 1), else_=0),
+                  nulls_last(models.Supply.arrival_date.asc()))
         .first()
     )
 

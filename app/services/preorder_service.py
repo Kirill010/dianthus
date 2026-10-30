@@ -127,10 +127,8 @@ def get_user_preorders(db: Session, user_id: int) -> list:
             "image_url": product.image_url or "",
             "quantity": p.quantity,
             "location": item.supply.location if item.supply else "—",
-            "arrival_date": (
-                item.supply.arrival_date.strftime("%d.%m.%Y")
-                if item.supply and item.supply.arrival_date else "—"
-            ),
+            "arrival_date": item.supply.arrival_text if item.supply else "—",
+            "supply_label": item.supply.label if item.supply else "",
             **totals,
         })
     return result
@@ -172,10 +170,8 @@ def get_all_user_preorders(db: Session, user_id: int) -> list:
             "is_fulfilled": p.is_fulfilled,
             "created_at": p.created_at,
             "location": item.supply.location if item.supply else "—",
-            "arrival_date": (
-                item.supply.arrival_date.strftime("%d.%m.%Y")
-                if item.supply and item.supply.arrival_date else "—"
-            ),
+            "arrival_date": item.supply.arrival_text if item.supply else "—",
+            "supply_label": item.supply.label if item.supply else "",
             "available_stock": item.available_stock if item.is_active else 0,
             **totals,
         })

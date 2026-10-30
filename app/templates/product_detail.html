@@ -96,7 +96,7 @@
                 </div>
                 <div class="spec-row d-flex justify-content-between py-2 border-bottom">
                     <span class="spec-label text-muted">Ожидаем:</span>
-                    <span class="spec-value fw-medium">{{ item.supply.arrival_date.strftime('%d.%m.%Y') if item.supply.arrival_date else 'дата уточняется' }}</span>
+                    <span class="spec-value fw-medium">{{ item.supply.arrival_text }}</span>
                 </div>
             {% else %}
                 <div class="spec-row d-flex justify-content-between py-2 border-bottom">

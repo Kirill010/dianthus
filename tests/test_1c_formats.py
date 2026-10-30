@@ -65,7 +65,7 @@ def key_header(db):
 
 
 def send_story(web, mem_db):
-    """Инвойс 00000622 из описания: сначала в пути (все реквизиты строк), потом оприходован."""
+    """Инвойс 00000624 из описания: сначала в пути (все реквизиты строк), потом оприходован."""
     h = key_header(mem_db)
     assert web.post("/api/1c/supplies/sync", json=example("supplies_sync", "request"),
                     headers=h).status_code == 200
@@ -101,8 +101,8 @@ def test_supplies_sample_is_accepted_and_goes_on_the_shelf_by_supply(web, mem_db
     assert r.json() == example("supplies_sync", "response")
     mem_db.expire_all()
     supply = mem_db.query(Supply).one()
-    assert (supply.external_id, supply.number, supply.status) == ("00000622", "00000622", "В пути")
-    assert supply.label == "№ 00000622 от 29.10.2026"
+    assert (supply.external_id, supply.number, supply.status) == ("00000624", "00000624", "В пути")
+    assert supply.label.startswith("№ 00000624")           # дату «в пути» показываем, пока она не прошла
     lines = {i.product.external_id: i for i in supply.items}
     assert {k: (v.stock, v.price, v.is_active) for k, v in lines.items()} == {
         "00000012345": (120, 42.5, False),             # 3000 шт / 25 = 120 упаковок; в пути — только предзаказ
@@ -335,7 +335,7 @@ def test_orders_csv_has_one_line_per_item_with_the_same_ids(web, mem_db):
     assert (cols["product_id"], cols["external_id"], cols["sku"], cols["barcode"]) == (
         str(item.product_id), "00000012345", "ROSA-FREEDOM-60", "4600000000001")
     assert (cols["supply_id"], cols["supply_external_id"], cols["supply_number"],
-            cols["supply_date"]) == (str(item.supply_id), "00000622", "00000622", "2026-10-29")
+            cols["supply_date"]) == (str(item.supply_id), "00000624", "00000624", "2026-10-29")
     assert (cols["package_size"], cols["price"], cols["quantity"], cols["sum"]) == (
         "25", "42.5", "50", "2125.0")
     assert (cols["order_sum"], cols["order_total"]) == ("2125.0", "2125.0")

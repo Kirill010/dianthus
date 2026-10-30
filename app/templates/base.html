@@ -36,7 +36,7 @@
         <span class="supply-banner__text">
             <strong>Ждём ваших заказов!</strong>
             Машина {% if active_supply.status == "В пути" %}уже в пути{% else %}готовится{% endif %}{% if active_supply.location %} (<strong>{{ active_supply.location }}</strong>){% endif %}
-            {% if active_supply.arrival_date %}
+            {% if active_supply.arrival_known %}
                 — прибытие <strong>{{ active_supply.arrival_date.strftime('%d.%m.%Y') }}</strong>
             {% endif %}
         </span>

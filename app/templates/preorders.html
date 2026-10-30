@@ -47,7 +47,7 @@
 
         <div class="order-card__meta">
             <i class="fas fa-map-marker-alt me-1"></i>
-            Откуда: <strong>{{ p.location or "—" }}</strong>
+            Откуда: <strong>{{ p.location or "—" }}</strong>{% if p.supply_label %} · поставка {{ p.supply_label }}{% endif %}
         </div>
 
         {% if not p.is_fulfilled and p.arrival_date %}
