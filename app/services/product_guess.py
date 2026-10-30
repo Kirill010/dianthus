@@ -77,7 +77,8 @@ def guess_category(name: str) -> str:
     for stem, category in _CATEGORY_RULES:
         if stem in text:
             return category
-    if re.search(r"(?<![а-яё])роз", text):
+    # слово «роза» (в любой форме), а не «розовая» и не «розмарин»: «Альстромерия розовая» — не роза
+    if re.search(r"(?<![а-яё])роз(?:а|ы|у|е|ой|ами|ах)?(?![а-яё])", text):
         return "Роза"
     return ""
 
@@ -100,9 +101,8 @@ _COLOR_RULES = (
 
 
 def guess_color(name: str) -> str:
-    """«Гвоздика белая» → «Белый»; цвет не назван словом → пустая строка."""
+    """«Гвоздика белая» → «Белый»; цвет не назван словом или названо два («белая/розовая») → пустая строка."""
     text = (name or "").lower()
-    for pattern, color in _COLOR_RULES:
-        if re.search(r"(?<![а-яё])" + pattern + r"(?![а-яё])", text):
-            return color
-    return ""
+    found = {color for pattern, color in _COLOR_RULES
+             if re.search(r"(?<![а-яё])" + pattern + r"(?![а-яё])", text)}
+    return found.pop() if len(found) == 1 else ""

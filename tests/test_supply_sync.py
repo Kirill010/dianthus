@@ -11,7 +11,7 @@ from app.config import config
 from app.models import Notification, OrderItem, Preorder, Product, Supply, SupplyItem
 from app.services import api_keys
 from app.services.preorder_service import add_preorder_to_db
-from app.services.product_guess import guess_category, guess_country, guess_length_cm
+from app.services.product_guess import guess_category, guess_color, guess_country, guess_length_cm
 from app.services.supply_sync import close_stale_supplies
 from app.services.taxonomy import set_taxonomy
 from tests.helpers import csrf_from, login, make_order, make_user, seed_item
@@ -605,9 +605,63 @@ def test_guess_country(name, country):
     ("Роза Эквадор Фридом 60", "Роза"), ("Роза Кения 40", "Роза"),
     ("Роза кустовая Баблс", "Роза кустовая"), ("Хризантема одноголовая", "Хризантема"),
     ("Гвоздика Мондиал 70", "Гвоздика"), ("Гипсофила", ""),
+    # названия из номенклатуры владельца: сорт без слова «роза», цвет-слово — не роза
+    ("Альба 60 Tessa", ""), ("Альстромерия розовая TESSA 70 см", ""),
+    ("Альстромерия белая/розовая TESSA 60 см", ""), ("Розмарин 40", ""),
+    ("Гвоздика микс 70 Tessa", "Гвоздика"), ("Розы красные 60", "Роза"),
 ])
 def test_guess_category(name, category):
     assert guess_category(name) == category
+
+
+@pytest.mark.parametrize("name,color", [
+    ("Гвоздика белая", "Белый"), ("Альстромерия розовая TESSA 70 см", "Розовый"),
+    ("Альстромерия красная TESSA 60 см", "Красный"),
+    ("Альстромерия белая/розовая TESSA 60 см", ""),          # два цвета в названии — не угадываем
+    ("Альба 60 Tessa", ""), ("Канделайт 90 Tessa", ""),         # сорт — не цвет
+])
+def test_guess_color(name, color):
+    assert guess_color(name) == color
+
+
+NOMENCLATURE = [                        # как в справочнике «Номенклатура» владельца, без изменений
+    ("ф1", "Альба 60 Tessa", "Роза", 60), ("ф2", "Альба 70 Ecuanros", "Роза", 70),
+    ("ф3", "Би Свит  60 Enigma", "Роза", 60),                    # два пробела внутри — как в 1С
+    ("ф4", "Вайлд Эсперанс 50 GW", "Роза", 50), ("ф5", "Альстромерия белая/розовая TESSA 60 см", "Альстромерия", 60),
+    ("ф6", "Гипсофилла  70", "Гипсофилла", 70), ("ф7", "Гвоздика микс 70 Tessa", "Гвоздика", 70),
+]
+
+
+def test_names_from_the_nomenclature_are_kept_as_they_are(web, mem_db):
+    """Название — как в номенклатуре 1С (без «Роза» впереди); вид берётся из «Вида товара», рост — из названия."""
+    h = key_header(mem_db)
+    items = [{"id": code, "name": name, "kind": kind, "package_size": 10, "price": 50, "quantity": 100}
+             for code, name, kind, _ in NOMENCLATURE]
+    data = post(web, h, [invoice("N-1", status="received", items=items)]).json()
+    assert data["errors"] == [] and data["lines"] == len(NOMENCLATURE)
+    mem_db.expire_all()
+    got = {p.external_id: p for p in mem_db.query(Product).all()}
+    for code, name, kind, height in NOMENCLATURE:
+        assert got[code].name == name, code                      # ни «Роза», ни чистки пробелов
+        assert (got[code].kind_name, got[code].height_cm) == (kind, height), code
+    # то же название уходит обратно в 1С в заказе
+    buyer = make_user(mem_db, "b@test.ru")
+    make_order(mem_db, buyer, item_of(mem_db, "N-1", name="Би Свит  60 Enigma"), packs=1)
+    line_out = web.get("/api/1c/orders/export?new=1", headers=h).json()["orders"][0]["items"][0]
+    assert line_out["name"] == "Би Свит  60 Enigma" and line_out["external_id"] == "ф3"
+    assert line_out["supply"]["external_id"] == "N-1"
+
+
+def test_without_a_kind_a_variety_name_lands_in_other_and_is_not_mistaken_for_a_rose(web, mem_db):
+    """Если вид не прислали, а в названии его нет (сорт), товар попадает в «Прочее» — а не в чужой вид."""
+    h = key_header(mem_db)
+    items = [{"id": "ф8", "name": "Альстромерия розовая TESSA 70 см", "package_size": 10, "price": 50, "quantity": 100},
+             {"id": "ф9", "name": "Альба 60 Tessa", "package_size": 10, "price": 50, "quantity": 100}]
+    post(web, h, [invoice("N-2", status="received", items=items)])
+    mem_db.expire_all()
+    got = {p.external_id: p for p in mem_db.query(Product).all()}
+    assert got["ф8"].kind_name == got["ф9"].kind_name == "Прочее"
+    assert got["ф8"].color_name == "Розовый" and got["ф9"].color_name == ""
 
 
 def test_sync_fills_only_empty_fields_from_name(web, mem_db):
