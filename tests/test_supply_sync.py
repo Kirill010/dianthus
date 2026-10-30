@@ -664,6 +664,68 @@ def test_without_a_kind_a_variety_name_lands_in_other_and_is_not_mistaken_for_a_
     assert got["ф8"].color_name == "Розовый" and got["ф9"].color_name == ""
 
 
+def test_pack_size_guess_follows_the_kind_and_not_the_farm():
+    """Размер пачки (если в файле нет колонки) угадывается по виду. Название фермы ничего не решает:
+    раньше «Tessa» в названии давало пачку 25 любому цветку, а у других ферм — нет."""
+    from app.services.excel_service import guess_package_size
+    assert guess_package_size("Гвоздика микс 70 СТК") == 20
+    assert guess_package_size("Тюльпан Strong Gold 40") == 50
+    assert guess_package_size("Альба 60 Tessa") == 1                         # вида нет — ферма не помогает
+    assert guess_package_size("Альстромерия белая TESSA 60 см") == 1         # раньше выходило 25
+    assert guess_package_size("Альба 60 Tessa", "Роза") == 25                # вид взят из колонки файла
+    assert (guess_package_size("Альба 60 Ecuanros", "Роза")
+            == guess_package_size("Вайлд Эсперанс 50 GW", "Роза")
+            == guess_package_size("Аква 50 см РХ РФ", "Роза") == 25)         # любая ферма — одинаково
+
+
+def test_file_import_guesses_the_pack_from_the_kind_column():
+    from app.services.catalog_files import rows_from_table
+    rows, _ = rows_from_table([["Наименование", "Вид", "Цена", "Остаток"],
+                               ["Альба 60 Tessa", "Роза", 42.5, 100],
+                               ["Альстромерия белая TESSA 60 см", "Альстромерия", 50, 100]])
+    assert [r["package_size_hint"] for r in rows] == [25, 1]
+
+
+def test_admin_supplies_tab_shows_what_is_on_the_way_first_and_counts_the_lines(web, mem_db):
+    """Вкладка «Поставки»: сначала то, что едет, потом свежие; число позиций считается без загрузки
+    всех позиций всех поставок (с годом работы админка иначе открывалась бы всё дольше)."""
+    import re
+    h = key_header(mem_db)
+    two = [line("Роза Новая 60", quantity=500), line("Роза Новая 70", quantity=500)]
+    post(web, h, [
+        invoice("C-OLD", date="2026-09-01", status="received", items=[line("Роза Старая 60", quantity=500)]),
+        invoice("C-NEW", date="2026-10-20", status="received", items=two),
+        invoice("C-SOON", date=soon().isoformat(), status="in_transit"),
+    ])
+    make_user(mem_db, "boss@test.ru", password="Admin1234", admin=True)
+    login(web, "boss@test.ru", "Admin1234")
+    html = web.get("/admin").text
+    tab = html[html.index('id="supplies"'):html.index('id="active"')]
+    assert tab.index("C-SOON") < tab.index("C-NEW") < tab.index("C-OLD")
+
+    def badges(number):
+        row = next(r for r in re.findall(r"<tr>(.*?)</tr>", tab, re.S) if number in r)
+        return re.findall(r'badge bg-(?:light text-dark|success|secondary)">(\d+)<', row)
+
+    assert badges("C-NEW") == ["2", "2"]          # позиций, из них на полке
+    assert badges("C-SOON") == ["1", "0"]         # едет: позиция есть, на полке её ещё нет
+    assert badges("C-OLD") == ["1", "1"]
+
+
+def test_admin_supplies_tab_is_limited_and_says_so(web, mem_db, monkeypatch):
+    from app.routers import admin
+    monkeypatch.setattr(admin, "LIST_LIMIT", 2)
+    h = key_header(mem_db)
+    post(web, h, [invoice(f"L-{n}", date=f"2026-10-0{n}", status="received",
+                          items=[line(f"Роза Л{n} 60", quantity=500)]) for n in range(1, 5)])
+    make_user(mem_db, "boss@test.ru", password="Admin1234", admin=True)
+    login(web, "boss@test.ru", "Admin1234")
+    html = web.get("/admin").text
+    tab = html[html.index('id="supplies"'):html.index('id="active"')]
+    assert "Показаны первые 2 из 4" in tab
+    assert "L-4" in tab and "L-3" in tab and "L-1" not in tab          # свежие остаются
+
+
 def test_sync_fills_only_empty_fields_from_name(web, mem_db):
     h = key_header(mem_db)
     body = {"products": [

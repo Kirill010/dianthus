@@ -8,7 +8,7 @@ from starlette.concurrency import run_in_threadpool
 from fastapi import (APIRouter, BackgroundTasks, Depends, File, Form,
                      HTTPException, Request, UploadFile)
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
-from sqlalchemy import or_, func
+from sqlalchemy import case, func, nulls_last, or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload, joinedload
 
@@ -165,6 +165,33 @@ def _is_photo_url(url: str) -> bool:
 
 # ───────────────────────── ДАШБОРД ─────────────────────────
 
+def _supplies_for_dashboard(db: Session):
+    """Вкладка «Поставки»: сначала то, что едет (ближайшая первой), потом приехавшее (свежие
+    первыми); не больше LIST_LIMIT строк. Число позиций считается одним запросом: раньше
+    грузились все позиции всех поставок, и с каждым месяцем работы админка открывалась дольше.
+    Возвращает (поставки, сколько их всего, {id поставки: (позиций, активных)})."""
+    waiting = Supply.status.in_(["Ожидается", "В пути"])
+    base = db.query(Supply).filter(Supply.is_service.is_(False))
+    supplies = (
+        base.order_by(
+            case((waiting, 0), (Supply.status == "Прибыл", 1), else_=2),
+            nulls_last(case((waiting, Supply.arrival_date)).asc()),
+            nulls_last(Supply.arrival_date.desc()),
+            Supply.id.desc())
+        .limit(LIST_LIMIT).all()
+    )
+    counts = {}
+    if supplies:
+        rows = (
+            db.query(SupplyItem.supply_id, func.count(SupplyItem.id),
+                     func.sum(case((SupplyItem.is_active.is_(True), 1), else_=0)))
+            .filter(SupplyItem.supply_id.in_([s.id for s in supplies]))
+            .group_by(SupplyItem.supply_id).all()
+        )
+        counts = {sid: (total, int(active or 0)) for sid, total, active in rows}
+    return supplies, base.count(), counts
+
+
 @router.get("", response_class=HTMLResponse)
 def dashboard(
     request: Request,
@@ -260,20 +287,15 @@ def dashboard(
         users=users, pending_count=todo["applications"], stats=stats,
         list_limit=LIST_LIMIT, users_total=users_total,
         products=[], supplies=[], active_items=[], products_total=0, active_total=0,
-        supply_statuses=SUPPLY_STATUSES,
+        supplies_total=0, supply_counts={}, supply_statuses=SUPPLY_STATUSES,
     )
     if is_admin:
         active_filter = (SupplyItem.is_active.is_(True), SupplyItem.stock > 0)
+        supplies, supplies_total, supply_counts = _supplies_for_dashboard(db)
         ctx.update(
             products_total=db.query(Product).count(),
             products=db.query(Product).order_by(Product.name).limit(LIST_LIMIT).all(),
-            supplies=(
-                db.query(Supply)
-                .options(selectinload(Supply.items).selectinload(SupplyItem.product))
-                .filter(Supply.is_service.is_(False))
-                .order_by(Supply.arrival_date.asc())
-                .all()
-            ),
+            supplies=supplies, supplies_total=supplies_total, supply_counts=supply_counts,
             active_total=db.query(SupplyItem).filter(*active_filter).count(),
             # Раньше грузились ВСЕ позиции: при каталоге из 1С (тысячи товаров)
             # вкладка «На складе» делала тяжёлый запрос на каждое открытие админки.
@@ -679,7 +701,7 @@ async def products_import(
                 product = Product(
                     name=data["name"], sku=data["sku"], barcode=data["barcode"],
                     description=data["description"], unit=data["unit"] or "упаковка",
-                    package_size=data["package_size"] or guess_package_size(data["name"]),
+                    package_size=data["package_size"] or guess_package_size(data["name"], data["kind"]),
                     min_quantity=data["min_quantity"] or 1)
                 db.add(product)
                 catalog.add(product)

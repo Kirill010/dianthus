@@ -196,7 +196,8 @@ def rows_from_table(table: list[list], *, stock_unit: str = "stems",
                     item["package_size"] = n
                     pack = int(n)
             if pack is None and guess_pack:
-                item["package_size_hint"] = pack = guess_package_size(name)
+                kind = _to_str_preserve(cell("kind")) or ""            # у сорта («Альба») вида в названии нет
+                item["package_size_hint"] = pack = guess_package_size(name, kind)
 
             price = to_number(price_raw, "Цена")
             if price_unit == "pack":
