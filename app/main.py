@@ -1,6 +1,7 @@
 # app/main.py
 """Сборка приложения и общие маршруты."""
 import logging
+import mimetypes
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from importlib import import_module
@@ -177,6 +178,12 @@ if config.ENV == "prod":
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 (STATIC_DIR / "uploads").mkdir(parents=True, exist_ok=True)
+
+
+# В образе Docker (python:slim) нет системного списка типов файлов — шрифты и картинки WebP
+# отдавались бы как «application/octet-stream». Объявляем типы сами.
+mimetypes.add_type("font/woff2", ".woff2")
+mimetypes.add_type("image/webp", ".webp")
 
 
 class CachedStaticFiles(StaticFiles):

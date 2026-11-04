@@ -30,10 +30,12 @@
                     <span class="landing-stats__value">3</span>
                     <span class="landing-stats__label">страны-поставщика</span>
                 </li>
+                {% if in_stock_count %}{# пока каталог пуст, «0 позиций» посетителям не показываем #}
                 <li class="landing-stats__item">
                     <span class="landing-stats__value">{{ in_stock_count }}</span>
                     <span class="landing-stats__label">позиций в наличии</span>
                 </li>
+                {% endif %}
                 <li class="landing-stats__item">
                     <span class="landing-stats__value">24/7</span>
                     <span class="landing-stats__label">приём заказов онлайн</span>

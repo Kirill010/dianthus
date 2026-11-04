@@ -150,3 +150,15 @@ def test_guest_cards_have_one_register_link_and_no_button_per_card(web, mem_db):
     assert "product-card-v2__out-btn--cta" not in html
     links = re.findall(r'<a href="/register" class="product-card-v2__price-locked"', html)
     assert len(links) == 3
+
+
+def test_static_fonts_and_webp_pictures_have_correct_types(web):
+    """В образе Docker нет системного списка типов файлов: без своей подсказки шрифт и WebP уходили бы как octet-stream."""
+    assert web.get("/static/fonts/montserrat-latin-wght-normal.woff2").headers["content-type"] == "font/woff2"
+    assert web.get("/static/emblem.webp").headers["content-type"] == "image/webp"
+
+
+def test_landing_hides_the_stock_counter_while_the_catalog_is_empty(web, mem_db):
+    assert "позиций в наличии" not in web.get("/").text
+    seed_item(mem_db, name="Роза Красная", stock=40)
+    assert "позиций в наличии" in web.get("/").text
