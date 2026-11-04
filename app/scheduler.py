@@ -233,8 +233,11 @@ def _auto_unload_overdue_sync() -> None:
 
 
 async def _prune_exchange_log() -> None:
+    """Суточная уборка: журнал обмена с 1С (60 дней) и журнал действий сотрудников (12 месяцев)."""
+    from .services import audit
     from .services.exchange_log import prune_job
     await asyncio.to_thread(prune_job)
+    await asyncio.to_thread(audit.prune_job)
 
 
 async def _close_stale_1c_supplies() -> None:

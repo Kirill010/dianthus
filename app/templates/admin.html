@@ -291,7 +291,7 @@
     <div class="tab-pane fade" id="clients">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h5 class="mb-0">Клиенты и заявки</h5>
-            <input type="search" id="client-search" class="form-control form-control-sm"
+            <input type="search" id="client-search" aria-label="Поиск по клиентам" class="form-control form-control-sm"
                    style="max-width: 320px" aria-label="Поиск клиентов"
                    placeholder="Поиск: компания, email, имя…">
         </div>
@@ -427,7 +427,7 @@
     <div class="tab-pane fade" id="products">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h5 class="mb-0">Справочник товаров</h5>
-            <input type="search" id="product-search" class="form-control form-control-sm"
+            <input type="search" id="product-search" aria-label="Поиск по справочнику товаров" class="form-control form-control-sm"
                    style="max-width: 280px" placeholder="Поиск товара…">
             <div class="d-flex gap-2 flex-wrap">
                 <a href="/admin/products/new" class="btn btn-primary btn-sm">
@@ -463,7 +463,7 @@
                         <td>{{ p.id }}</td>
                         <td>
                             {% if p.image_url %}
-                                <img src="{{ p.image_url }}"
+                                <img src="{{ p.image_url }}" alt="" width="40" height="40" loading="lazy"
                                      style="width:40px;height:40px;object-fit:cover;border-radius:6px;">
                             {% else %}
                                 <i class="fas fa-seedling text-muted"></i>

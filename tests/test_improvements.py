@@ -601,7 +601,8 @@ def test_registration_requires_personal_data_consent(web, mem_db):
     assert "согласие" in web.get("/register").text.lower()
 
     token = csrf_from(web.get("/register").text)
-    r = web.post("/register", data=_reg_data(token, consent="1"), follow_redirects=False)
+    r = web.post("/register", data=_reg_data(token, consent="1", privacy_ack="1", terms_accept="1"),
+                 follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/registration_pending"
     user = mem_db.query(User).one()
     assert user.consent_at is not None and user.is_approved is False

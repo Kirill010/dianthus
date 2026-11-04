@@ -254,7 +254,8 @@ def test_catalog_links_encode_query_text(web, mem_db):
     link = re.search(r'href="/catalog\?q=([^"]*)"', page)           # кнопка вида «Роза» (снять выбор)
     assert link is not None
     assert "&" not in link.group(1) and unquote(link.group(1)) == "Роза & Пион"
-    reset = re.search(r'href="/catalog\?kind=([^"]*)"', page)        # крестик «сбросить поиск»
+    # крестик «сбросить поиск» (ищем по подписи: порядок ссылок на странице от вёрстки не зависит)
+    reset = re.search(r'href="/catalog\?kind=([^"]*)"[^>]*title="Сбросить поиск"', page)
     assert reset is not None and unquote(reset.group(1)) == str(kind_id)
 
 

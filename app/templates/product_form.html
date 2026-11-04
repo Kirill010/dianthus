@@ -78,7 +78,7 @@
                             <div class="d-flex align-items-center mb-2 p-2 border rounded">
                                 <input type="checkbox" name="remove_photos" value="{{ url }}" class="form-check-input me-2" id="rem_{{ loop.index }}">
                                 <label for="rem_{{ loop.index }}" class="flex-grow-1 mb-0 text-truncate" style="max-width: 150px;">{{ url }}</label>
-                                <img src="{{ url }}" class="rounded" style="width: 40px; height: 40px; object-fit: cover;">
+                                <img src="{{ url }}" alt="" width="40" height="40" class="rounded" style="width: 40px; height: 40px; object-fit: cover;">
                             </div>
                         {% endfor %}
                     </div>

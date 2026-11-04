@@ -6,14 +6,17 @@
 //   2. Если пропал интернет — вместо ошибки браузера показывает страницу «Нет связи».
 // Чего НЕ делает: не сохраняет страницы сайта (в них цены, корзина, токены защиты)
 // и не трогает отправку форм — заказы всегда идут напрямую на сервер.
-const CACHE_NAME = 'dianthus-v10-2026-10';
+const CACHE_NAME = 'dianthus-v11-2026-11';
 const OFFLINE_URL = '/static/offline.html';
 const STATIC_ASSETS = [
   '/static/style.css',
   '/static/pwa.js',
-  '/static/logo-icon.png',
-  '/static/logo-full.png',
+  '/static/brand-mark.webp',
   '/static/favicon.ico',
+  '/static/fonts/montserrat-cyrillic-wght-normal.woff2',
+  '/static/fonts/montserrat-latin-wght-normal.woff2',
+  '/static/fonts/playfair-display-cyrillic-wght-normal.woff2',
+  '/static/fonts/playfair-display-latin-wght-normal.woff2',
   '/static/vendor/bootstrap.min.css',
   '/static/vendor/bootstrap.bundle.min.js',
   '/static/vendor/fontawesome/css/all.min.css',

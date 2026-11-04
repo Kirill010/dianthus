@@ -99,6 +99,37 @@ def pd_consent_confirm(
     return RedirectResponse(url="/profile#consent", status_code=303)
 
 
+@router.post("/profile/consent/accept")
+def consents_accept(
+    request: Request,
+    consent: str = Form(""),
+    privacy_ack: str = Form(""),
+    terms_accept: str = Form(""),
+    db: Session = Depends(get_db),
+    _csrf: None = Depends(check_csrf),
+):
+    """Клиент, у которого нет какой-то из трёх обязательных отметок (зарегистрировался до их
+    появления), ставит недостающие. Каждая отметка — отдельная строка журнала."""
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+    state = legal.consent_state(db, user)
+    wanted = (("pd", consent, bool(user.consent_at)),
+              ("privacy", privacy_ack, state["privacy"]["given"]),
+              ("terms", terms_accept, state["terms"]["given"]))
+    missing = [(kind, ticked) for kind, ticked, have in wanted if not have]
+    if not missing:
+        return RedirectResponse(url="/profile#consent", status_code=303)
+    if not all(ticked for _kind, ticked in missing):
+        request.session["flash"] = "Отметьте каждый пункт, чтобы подтвердить его"
+        return RedirectResponse(url="/profile#consent", status_code=303)
+    for kind, _ticked in missing:
+        legal.record_consent(db, user, kind, True, request, source="profile", commit=False)
+    db.commit()
+    request.session["flash"] = "Спасибо! Ваши отметки сохранены."
+    return RedirectResponse(url="/profile#consent", status_code=303)
+
+
 async def _rate_export(request: Request) -> None:
     await check_rate_limit(request, "data-export", max_hits=5, window=3600)
 

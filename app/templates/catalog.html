@@ -5,6 +5,68 @@
 
 {% block content %}
 
+<div class="catalog-layout{% if not has_filter_options %} catalog-layout--wide{% endif %}">
+
+{# ═══════ ФИЛЬТРЫ: слева на компьютере, выезжающая панель на телефоне. Вид, цвет, рост, страна —
+       можно выбрать несколько значений; число — сколько позиций увидите, нажав. ═══════ #}
+{% if has_filter_options %}
+<aside class="catalog-aside offcanvas-lg offcanvas-start" tabindex="-1" id="catalogFilters" aria-labelledby="catalogFiltersTitle">
+    <div class="offcanvas-header">
+        <h2 class="offcanvas-title h5 mb-0" id="catalogFiltersTitle">Фильтры</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#catalogFilters" aria-label="Закрыть фильтры"></button>
+    </div>
+    <div class="offcanvas-body">
+        <div class="catalog-aside__card">
+            <div class="catalog-aside__head">
+                <h2 class="catalog-aside__title">Фильтры</h2>
+                {% if picked_filters %}
+                <a href="{{ clear_filters_url }}" class="catalog-aside__reset">Сбросить фильтры ({{ picked_filters }})</a>
+                {% endif %}
+            </div>
+
+            {# ─── НАЛИЧИЕ ─── #}
+            <details class="filter-group" open>
+                <summary class="filter-group__title">Наличие</summary>
+                <div class="filter-group__list category-scroll">
+                    <a href="{{ level_url('available') }}"
+                       class="category-btn filter-option {% if current_filters.level == 'available' %}active{% endif %}"><span class="level-dot level-dot--all" aria-hidden="true"></span>В наличии ({{ level_counts.available }})</a>
+                    <a href="{{ level_url('big') }}"
+                       class="category-btn filter-option {% if current_filters.level == 'big' %}active{% endif %}"><span class="level-dot level-dot--big" aria-hidden="true"></span>Много ({{ level_counts.big }})</a>
+                    <a href="{{ level_url('medium') }}"
+                       class="category-btn filter-option {% if current_filters.level == 'medium' %}active{% endif %}"><span class="level-dot level-dot--medium" aria-hidden="true"></span>Средне ({{ level_counts.medium }})</a>
+                    <a href="{{ level_url('small') }}"
+                       class="category-btn filter-option {% if current_filters.level == 'small' %}active{% endif %}"><span class="level-dot level-dot--small" aria-hidden="true"></span>Мало ({{ level_counts.small }})</a>
+                </div>
+            </details>
+
+            {# ─── ВИД, ЦВЕТ, РОСТ, СТРАНА ─── #}
+            {% for title, key, options in filter_groups %}
+            {% if options %}
+            <details class="filter-group" {% if loop.first or selected[key] %}open{% endif %}>
+                <summary class="filter-group__title">{{ title }}{% if selected[key] %} <span class="filter-group__picked">{{ selected[key]|length }}</span>{% endif %}</summary>
+                <div class="filter-group__list category-scroll">
+                    {% for o in options %}
+                    <a href="{{ o.url }}" class="category-btn filter-option {% if o.selected %}active{% endif %}"
+                       {% if o.selected %}aria-pressed="true"{% endif %}>
+                        {% if key == 'color' %}<span class="color-dot {% if not o.hex %}color-dot--none{% endif %}" {% if o.hex %}style="background: {{ o.hex }}"{% endif %}></span>{% endif %}
+                        {{ o.name }} <span class="category-btn__n">{{ o.count }}</span>
+                    </a>
+                    {% endfor %}
+                </div>
+            </details>
+            {% endif %}
+            {% endfor %}
+
+            <button type="button" class="btn btn-primary w-100 mt-3 d-lg-none" data-bs-dismiss="offcanvas" data-bs-target="#catalogFilters">
+                Показать товары ({{ total_items }})
+            </button>
+        </div>
+    </div>
+</aside>
+{% endif %}
+
+<div class="catalog-main">
+
 <div class="catalog-top-bar d-flex justify-content-between align-items-center mb-2">
     <h1 class="h3 mb-0">Каталог</h1>
     <span class="badge bg-secondary">{{ total_items }} товаров</span>
@@ -12,19 +74,19 @@
 
 {% if catalog_updated_at %}
 <p class="catalog-fresh small text-muted">
-    <i class="fas fa-clock me-1"></i>{{ 'Остатки' if public else 'Цены и остатки' }} обновлены {{ catalog_updated_at|when }}
+    <i class="fas fa-clock me-1" aria-hidden="true"></i>{{ 'Остатки' if public else 'Цены и остатки' }} обновлены {{ catalog_updated_at|when }}
 </p>
 {% endif %}
 
 {% if public %}
-<div class="alert alert-info d-flex align-items-center justify-content-between flex-wrap gap-2 py-2 px-3 mb-4">
-    <span class="small"><i class="fas fa-lock me-1"></i>Вы смотрите открытую витрину. Оптовые цены и заказ — после регистрации.</span>
+<div class="alert alert-info d-flex align-items-center justify-content-between flex-wrap gap-2 py-2 px-3 mb-3">
+    <span class="small"><i class="fas fa-lock me-1" aria-hidden="true"></i>Вы смотрите открытую витрину. Оптовые цены и заказ — после регистрации.</span>
     <a href="/register" class="btn btn-primary btn-sm">Стать оптовиком</a>
 </div>
 {% endif %}
 
 {# ═══════ ФОРМА ПОИСКА ═══════ #}
-<form class="catalog-search mb-4" method="get" action="/catalog">
+<form class="catalog-search mb-3" method="get" action="/catalog" role="search">
     {% for key in ('kind', 'color', 'height', 'country') %}{% for i in selected[key] %}
         <input type="hidden" name="{{ key }}" value="{{ i }}">
     {% endfor %}{% endfor %}
@@ -36,86 +98,52 @@
     {% endif %}
 
     <div class="input-group">
-        <span class="input-group-text"><i class="fas fa-search"></i></span>
-        <input type="text" id="searchInput" name="q"
+        <span class="input-group-text"><i class="fas fa-search" aria-hidden="true"></i></span>
+        <input type="search" id="searchInput" name="q"
                class="form-control form-control-lg"
-               placeholder="Поиск по названию, артикулу, штрихкоду..."
-               value="{{ search_q or '' }}" autocomplete="off">
-        <button type="submit" class="btn btn-primary">Найти</button>
+               placeholder="Название, артикул, штрихкод"
+               aria-label="Поиск по каталогу"
+               value="{{ search_q or '' }}" autocomplete="off" enterkeyhint="search">
+        <button type="submit" class="btn btn-primary catalog-search__go">
+            <i class="fas fa-search d-sm-none" aria-hidden="true"></i><span class="d-none d-sm-inline">Найти</span><span class="visually-hidden d-sm-none">Найти</span>
+        </button>
         {% if current_filters.q %}
             <a href="{{ clear_search_url }}"
                class="btn btn-outline-secondary"
-               title="Сбросить поиск">
-                <i class="fas fa-times"></i>
+               title="Сбросить поиск" aria-label="Сбросить поиск">
+                <i class="fas fa-times" aria-hidden="true"></i>
             </a>
         {% endif %}
     </div>
     <div id="suggestBox" class="suggest-box"></div>
 </form>
 
-{# ─── ФИЛЬТРЫ: вид, цвет, рост, страна. Можно выбрать несколько значений;
-       число — сколько позиций увидите, нажав. На телефоне панель сворачивается. ─── #}
-{% if has_filter_options %}
-<div class="catalog-filters mb-3">
-    <button class="btn btn-outline-secondary btn-sm d-md-none mb-2" type="button"
-            data-bs-toggle="collapse" data-bs-target="#catalogFilters"
-            aria-expanded="{{ 'true' if picked_filters else 'false' }}" aria-controls="catalogFilters">
-        <i class="fas fa-sliders me-1"></i>Фильтры{% if picked_filters %} ({{ picked_filters }}){% endif %}
-    </button>
-    <div id="catalogFilters" class="collapse d-md-block {% if picked_filters %}show{% endif %}">
-        {% for title, key, options in filter_groups %}
-        {% if options %}
-        <div class="filter-group">
-            <span class="filter-group__title">{{ title }}</span>
-            <div class="category-scroll">
-                {% for o in options %}
-                <a href="{{ o.url }}" class="category-btn {% if o.selected %}active{% endif %}"
-                   {% if o.selected %}aria-pressed="true"{% endif %}>
-                    {% if key == 'color' %}<span class="color-dot {% if not o.hex %}color-dot--none{% endif %}" {% if o.hex %}style="background: {{ o.hex }}"{% endif %}></span>{% endif %}
-                    {{ o.name }} <span class="category-btn__n">{{ o.count }}</span>
-                </a>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
-        {% endfor %}
-        {% if picked_filters %}
-        <a href="{{ clear_filters_url }}" class="small"><i class="fas fa-times me-1"></i>Сбросить фильтры</a>
-        {% endif %}
-    </div>
+{# выбранные фильтры видны и тогда, когда панель закрыта; крестик снимает один фильтр #}
+{% if picked_filters %}
+<div class="active-filters" aria-label="Выбранные фильтры">
+    {% for title, key, options in filter_groups %}{% for o in options %}{% if o.selected %}
+        <a href="{{ o.url }}" class="active-filter" title="Убрать фильтр «{{ o.name }}»">{{ title }}: {{ o.name }}<i class="fas fa-xmark ms-2" aria-hidden="true"></i></a>
+    {% endif %}{% endfor %}{% endfor %}
+    <a href="{{ clear_filters_url }}" class="active-filter active-filter--clear">Сбросить все</a>
 </div>
 {% endif %}
 
-{# ─── ФИЛЬТР ПО КОЛИЧЕСТВУ ─── #}
-<div class="category-scroll mb-2">
-    <a href="{{ level_url('available') }}"
-       class="category-btn {% if current_filters.level == 'available' %}active{% endif %}">
-        ✓ В наличии ({{ level_counts.available }})
-    </a>
-    <a href="{{ level_url('big') }}"
-       class="category-btn {% if current_filters.level == 'big' %}active{% endif %}">
-        🟢 Много ({{ level_counts.big }})
-    </a>
-    <a href="{{ level_url('medium') }}"
-       class="category-btn {% if current_filters.level == 'medium' %}active{% endif %}">
-        🟡 Средне ({{ level_counts.medium }})
-    </a>
-    <a href="{{ level_url('small') }}"
-       class="category-btn {% if current_filters.level == 'small' %}active{% endif %}">
-        🔴 Мало ({{ level_counts.small }})
-    </a>
-</div>
-
-{# ─── ВИД И СОРТИРОВКА ─── #}
+{# ─── ВИД, СОРТИРОВКА И КНОПКА «ФИЛЬТРЫ» (на телефоне) ─── #}
 <div class="catalog-toolbar">
+    {% if has_filter_options %}
+    <button class="btn btn-outline-secondary catalog-filters-btn d-lg-none" type="button"
+            data-bs-toggle="offcanvas" data-bs-target="#catalogFilters" aria-controls="catalogFilters">
+        <i class="fas fa-sliders me-1" aria-hidden="true"></i>Фильтры{% if picked_filters %} ({{ picked_filters }}){% endif %}
+    </button>
+    {% endif %}
     <div class="view-toggle" role="group" aria-label="Вид каталога">
         <a href="{{ view_url('cards') }}" title="Карточки с фотографиями"
            class="view-toggle__btn {% if view == 'cards' %}active{% endif %}">
-            <i class="fas fa-table-cells-large"></i><span>Карточки</span>
+            <i class="fas fa-table-cells-large" aria-hidden="true"></i><span>Карточки</span>
         </a>
         <a href="{{ view_url('list') }}" title="Компактный прайс-лист: одна строка — один товар"
            class="view-toggle__btn {% if view == 'list' %}active{% endif %}">
-            <i class="fas fa-list"></i><span>Прайс</span>
+            <i class="fas fa-list" aria-hidden="true"></i><span>Прайс</span>
         </a>
     </div>
     <label class="catalog-sort">
@@ -246,8 +274,7 @@
                         {% if photos %}
                             <img src="{{ photos[0] }}"
                                 alt="{{ product.name }}"
-                                class="product-card-v2__photo"
-                                loading="lazy">
+                                class="product-card-v2__photo" width="300" height="300" loading="lazy" decoding="async">
                         {% else %}
                             <div class="product-card-v2__placeholder">
                                 <i class="fas fa-seedling"></i>
@@ -263,7 +290,7 @@
                             <input type="hidden" name="quantity_stems" value="{{ min_stems }}">
                             <button type="submit"
                                     class="product-card-v2__plus"
-                                    title="В корзину: {{ min_packs }} упак.">
+                                    title="В корзину: {{ min_packs }} упак." aria-label="В корзину: {{ min_packs }} упак.">
                                 <i class="fas fa-plus"></i>
                             </button>
                         </form>
@@ -308,12 +335,7 @@
                     </div>
 
                     {% if public %}
-                        <div class="product-card-v2__price-locked">
-                            <i class="fas fa-lock me-1"></i>Цена после регистрации
-                        </div>
-                        <a href="/register" class="product-card-v2__out-btn product-card-v2__out-btn--cta text-decoration-none">
-                            Стать оптовиком
-                        </a>
+                        <a href="/register" class="product-card-v2__price-locked" title="Цены открываются после регистрации"><i class="fas fa-lock me-1" aria-hidden="true"></i>Цена после регистрации</a>
                     {% else %}
                     <div class="product-card-v2__price">
                         {% if my_discount %}
@@ -346,7 +368,7 @@
                                        min="{{ min_stems }}"
                                        max="{{ stems }}"
                                        step="{{ pack }}"
-                                       inputmode="numeric">
+                                       inputmode="numeric" aria-label="Количество, шт">
 
                                 <button type="button"
                                         class="qty-btn js-qty"
@@ -468,7 +490,7 @@
                                        min="{{ pack }}"
                                        max="{{ pack * preorder_max_packs }}"
                                        step="{{ pack }}"
-                                       inputmode="numeric">
+                                       inputmode="numeric" aria-label="Количество, шт">
 
                                 <button type="button"
                                         class="qty-btn js-qty"
@@ -488,6 +510,9 @@
         </div>
     </div>
 {% endif %}
+
+</div>{# /catalog-main #}
+</div>{# /catalog-layout #}
 
 <script nonce="{{ csp_nonce }}">
 /* ─── Поиск с автоподсказками ─── */

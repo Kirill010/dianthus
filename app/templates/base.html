@@ -14,12 +14,20 @@
     <meta property="og:title" content="{% block og_title %}Диантус · Оптовый магазин цветов{% endblock %}">
     <meta property="og:description" content="{% block og_description %}Оптовые поставки свежих цветов напрямую из Эквадора, Колумбии и Голландии. Только для юрлиц и ИП.{% endblock %}">
     <meta property="og:url" content="{{ config.APP_URL }}{{ request.url.path }}">
-    <meta property="og:image" content="{{ config.APP_URL }}/static/logo-full.png">
+    <meta property="og:image" content="{{ config.APP_URL }}/static/og-image.jpg">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
 
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png">
+    {# шрифты с нашего сервера: заранее просим главные начертания, чтобы текст не «прыгал» при загрузке #}
+    <link rel="preload" href="/static/fonts/montserrat-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/static/fonts/montserrat-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/static/fonts/playfair-display-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
     <link href="/static/vendor/bootstrap.min.css?v=7" rel="stylesheet">
     <link href="/static/vendor/fontawesome/css/all.min.css?v=7" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=12">
+    <link rel="stylesheet" href="/static/style.css?v=13">
     <link rel="manifest" href="/static/manifest.json">
     <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
     <meta name="theme-color" content="#4a6741">
@@ -28,6 +36,7 @@
     <meta name="apple-mobile-web-app-title" content="Диантус">
 </head>
 <body class="{% if user and not hide_bottom_nav %}has-bottom-nav{% endif %}">
+<a class="skip-link" href="#main">Перейти к содержимому</a>
 
 {% if active_supply and (user or not active_supply.is_service) %}
 <div class="supply-banner">
@@ -44,45 +53,48 @@
 </div>
 {% endif %}
 
+{% set path = request.url.path %}
 {% if user %}
-<header class="app-header">
+<header class="app-header app-header--auth">
     <div class="app-header__inner">
-        <a class="app-logo" href="/catalog">
-            <img src="/static/logo-icon.png" alt="Диантус" class="app-logo__icon">
-            <span>Диантус</span>
+        <a class="app-logo" href="/catalog" aria-label="Диантус — каталог">
+            <img src="/static/brand-mark.webp" alt="" width="46" height="46" class="app-logo__icon">
+            <span class="app-logo__word">Диантус</span>
         </a>
+        {# На компьютере меню — в шапке, с подписями; на телефоне его заменяет нижняя панель #}
+        <nav class="app-nav" aria-label="Основное меню">
+            <a href="/catalog" class="app-nav__link{% if path.startswith('/catalog') or path.startswith('/product') %} active{% endif %}">Каталог</a>
+            <a href="/orders" class="app-nav__link{% if path == '/orders' %} active{% endif %}">Заказы</a>
+            <a href="/preorders" class="app-nav__link{% if path == '/preorders' %} active{% endif %}">Предзаказы{% if preorder_count %}<span class="app-nav__count">{{ preorder_count }}</span>{% endif %}</a>
+            <a href="/deadlines" class="app-nav__link{% if path == '/deadlines' %} active{% endif %}">Сроки заказа</a>
+            <a href="/contacts" class="app-nav__link{% if path == '/contacts' %} active{% endif %}">Контакты</a>
+        </nav>
         <div class="app-header__right">
             {% if user.is_staff %}
-                <a href="/admin" class="app-header__icon" title="Админка"><i class="fas fa-cog"></i></a>
+                <a href="/admin" class="app-header__icon" title="Админка" aria-label="Админка"><i class="fas fa-cog" aria-hidden="true"></i></a>
             {% endif %}
-            <a href="/contacts" class="app-header__icon" title="Контакты"><i class="fas fa-phone"></i></a>
-            <a href="/notifications" class="app-header__icon" title="Уведомления">
-                <i class="fas fa-bell"></i>
+            <a href="/contacts" class="app-header__icon app-header__icon--phone" title="Контакты" aria-label="Контакты"><i class="fas fa-phone" aria-hidden="true"></i></a>
+            <a href="/notifications" class="app-header__icon" title="Уведомления" aria-label="Уведомления{% if unread_count %}: {{ unread_count }} новых{% endif %}">
+                <i class="fas fa-bell" aria-hidden="true"></i>
                 {% if unread_count %}<span class="app-header__badge">{{ unread_count }}</span>{% endif %}
             </a>
-            <a href="/cart" class="app-header__icon" title="Корзина">
-                <i class="fas fa-shopping-bag"></i>
+            <a href="/cart" class="app-header__icon" title="Корзина" aria-label="Корзина{% if cart_count %}: {{ cart_count }} шт{% endif %}">
+                <i class="fas fa-shopping-bag" aria-hidden="true"></i>
                 {% if cart_count %}<span class="app-header__badge">{{ cart_count }}</span>{% endif %}
             </a>
-            {% if preorder_count %}
-            <a href="/preorders" class="app-header__icon" title="Предзаказы">
-                <i class="fas fa-truck-fast"></i>
-                <span class="app-header__badge app-header__badge--preorder">{{ preorder_count }}</span>
+            <a href="/profile" class="app-header__icon app-header__profile" title="Профиль" aria-label="Профиль{% if user.company_name %}: {{ user.company_name }}{% endif %}">
+                <i class="fas fa-user" aria-hidden="true"></i>
+                {% if user.company_name %}<span class="app-header__profile-name">{{ user.company_name }}</span>{% endif %}
             </a>
-            {% endif %}
-            <a href="/profile" class="app-header__icon" title="Профиль"><i class="fas fa-user"></i></a>
         </div>
     </div>
-    {% if user.company_name %}
-    <div class="app-header__company">{{ user.company_name }}</div>
-    {% endif %}
 </header>
 {% else %}
 <header class="app-header app-header--public">
     <div class="app-header__inner">
-        <a class="app-logo" href="/">
-            <img src="/static/logo-icon.png" alt="Диантус — оптовый магазин цветов" class="app-logo__icon">
-            <span>Диантус</span>
+        <a class="app-logo" href="/" aria-label="Диантус — оптовый магазин цветов, главная">
+            <img src="/static/brand-mark.webp" alt="" width="46" height="46" class="app-logo__icon">
+            <span class="app-logo__word">Диантус</span>
         </a>
         <nav class="public-nav" aria-label="Основная навигация">
             <a href="/catalog" class="public-nav__link">Каталог</a>
@@ -94,7 +106,7 @@
 </header>
 {% endif %}
 
-<main class="container my-3 my-md-4">
+<main id="main" class="container my-3 my-md-4" tabindex="-1">
     {% if user and not user.is_staff and not user.consent_at and request.url.path != '/profile' %}
         <div class="alert alert-warning small">
             <i class="fas fa-user-shield me-1"></i>
@@ -149,18 +161,31 @@
 {% endif %}
 
 <footer class="app-footer">
-    <p class="mb-1">
+    <div class="app-footer__inner">
+        <div class="app-footer__brand">
+            <span class="app-footer__name">{{ config.SHOP_NAME }}</span>
+            <span class="app-footer__tagline">Оптовые поставки свежих цветов</span>
+            {% if config.SHOP_PHONE %}<a class="app-footer__phone" href="tel:{{ config.SHOP_PHONE|replace(' ', '')|replace('(', '')|replace(')', '')|replace('-', '') }}">{{ config.SHOP_PHONE }}</a>{% endif %}
+            {% if config.SHOP_WORKING_HOURS %}<span class="app-footer__hours">{{ config.SHOP_WORKING_HOURS }}</span>{% endif %}
+        </div>
+        <nav class="app-footer__col" aria-label="Покупателям">
+            <span class="app-footer__title">Покупателям</span>
+            <a href="/catalog">Каталог</a>
+            <a href="/deadlines">Сроки заказа</a>
+            <a href="/terms">Условия работы</a>
+            <a href="/contacts">Контакты</a>
+        </nav>
+        <nav class="app-footer__col" aria-label="Документы">
+            <span class="app-footer__title">Документы</span>
+            <a href="/privacy">Политика конфиденциальности</a>
+            <a href="/consent">Согласие на обработку данных</a>
+            <a href="/marketing-consent">Согласие на рекламу</a>
+        </nav>
+    </div>
+    <p class="app-footer__legal">
         © {{ current_year }} {{ config.SHOP_NAME }}
-        {% if config.SHOP_INN %}· ИНН {{ config.SHOP_INN }}{% endif %}
-        {% if config.SHOP_OGRN %}· ОГРН {{ config.SHOP_OGRN }}{% endif %}
-        · Оптовые поставки цветов
-    </p>
-    <p class="mb-0">
-        <a href="/contacts">Контакты</a>
-        · <a href="/deadlines">Сроки заказа</a>
-        · <a href="/terms">Условия работы</a>
-        · <a href="/privacy">Конфиденциальность</a>
-        · <a href="/consent">Согласие на обработку данных</a>
+        {% if shop_inn %}· ИНН {{ shop_inn }}{% endif %}
+        {% if shop_ogrn %}· ОГРН {{ shop_ogrn }}{% endif %}
     </p>
 </footer>
 
@@ -266,7 +291,7 @@
         if (!img || img.tagName !== 'IMG') return;
         if (img.dataset.fallbackApplied === '1') return;
         img.dataset.fallbackApplied = '1';
-        img.src = '/static/logo-icon.png';
+        img.src = '/static/brand-mark.webp';
         img.style.opacity = '0.35';
         img.style.objectFit = 'contain';
         img.style.padding = '22%';

@@ -55,7 +55,7 @@ def seeded(test_db):
     """Один активный товар с ценой + одобренный клиент."""
     product = Product(
         name="Роза Публичная", package_size=25, min_quantity=1,
-        image_url="/static/logo-icon.png",
+        image_url="/static/brand-mark.webp",
     )
     set_taxonomy(test_db, product, kind="Роза", height=60, country="Эквадор")
     supply = Supply(country="Эквадор", status="Разгружен")

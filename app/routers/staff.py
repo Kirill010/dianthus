@@ -26,9 +26,10 @@ from ..security import check_csrf, reset_login_failures
 from ..services import legal, preorder_rules
 from ..services.audit import log_action
 from ..services.passwords import hash_password
-from ..services.site_settings import EDITABLE, get_setting, set_setting
+from ..services.site_settings import DEFAULT_PROCESSORS, EDITABLE, get_setting, set_setting
 from ..templating import render
 from ..timeutils import shop_tz
+from ..validators import validate_email, validate_inn
 from ..web import safe_back
 
 logger = logging.getLogger(__name__)
@@ -240,11 +241,16 @@ def settings_page(request: Request, db: Session = Depends(get_db),
                "default": default} for k, (label, default, hint) in EDITABLE.items()]
     rules = preorder_rules.lead_days(db)
     return render(request, "admin_settings.html", db, user=admin, fields=fields,
+                  by_key={f["key"]: f for f in fields}, default_processors=DEFAULT_PROCESSORS,
+                  missing=legal.missing_requisites(db),
                   rules_text=preorder_rules.describe(rules), errors=request.session.pop("settings_errors", None))
 
 
 @router.post("/settings")
 def settings_save(request: Request, payment_terms: str = Form(""), preorder_lead_days: str = Form(""),
+                  shop_inn: str = Form(""), shop_ogrn: str = Form(""),
+                  shop_legal_address: str = Form(""), shop_email: str = Form(""),
+                  shop_pd_responsible: str = Form(""), pd_processors: str = Form(""),
                   db: Session = Depends(get_db), admin=Depends(require_admin),
                   _csrf: None = Depends(check_csrf)):
     errors = []
@@ -257,11 +263,34 @@ def settings_save(request: Request, payment_terms: str = Form(""), preorder_lead
         errors.append("Сроки заказа: нужна хотя бы одна строка вида «Эквадор=10»")
     elif len(rules) < len(parts):
         errors.append("Часть строк в сроках заказа не распознана — формат «Страна=дней», через запятую")
+
+    # Реквизиты необязательны (пусто = взять из .env), но если внесены — должны быть правдоподобны:
+    # они печатаются в политике, согласии и счетах.
+    shop_inn = "".join(shop_inn.split())
+    shop_ogrn = "".join(shop_ogrn.split())
+    shop_legal_address = " ".join(shop_legal_address.split())[:300]
+    shop_email = shop_email.strip().lower()
+    shop_pd_responsible = " ".join(shop_pd_responsible.split())[:200]
+    pd_processors = pd_processors.replace("\r\n", "\n").strip()[:3000]
+    if shop_inn:
+        msg = validate_inn(shop_inn)
+        if msg:
+            errors.append(msg)
+    if shop_ogrn and not (shop_ogrn.isdigit() and len(shop_ogrn) in (13, 15)):
+        errors.append("ОГРН: 13 цифр для организации или 15 для ИП (ОГРНИП)")
+    if shop_email:
+        msg = validate_email(shop_email)
+        if msg:
+            errors.append(f"Почта для обращений: {msg[0].lower()}{msg[1:]}")
     if errors:
         request.session["settings_errors"] = errors
         return RedirectResponse(url="/admin/settings", status_code=303)
     set_setting(db, "payment_terms", payment_terms, admin)
     set_setting(db, "preorder_lead_days", ", ".join(f"{n}={d}" for n, d in rules.items()), admin)
+    for key, value in (("shop_inn", shop_inn), ("shop_ogrn", shop_ogrn),
+                       ("shop_legal_address", shop_legal_address), ("shop_email", shop_email),
+                       ("shop_pd_responsible", shop_pd_responsible), ("pd_processors", pd_processors)):
+        set_setting(db, key, value, admin)
     log_action(db, request, admin, "settings", "settings", None, "Изменены настройки магазина")
     request.session["flash"] = "Настройки сохранены"
     return RedirectResponse(url="/admin/settings", status_code=303)

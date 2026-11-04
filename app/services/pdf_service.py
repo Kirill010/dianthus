@@ -13,14 +13,15 @@ logger = logging.getLogger(__name__)
 def shop_info_for_invoice(db) -> dict:
     """Данные поставщика для счёта: реквизиты из настроек + условия оплаты из админки."""
     from ..config import config
+    from .legal import legal_address
     from .site_settings import get_setting
     return {
         "name": config.SHOP_NAME,
         "phone": config.SHOP_PHONE,
-        "address": config.SHOP_LEGAL_ADDRESS or config.SHOP_ADDRESS,
+        "address": legal_address(db),
         "requisites": config.SHOP_REQUISITES,
-        "inn": config.SHOP_INN,
-        "ogrn": config.SHOP_OGRN,
+        "inn": get_setting(db, "shop_inn"),
+        "ogrn": get_setting(db, "shop_ogrn"),
         "payment_terms": get_setting(db, "payment_terms"),
         "vat_note": config.SHOP_VAT_NOTE,
     }

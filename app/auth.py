@@ -56,6 +56,8 @@ async def register(
     city: str = Form(""),
     address: str = Form(""),
     consent: str = Form(""),
+    privacy_ack: str = Form(""),
+    terms_accept: str = Form(""),
     marketing_consent: str = Form(""),
     db: Session = Depends(get_db),
 ):
@@ -82,10 +84,16 @@ async def register(
         if msg:
             errors.append(msg)
 
-    # 152-ФЗ: персональные данные обрабатываются только с согласием субъекта.
-    # Согласие на рекламу — отдельное и необязательное (ст. 18 закона «О рекламе»).
+    # 152-ФЗ: персональные данные обрабатываются только с согласием субъекта, а согласие
+    # оформляется отдельно от других документов (с 1 сентября 2025 года). Поэтому у каждого
+    # документа своя отметка: согласие на обработку, политика, условия работы. Согласие на
+    # рекламу — отдельное и необязательное (ст. 18 закона «О рекламе»).
     if not consent:
         errors.append("Нужно согласие на обработку персональных данных")
+    if not privacy_ack:
+        errors.append("Подтвердите, что ознакомились с политикой обработки персональных данных")
+    if not terms_accept:
+        errors.append("Нужно принять условия работы")
 
     if not errors and db.query(models.User).filter(
             models.User.email == email).first():
@@ -96,7 +104,11 @@ async def register(
         request.session["register_data"] = {
             "email": email, "full_name": full_name,
             "phone": phone, "company_name": company_name,
-            "inn": inn, "city": city, "address": address, "consent": bool(consent),
+            "inn": inn, "city": city, "address": address,
+            # то, что человек сам отметил, при ошибке в другом поле не теряется;
+            # заранее (при первом показе формы) ничего не отмечено
+            "consent": bool(consent), "privacy_ack": bool(privacy_ack),
+            "terms_accept": bool(terms_accept),
             "marketing_consent": bool(marketing_consent),
         }
         return RedirectResponse(url="/register", status_code=303)
@@ -119,6 +131,10 @@ async def register(
         # Фиксируем согласия: дата, версия текста, IP — доказательство на случай
         # проверки. Рекламное согласие записывается только если клиент его отметил.
         legal.record_consent(db, user, "pd", True, request,
+                             source="registration", commit=False)
+        legal.record_consent(db, user, "privacy", True, request,
+                             source="registration", commit=False)
+        legal.record_consent(db, user, "terms", True, request,
                              source="registration", commit=False)
         if marketing_consent:
             legal.record_consent(db, user, "marketing", True, request,

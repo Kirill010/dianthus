@@ -10,7 +10,7 @@ from ..config import config
 from ..database import get_db
 from ..deps import get_current_user
 from ..security import check_csrf
-from ..services import totp
+from ..services import legal, totp
 from ..templating import render
 from ..web import safe_back
 from ..validators import (validate_address, validate_company_name,
@@ -61,6 +61,7 @@ def profile_page(request: Request, db: Session = Depends(get_db)):
 
     return render(request, "profile.html", db,
                   user=user,
+                  consents=legal.consent_state(db, user),
                   orders_count=orders_count,
                   total_sum=total_sum,
                   delete_requested=delete_requested,

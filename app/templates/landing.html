@@ -7,37 +7,42 @@
 {# ═══════════ HERO ═══════════ #}
 <section class="landing-hero">
     <div class="landing-hero__inner">
-        <span class="landing-hero__badge">
-            <i class="fas fa-briefcase me-1"></i>Оптовая торговля · только юрлица и ИП
-        </span>
-        <h1 class="landing-hero__title">Свежие цветы оптом — напрямую от производителя</h1>
-        <p class="landing-hero__lead">
-            Розы, гвоздики, хризантемы и тюльпаны из Эквадора, Колумбии и Голландии.
-            Цены импортёра, стабильное качество и поставки каждую неделю — для цветочных
-            магазинов, салонов и флористов.
-        </p>
-        <div class="landing-hero__actions">
-            <a href="/register" class="btn btn-primary btn-lg landing-hero__cta">
-                <i class="fas fa-user-plus me-2"></i>Стать оптовиком
-            </a>
-            <a href="/catalog" class="btn btn-outline-primary btn-lg landing-hero__cta2">
-                Смотреть ассортимент
-            </a>
+        <div class="landing-hero__copy">
+            <span class="landing-hero__badge">
+                <i class="fas fa-briefcase me-1" aria-hidden="true"></i>Оптовая торговля · только юрлица и ИП
+            </span>
+            <h1 class="landing-hero__title">Свежие цветы оптом — напрямую от производителя</h1>
+            <p class="landing-hero__lead">
+                Розы, гвоздики, хризантемы и тюльпаны из Эквадора, Колумбии и Голландии.
+                Цены импортёра, стабильное качество и поставки каждую неделю — для цветочных
+                магазинов, салонов и флористов.
+            </p>
+            <div class="landing-hero__actions">
+                <a href="/register" class="btn btn-primary btn-lg landing-hero__cta">
+                    <i class="fas fa-user-plus me-2" aria-hidden="true"></i>Стать оптовиком
+                </a>
+                <a href="/catalog" class="btn btn-outline-primary btn-lg landing-hero__cta2">
+                    Смотреть ассортимент
+                </a>
+            </div>
+            <ul class="landing-stats">
+                <li class="landing-stats__item">
+                    <span class="landing-stats__value">3</span>
+                    <span class="landing-stats__label">страны-поставщика</span>
+                </li>
+                <li class="landing-stats__item">
+                    <span class="landing-stats__value">{{ in_stock_count }}</span>
+                    <span class="landing-stats__label">позиций в наличии</span>
+                </li>
+                <li class="landing-stats__item">
+                    <span class="landing-stats__value">24/7</span>
+                    <span class="landing-stats__label">приём заказов онлайн</span>
+                </li>
+            </ul>
         </div>
-        <ul class="landing-stats">
-            <li class="landing-stats__item">
-                <span class="landing-stats__value">3</span>
-                <span class="landing-stats__label">страны-поставщика</span>
-            </li>
-            <li class="landing-stats__item">
-                <span class="landing-stats__value">{{ in_stock_count }}</span>
-                <span class="landing-stats__label">позиций в наличии</span>
-            </li>
-            <li class="landing-stats__item">
-                <span class="landing-stats__value">24/7</span>
-                <span class="landing-stats__label">приём заказов онлайн</span>
-            </li>
-        </ul>
+        <div class="landing-hero__art" aria-hidden="true">
+            <img src="/static/emblem.webp" alt="" width="520" height="520" fetchpriority="high" decoding="async">
+        </div>
     </div>
 </section>
 
@@ -115,7 +120,7 @@
         {% for item in preview_items %}
             {% set product = item.product %}
             <a href="/product/{{ item.id }}" class="landing-grid__card">
-                <img src="{{ product.all_photos[0] }}" alt="{{ product.name }} — оптом" class="landing-grid__photo" loading="lazy">
+                <img src="{{ product.all_photos[0] }}" alt="{{ product.name }} — оптом" class="landing-grid__photo" width="300" height="300" loading="lazy" decoding="async">
                 <span class="landing-grid__name">{{ product.name }}</span>
             </a>
         {% endfor %}
@@ -186,7 +191,7 @@
     "@type": "Organization",
     "name": {{ config.SHOP_NAME|tojson }},
     "url": {{ config.APP_URL|tojson }},
-    "logo": {{ (config.APP_URL + "/static/logo-full.png")|tojson }},
+    "logo": {{ (config.APP_URL + "/static/icons/icon-512.png")|tojson }},
     "description": "Оптовые поставки свежих цветов из Эквадора, Колумбии и Голландии",
     {% if config.SHOP_PHONE %}"telephone": {{ config.SHOP_PHONE|tojson }},{% endif %}
     {% if config.SHOP_ADDRESS %}"address": {{ config.SHOP_ADDRESS|tojson }},{% endif %}

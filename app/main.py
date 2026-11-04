@@ -177,7 +177,24 @@ if config.ENV == "prod":
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 (STATIC_DIR / "uploads").mkdir(parents=True, exist_ok=True)
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+class CachedStaticFiles(StaticFiles):
+    """Статика с заголовком Cache-Control: шрифты и картинки браузер хранит неделю (повторные
+    заходы не качают их заново), стили и скрипты — час, а проверяет по ETag. После смены
+    ?v=… в адресе стили подтягиваются сразу."""
+
+    LONG = (".webp", ".png", ".jpg", ".jpeg", ".ico", ".woff2", ".svg")
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        if response.status_code == 200:
+            long = path.lower().endswith(self.LONG)
+            response.headers.setdefault("Cache-Control", "public, max-age=604800" if long else "public, max-age=3600")
+        return response
+
+
+app.mount("/static", CachedStaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # ── РОУТЕРЫ ──
 app.include_router(auth_router)

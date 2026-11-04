@@ -11,13 +11,14 @@ from fastapi import Request
 from fastapi.templating import Jinja2Templates
 from jinja2 import FileSystemBytecodeCache
 from sqlalchemy import case, nulls_last
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 
 from .config import config
 from .deps import get_current_user
 from .security import ensure_csrf_token
 from .services.preorder_service import preorder_count_db
 from .services.pricing import apply_discount
+from .services.site_settings import get_settings
 from .timeutils import DATETIME_FMT, fmt_local, fmt_when, shop_tz
 from . import models
 
@@ -147,7 +148,6 @@ def render(request: Request, template: str, db: Session, **context):
     today = datetime.combine(datetime.now(shop_tz()).date(), datetime.min.time())
     active_supply = (
         db.query(models.Supply)
-        .options(selectinload(models.Supply.items))
         .filter(
             models.Supply.status.in_(["Ожидается", "В пути"]),
             models.Supply.is_service.is_(False),
@@ -168,9 +168,14 @@ def render(request: Request, template: str, db: Session, **context):
             .count()
         )
 
+    # реквизиты для подвала: внесённые в админке главнее .env
+    shop = get_settings(db, ("shop_inn", "shop_ogrn"))
+
     context.update({
         "user": user,
         "flash": flash,
+        "shop_inn": shop["shop_inn"],
+        "shop_ogrn": shop["shop_ogrn"],
         "cart_count": cart_count,
         "preorder_count": preorder_total,
         "active_supply": active_supply,

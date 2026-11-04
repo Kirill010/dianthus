@@ -54,7 +54,7 @@
     {% if photos|length > 1 %}
         <div class="product-card__dots d-flex justify-content-center gap-2 mt-3 mb-2">
             {% for url in photos %}
-                <span class="product-card__dot {% if loop.first %}active{% endif %}"
+                <span class="product-card__dot {% if loop.first %}active{% endif %}" aria-hidden="true"
                     data-index="{{ loop.index0 }}"
                     style="width:10px;height:10px;border-radius:50%;
                             background:#ccc;cursor:pointer;display:inline-block;"></span>

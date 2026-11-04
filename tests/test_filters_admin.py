@@ -221,7 +221,7 @@ def test_admin_product_table_shows_the_new_columns(web, mem_db):
 def register_data(**over):
     data = {"email": "new@test.ru", "password": "Secret123", "full_name": "Иван Иванов",
             "phone": "+79001234567", "company_name": "ООО Новая", "inn": "7701234567",
-            "city": "Москва", "consent": "1"}
+            "city": "Москва", "consent": "1", "privacy_ack": "1", "terms_accept": "1"}
     data.update(over)
     return data
 

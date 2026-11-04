@@ -36,6 +36,44 @@
 
 
 /* =========================================================
+   00. ШРИФТЫ — свои, с нашего сервера (SIL Open Font License, тексты лицензий лежат рядом).
+   Раньше в стилях были названия Montserrat и Playfair Display, но самих шрифтов на сайте не
+   было: у каждого посетителя вместо них подставлялись шрифты его устройства, и сайт выглядел
+   по-разному на телефоне, планшете и компьютере. Один файл на начертание — «вариативный»,
+   сразу все насыщенности; подгружаются только нужные наборы знаков (кириллица / латиница).
+   ========================================================= */
+
+@font-face {
+    font-family: 'Montserrat';
+    font-style: normal; font-weight: 100 900; font-display: swap;
+    src: url('/static/fonts/montserrat-cyrillic-wght-normal.woff2') format('woff2-variations'),
+         url('/static/fonts/montserrat-cyrillic-wght-normal.woff2') format('woff2');
+    unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+    font-family: 'Montserrat';
+    font-style: normal; font-weight: 100 900; font-display: swap;
+    src: url('/static/fonts/montserrat-latin-wght-normal.woff2') format('woff2-variations'),
+         url('/static/fonts/montserrat-latin-wght-normal.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: 'Playfair Display';
+    font-style: normal; font-weight: 400 900; font-display: swap;
+    src: url('/static/fonts/playfair-display-cyrillic-wght-normal.woff2') format('woff2-variations'),
+         url('/static/fonts/playfair-display-cyrillic-wght-normal.woff2') format('woff2');
+    unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+    font-family: 'Playfair Display';
+    font-style: normal; font-weight: 400 900; font-display: swap;
+    src: url('/static/fonts/playfair-display-latin-wght-normal.woff2') format('woff2-variations'),
+         url('/static/fonts/playfair-display-latin-wght-normal.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+
+/* =========================================================
    01. ПЕРЕМЕННЫЕ
    ========================================================= */
 
@@ -2264,3 +2302,351 @@ a.landing-contacts__value:hover {
 .todo-tile span { font-size: .8rem; color: #6d675c; }
 .todo-tile--hot { background: #fff4e5; border-color: #f0b46c; }
 .todo-tile--hot strong { color: #b4571b; }
+
+/* ── Согласия в формах (регистрация, профиль): у каждого документа своя крупная отметка ── */
+.consent-box {
+    min-width: 0; margin: 0; padding: 16px 16px 12px;
+    background: var(--bg-soft); border: 1px solid var(--border); border-radius: var(--radius-card);
+}
+.consent-box__title {
+    float: none; width: auto; margin: 0 0 4px; padding: 0;
+    font-size: 1.05rem; font-weight: 700; color: var(--primary-dark);
+}
+.consent-box__lead, .consent-box__foot { margin: 0; font-size: .88rem; line-height: 1.5; color: var(--text-muted); }
+.consent-box__lead { margin-bottom: 8px; }
+.consent-box__foot { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-soft); font-size: .82rem; }
+.consent-check {
+    display: flex; align-items: flex-start; gap: 12px;
+    margin: 0; padding: 12px 0 12px 0; border-top: 1px solid var(--border-soft);
+}
+.consent-check .form-check-input {
+    flex: 0 0 26px; float: none; width: 26px; height: 26px; margin: 0;
+    border: 2px solid var(--primary); cursor: pointer;
+}
+.consent-check .form-check-label { font-size: .95rem; line-height: 1.45; color: var(--text); cursor: pointer; }
+.consent-check .form-check-label a { font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+.consent-req { color: #b3261e; font-weight: 700; }
+.consent-opt { display: block; margin-top: 2px; font-size: .82rem; color: var(--text-muted); }
+.consent-check--optional { border-bottom: 0; }
+.consent-status li {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px;
+    padding: 8px 0; border-top: 1px solid var(--border-soft); font-size: .92rem;
+}
+.consent-status li:first-child { border-top: 0; padding-top: 0; }
+.consent-status__name { flex: 1 1 15rem; font-weight: 600; }
+.consent-status__ok { color: #1f6b43; }
+.consent-status__no { color: #b3261e; font-weight: 600; }
+
+
+/* =========================================================
+   32. РЕДАКЦИЯ НОЯБРЯ 2026 — доступность, шапка с меню, подвал, компьютер и телефон.
+   Правила ниже переопределяют старые с тем же селектором (они идут позже в файле).
+   ========================================================= */
+
+/* — пропуск к содержимому для клавиатуры и экранных читалок — */
+.skip-link {
+    position: absolute; left: 12px; top: -72px; z-index: 2000;
+    padding: 12px 18px; border-radius: 0 0 12px 12px;
+    background: var(--primary-dark); color: #fff; font-weight: 600; text-decoration: none;
+    transition: top .15s ease;
+}
+.skip-link:focus { top: 0; color: #fff; }
+main:focus { outline: none; }
+
+/* — видимый фокус для тех, кто ходит по сайту клавишей Tab — */
+:focus-visible { outline: 3px solid var(--primary-dark); outline-offset: 2px; border-radius: 6px; }
+.btn:focus-visible, .category-btn:focus-visible, .view-toggle__btn:focus-visible,
+.app-header__icon:focus-visible, .app-nav__link:focus-visible { outline-offset: 3px; }
+.landing-cta :focus-visible, .supply-banner :focus-visible { outline-color: #fff; }
+.form-check-input:focus-visible { outline-offset: 3px; }
+
+/* — меньше движения тем, кто его не любит — */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important; scroll-behavior: auto !important;
+    }
+}
+
+/* — шапка — */
+.app-header { padding: 10px 16px; }
+.app-header__inner { gap: 12px; }
+.app-logo { gap: 10px; flex-shrink: 0; }
+.app-logo__icon { width: 46px; height: 46px; object-fit: contain; filter: none; }
+.app-logo__word { font-size: 1.55rem; line-height: 1; }
+.app-header__icon { width: 44px; height: 44px; }
+.app-header__badge { font-size: .72rem; min-width: 20px; text-align: center; line-height: 1.25; }
+.app-nav { display: none; }
+.app-header__profile-name { display: none; }
+
+@media (min-width: 992px) {
+    .app-header--auth { position: sticky; top: 0; z-index: 120; }
+    .app-nav { display: flex; align-items: center; gap: 4px; margin: 0 auto 0 28px; }
+    .app-nav__link {
+        display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px;
+        border-radius: var(--radius-pill); color: var(--text); font-weight: 600; font-size: .95rem;
+        text-decoration: none; transition: background .15s ease, color .15s ease;
+    }
+    .app-nav__link:hover { background: var(--primary-mist); color: var(--primary-dark); }
+    .app-nav__link.active { background: var(--primary-mist); color: var(--primary-dark); box-shadow: inset 0 -3px 0 var(--primary); }
+    .app-nav__count {
+        min-width: 22px; padding: 1px 7px; border-radius: 10px; background: var(--accent); color: #fff;
+        font-size: .75rem; font-weight: 700; text-align: center;
+    }
+    .app-header__icon--phone { display: none; }
+    .app-header__profile { width: auto; max-width: 280px; padding: 0 16px 0 14px; gap: 8px; border-radius: var(--radius-pill); }
+    .app-header__profile-name {
+        display: inline-block; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        font-size: .9rem; font-weight: 600; color: var(--primary-dark);
+    }
+    .bottom-nav { display: none; }
+    .has-bottom-nav main { padding-bottom: 0; }
+}
+
+/* — баннер «машина в пути» компактнее на телефоне — */
+@media (max-width: 575.98px) {
+    .supply-banner { padding: 8px 0; font-size: 13px; }
+    .supply-banner__icon { display: none; }
+}
+
+/* — нижняя панель на телефоне: крупнее подписи и зоны нажатия — */
+.bottom-nav__item { font-size: .75rem; min-width: 56px; min-height: 52px; justify-content: center; color: var(--text-muted); }
+.bottom-nav__item.active { color: var(--primary-dark); font-weight: 700; }
+
+/* — подвал — */
+.app-footer {
+    padding: 32px 16px 20px; margin-top: 3rem; text-align: left;
+    font-size: .92rem; font-style: normal; letter-spacing: 0; color: var(--text-muted);
+}
+.app-footer::before { display: none; }
+.app-footer__inner {
+    display: grid; gap: 20px; grid-template-columns: 1fr; max-width: 1140px; margin: 0 auto;
+}
+@media (min-width: 768px) { .app-footer__inner { grid-template-columns: 1.5fr 1fr 1fr; gap: 40px; } }
+.app-footer__brand, .app-footer__col { display: flex; flex-direction: column; }
+.app-footer__name {
+    font-family: 'Playfair Display', Georgia, serif; font-size: 1.25rem; font-weight: 700; color: var(--primary-dark);
+}
+.app-footer__tagline { margin-bottom: 6px; }
+.app-footer__phone, .app-footer__hours { color: var(--text); }
+.app-footer__phone { display: inline-flex; align-items: center; min-height: 44px; font-weight: 700; text-decoration: none; }
+.app-footer__title {
+    margin-bottom: 2px; font-size: .78rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text);
+}
+.app-footer__col a {
+    display: flex; align-items: center; min-height: 44px; color: var(--primary-dark); text-decoration: none;
+}
+.app-footer__col a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.app-footer__legal {
+    max-width: 1140px; margin: 16px auto 0; padding-top: 14px; border-top: 1px solid var(--border-soft);
+    font-size: .82rem; text-align: left;
+}
+@media (pointer: fine) { .app-footer__col a { min-height: 34px; } }
+
+/* — читаемость: мелкие подписи не мельче 13 px, серый текст не бледнее нормы контраста — */
+:root { --text-muted: #5f5a50; --text-soft: #6b665b; }
+.form-text, .small, small { font-size: .875em; }
+
+/* — главная: светлая «витрина» с эмблемой вместо сплошного зелёного блока — */
+.landing-hero {
+    background:
+        radial-gradient(circle at 92% 8%, rgba(200, 138, 146, .16) 0, transparent 38%),
+        radial-gradient(circle at 6% 96%, rgba(139, 163, 140, .22) 0, transparent 42%),
+        linear-gradient(135deg, #fffdf8 0%, #f6efe0 55%, #e9efe2 100%);
+    color: var(--text);
+    border: 1px solid var(--border-soft); border-radius: 28px; box-shadow: var(--shadow-md);
+    padding: 32px 20px 30px; overflow: hidden;
+}
+.landing-hero__inner { max-width: none; display: grid; gap: 18px; align-items: center; text-align: center; }
+.landing-hero__art { order: -1; display: flex; justify-content: center; }
+.landing-hero__art img { width: min(58vw, 220px); height: auto; filter: drop-shadow(0 10px 18px rgba(53, 73, 47, .18)); }
+.landing-hero__badge { background: var(--primary-mist); border: 1px solid var(--primary-pale); color: var(--primary-dark); font-weight: 600; }
+.landing-hero__title { color: var(--primary-dark); }
+.landing-hero__lead { color: var(--text-muted); opacity: 1; }
+.landing-hero__cta, .landing-hero__cta:hover { background: linear-gradient(180deg, var(--primary), var(--primary-dark)); border: none; color: #fff; }
+.landing-hero__cta2 { border: 2px solid var(--primary); color: var(--primary-dark); }
+.landing-hero__cta2:hover { background: var(--primary-mist); border-color: var(--primary); color: var(--primary-dark); }
+.landing-stats__value { color: var(--primary-dark); }
+.landing-stats__label { color: var(--text-muted); opacity: 1; }
+@media (min-width: 992px) {
+    .landing-hero { padding: 52px 52px 44px; }
+    .landing-hero__inner { grid-template-columns: 1.15fr .85fr; gap: 32px; text-align: left; }
+    .landing-hero__art { order: 0; }
+    .landing-hero__art img { width: min(100%, 440px); }
+    .landing-hero__lead { margin-left: 0; }
+    .landing-hero__actions, .landing-stats { justify-content: flex-start; }
+}
+
+/* — вход — */
+.login-emblem { display: block; width: 150px; height: auto; margin: 0 auto 8px; filter: drop-shadow(0 8px 14px rgba(53, 73, 47, .16)); }
+.login-tagline { font-family: 'Playfair Display', Georgia, serif; font-style: italic; letter-spacing: .5px; color: var(--text-muted); }
+.link-block { display: inline-block; padding: 10px 6px; }
+
+
+/* =========================================================
+   33. КАТАЛОГ — фильтры слева на компьютере и выезжающая панель на телефоне, карточки покрупнее
+   ========================================================= */
+
+.catalog-main { min-width: 0; }
+.catalog-aside { --bs-offcanvas-width: min(88vw, 360px); --bs-offcanvas-bg: var(--bg-card); }
+.catalog-aside__head { display: none; }
+
+@media (min-width: 992px) {
+    .catalog-layout { display: grid; grid-template-columns: 276px minmax(0, 1fr); gap: 28px; align-items: start; }
+    .catalog-layout--wide { display: block; }
+    .catalog-aside { position: sticky; top: 92px; max-height: calc(100vh - 112px); overflow-y: auto; scrollbar-width: thin; }
+    .catalog-aside__card {
+        width: 100%; padding: 16px 14px 8px;
+        background: var(--bg-card); border: 1px solid var(--border-soft); border-radius: var(--radius-card); box-shadow: var(--shadow-sm);
+    }
+    .catalog-aside__head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 6px; padding: 0 2px; }
+    .catalog-aside__title { margin: 0; font-size: 1.1rem; }
+    .catalog-aside__reset { font-size: .85rem; }
+}
+
+/* группы фильтров: сворачиваются нажатием на заголовок */
+.catalog-aside .filter-group { display: block; border-top: 1px solid var(--border-soft); padding: 2px 0 6px; }
+.catalog-aside .filter-group:first-of-type { border-top: 0; }
+.catalog-aside .filter-group__title {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    min-height: 44px; margin: 0; padding: 0 2px; cursor: pointer; list-style: none; flex: none;
+    font-size: .95rem; font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--primary-dark);
+}
+.catalog-aside .filter-group__title::-webkit-details-marker { display: none; }
+.catalog-aside .filter-group__title::after {
+    content: ''; width: 8px; height: 8px; margin-right: 4px; border: solid var(--text-muted); border-width: 0 2px 2px 0;
+    transform: rotate(45deg); transition: transform .15s ease;
+}
+.catalog-aside .filter-group[open] > .filter-group__title::after { transform: rotate(-135deg); }
+.filter-group__picked {
+    min-width: 20px; padding: 0 6px; margin-left: auto; border-radius: 10px;
+    background: var(--primary); color: #fff; font-size: .75rem; line-height: 20px; text-align: center;
+}
+.catalog-aside .filter-group__list {
+    display: flex; flex-direction: column; flex-wrap: nowrap; gap: 2px; margin: 0; padding: 0 0 4px;
+    max-height: 288px; overflow: visible auto; scrollbar-width: thin;
+}
+.catalog-aside .category-btn {
+    display: flex; align-items: center; justify-content: flex-start; gap: 8px; min-height: 40px; padding: 6px 10px;
+    border: 0; border-radius: 10px; background: transparent; color: var(--text);
+    font-size: .92rem; font-weight: 500; white-space: normal;
+}
+.catalog-aside .category-btn:hover { background: var(--primary-mist); color: var(--primary-dark); }
+.catalog-aside .category-btn.active {
+    background: var(--primary-mist); color: var(--primary-dark); font-weight: 700; box-shadow: inset 3px 0 0 var(--primary);
+}
+.catalog-aside .category-btn__n {
+    margin: 0 0 0 auto; padding: 1px 8px; border-radius: 10px; opacity: 1;
+    background: var(--bg-warm); color: var(--text-muted); font-size: .78rem; font-weight: 600;
+}
+.catalog-aside .category-btn.active .category-btn__n { background: var(--primary); color: #fff; }
+.catalog-aside .color-dot { flex: 0 0 14px; width: 14px; height: 14px; margin: 0; }
+.level-dot { flex: 0 0 12px; width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(0, 0, 0, .2); }
+.level-dot--all { background: var(--primary); }
+.level-dot--big { background: #2fb86b; }
+.level-dot--medium { background: #f2c230; }
+.level-dot--small { background: #e5483d; }
+
+/* выбранные фильтры — видны всегда, снимаются одним нажатием */
+.active-filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+.active-filter {
+    display: inline-flex; align-items: center; min-height: 36px; padding: 4px 14px; border-radius: var(--radius-pill);
+    background: var(--primary-mist); border: 1px solid var(--primary-pale); color: var(--primary-dark);
+    font-size: .85rem; font-weight: 600; text-decoration: none;
+}
+.active-filter:hover { background: var(--primary-pale); color: var(--primary-dark); }
+.active-filter--clear { background: transparent; border-style: dashed; color: var(--text-muted); }
+
+/* поиск и панель инструментов */
+.catalog-search .input-group { flex-wrap: nowrap; }
+.catalog-search .form-control-lg { min-height: 50px; font-size: 1rem; }
+.catalog-search .btn { min-height: 50px; }
+.catalog-toolbar { gap: 10px; margin: 0 0 4px; }
+.catalog-filters-btn { min-height: 44px; padding: 0 16px; border-radius: var(--radius-input); font-weight: 600; }
+.view-toggle__btn { min-height: 44px; padding: 0 16px; font-size: .9rem; }
+.catalog-sort { margin-left: auto; }
+.catalog-sort select { min-height: 44px; font-size: .9rem; }
+@media (max-width: 419.98px) {
+    .view-toggle__btn span { display: none; }
+    .view-toggle__btn { padding: 0 14px; }
+}
+
+/* карточки: крупнее зоны нажатия, читаемые подписи */
+.product-card-v2__plus { width: 40px; height: 40px; }
+.qty-row { height: 44px; }
+.qty-btn { width: 42px; font-size: 1.25rem; }
+.btn-cart-green { width: 46px; }
+.spec-line__label { color: var(--text-muted); }
+.product-card-v2__specs { font-size: .9rem; }
+a.product-card-v2__price-locked {
+    display: flex; align-items: center; justify-content: center; min-height: 44px; text-decoration: none;
+}
+a.product-card-v2__price-locked:hover { background: var(--primary-pale); color: var(--primary-dark); }
+@media (min-width: 992px) and (max-width: 1199.98px) {
+    .product-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+}
+
+
+/* =========================================================
+   34. СТРАНИЦА ТОВАРА — на компьютере фото слева, сведения и покупка справа
+   ========================================================= */
+
+@media (min-width: 992px) {
+    .product-detail {
+        max-width: 1100px; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+        column-gap: 44px; align-items: start;
+    }
+    .product-detail__image { grid-column: 1; grid-row: 1; margin-bottom: 0; }
+    .product-detail > .product-card__dots { grid-column: 1; grid-row: 2; }
+    .product-detail__info { grid-column: 2; grid-row: 1 / span 2; margin-top: 0 !important; position: sticky; top: 92px; }
+}
+.qty-control--lg .btn { min-width: 48px; min-height: 48px; font-size: 1.2rem; }
+.qty-control--lg .form-control { min-height: 48px; font-weight: 700; font-size: 1.05rem; }
+.spec-label { color: var(--text-muted); }
+
+/* у картинок с width/height в разметке высота считается по пропорциям, а не берётся из атрибута */
+.landing-grid__photo { height: auto; }
+
+/* шапка на ноутбуке (992–1199 px): пункты меню в одну строку, название компании — только на широких экранах */
+.app-nav__link { white-space: nowrap; }
+@media (min-width: 992px) and (max-width: 1199.98px) {
+    .app-nav { margin-left: 16px; }
+    .app-nav__link { padding: 0 11px; font-size: .9rem; }
+    .app-header__profile { width: 44px; padding: 0; }
+    .app-header__profile-name { display: none; }
+}
+
+/* страница товара: цена и покупка — сразу под названием, описание — ниже */
+.product-detail__info { display: flex; flex-direction: column; }
+.product-detail__description { order: 9; margin-top: 18px; }
+.product-detail__info .qty-hint { order: 8; }
+
+/* страница товара на компьютере: покупка видна без прокрутки */
+@media (min-width: 992px) {
+    .product-detail { grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr); }
+    .product-detail__image { max-height: 470px; }
+    .product-detail__name { font-size: 1.85rem; margin-bottom: 8px; }
+    .product-detail__info .spec-row { padding-top: .3rem !important; padding-bottom: .3rem !important; }
+}
+
+/* телефон: поиск — одна строка без лишнего, панель инструментов в две ровные строки, баннер установки короче */
+@media (max-width: 575.98px) {
+    .catalog-search .input-group-text { display: none; }
+    .catalog-search__go { min-width: 56px; }
+    .catalog-search .form-control { border-top-left-radius: var(--radius-input); border-bottom-left-radius: var(--radius-input); }
+    .catalog-toolbar { display: grid; grid-template-columns: 1fr auto; }
+    .catalog-toolbar .catalog-sort { grid-column: 1 / -1; margin-left: 0; }
+    .catalog-sort select { width: 100%; }
+    .catalog-filters-btn { justify-content: center; }
+    .pwa-banner__text [data-pwa-android] { display: none; }
+}
+@media (min-width: 992px) {
+    .landing-hero__cta, .landing-hero__cta2 { padding: 12px 22px; }
+}
+
+/* на сенсорных экранах мелкие кнопки не мельче пальца */
+@media (pointer: coarse) {
+    .btn-sm { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+    .form-check-input { width: 1.5em; height: 1.5em; }
+    .page-btn { min-width: 44px; min-height: 44px; }
+}
