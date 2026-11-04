@@ -56,8 +56,8 @@ ADMIN_FORCE_PASSWORD_RESET=0
 
 # Магазин (показывается на странице «Контакты» и в письмах)
 SHOP_NAME=ООО «Диантус»
-SHOP_PHONE=+7 (995) 152-21-31
-SHOP_PHONE_2=+7 (901) 188-77-87
+SHOP_PHONE=+7 (901) 188-77-87
+SHOP_PHONE_2=
 SHOP_ADDRESS=г. Москва, Вешняковская ул., 39Г, этаж 1
 SHOP_WORKING_HOURS=Пн–Вс 09:00–21:00
 SHOP_MAX_LINK=https://max.ru/id7720965534_biz
