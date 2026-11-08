@@ -17,9 +17,9 @@ BUILTIN = {n.lower() for n in """
 Тип Строка Число Формат Окр Цел Макс Мин Лев Прав Сред Найти СтрДлина СтрЗаменить СокрЛП НРег ВРег
 ПустаяСтрока КодСимвола ЗначениеЗаполнено ТекущаяДата НачалоДня КаталогДокументов СоздатьКаталог Вопрос
 ВвестиСтроку Сообщить КраткоеПредставлениеОшибки ИнформацияОбОшибке ЗавершитьРаботуСистемы
-ИмяКомпьютера ПараметрЗапуска Метаданные Справочники Символы СистемнаяИнформация КодировкаТекста
+ИмяКомпьютера ПараметрЗапуска Метаданные Справочники Символы КодировкаТекста
 РежимДиалогаВопрос КодВозвратаДиалога ПравоДоступа XMLСтрока Предупреждение ЗапуститьПриложение
-КаталогВременныхФайлов
+КаталогВременныхФайлов ТипЗнч
 """.split()}
 
 
@@ -65,6 +65,28 @@ IDENT = re.compile(r"[A-Za-zА-Яа-яЁё_][A-Za-zА-Яа-яЁё_0-9]*")
 
 def tokenize(line: str):
     return [(m.group(0), m.start()) for m in IDENT.finditer(line)]
+
+
+NEW_CALL = re.compile(r"Новый\s+[\wА-Яа-яЁё]+\s*\(")
+
+
+def new_chain_problems(line: str):
+    """«Новый Файл(Путь).Существует()»: в режиме совместимости 8.2 платформа отвечает
+    «Ожидается ключевое слово Тогда» (так было в живой 1С, 2026-11-08). Результат «Новый …»
+    сначала кладут в переменную, и только потом вызывают его метод."""
+    found = []
+    for m in NEW_CALL.finditer(line):
+        depth = 0
+        for i in range(m.end() - 1, len(line)):
+            if line[i] == "(":
+                depth += 1
+            elif line[i] == ")":
+                depth -= 1
+                if depth == 0:
+                    if line[i + 1:].lstrip().startswith("."):
+                        found.append("метод у результата «%s…)»: сначала присвойте «Новый» переменной" % m.group(0).strip())
+                    break
+    return found
 
 
 def split_args(text: str):
@@ -121,6 +143,58 @@ def parse_header(line: str):
                 return None
             params.append((pm.group(1), bool(pm.group(2))))
     return kind, name, params
+
+
+def _read_string(s: str, i: int):
+    """s[i] - открывающая кавычка; возвращает (содержимое, индекс после закрывающей кавычки)."""
+    i += 1
+    out = []
+    while i < len(s):
+        if s[i] == '"':
+            if i + 1 < len(s) and s[i + 1] == '"':
+                out.append('"')
+                i += 2
+                continue
+            return "".join(out), i + 1
+        out.append(s[i])
+        i += 1
+    return "".join(out), i
+
+
+def struct_problems(text: str):
+    """«Новый Структура("A, B, C", 1, 2)»: ключей три, значений два - платформа молча подставит
+    «Неопределено» и ошибка вылезет только при работе. Число ключей и значений должно совпадать."""
+    text = text.replace("\r\n", "\n")
+    found = []
+    for m in re.finditer(r"Новый\s+Структура\s*\(", text):
+        i = m.end()
+        while i < len(text) and text[i] in " \t\n":
+            i += 1
+        if i >= len(text) or text[i] != '"':
+            continue
+        keys_text, j = _read_string(text, i)
+        keys = [k for k in (x.strip() for x in keys_text.split(",")) if k]
+        depth = 1
+        values = 0
+        while j < len(text) and depth > 0:
+            ch = text[j]
+            if ch == '"':
+                _, j = _read_string(text, j)
+                continue
+            if ch in "([":
+                depth += 1
+            elif ch in ")]":
+                depth -= 1
+                if depth == 0:
+                    break
+            elif ch == "," and depth == 1:
+                values += 1
+            j += 1
+        # «Новый Структура("А, Б")» без значений бывает нормально; тревога - когда значения есть, но их не столько же
+        if values and values != len(keys):
+            line_no = text[:m.start()].count("\n") + 1
+            found.append(f"строка {line_no}: в «Новый Структура» ключей {len(keys)}, значений {values}")
+    return found
 
 
 def main(path: str) -> int:
@@ -197,6 +271,8 @@ def main(path: str) -> int:
                 problems.append(f"строка {no}: Возврат со значением в процедуре {name}")
             if kind == "Функция" and re.match(r"Возврат\s*;", stripped):
                 problems.append(f"строка {no}: Возврат без значения в функции {name}")
+            for msg in new_chain_problems(line):
+                problems.append(f"строка {no}: {msg}")
             tokens = tokenize(line)
             for ident, pos in tokens:
                 low = ident.lower()
@@ -240,6 +316,8 @@ def main(path: str) -> int:
                 is_statement_start = line[:m.start()].strip() == ""
                 if pkind == "Процедура" and not is_statement_start:
                     problems.append(f"строка {no}: процедура {m.group(1)} использована как функция")
+
+    problems.extend(struct_problems(text))
 
     for p in problems:
         print("ПРОБЛЕМА:", p)

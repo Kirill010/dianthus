@@ -64,3 +64,49 @@ def test_the_checkers_really_fail_on_broken_code(script, tmp_path):
     r = run(script, bad)
     assert r.returncode == 1, r.stdout + r.stderr
     assert "ПРОБЛЕМА" in r.stdout
+
+
+def test_names_checker_counts_structure_keys_and_values(tmp_path):
+    """В «Новый Структура("A, B", 1)» не хватает значения: платформа не ругается, но поле останется пустым."""
+    bad = tmp_path / "bad.bsl"
+    bad.write_text('Процедура Т()\n\tС = Новый Структура("А, Б, В", 1, 2);\nКонецПроцедуры\n', encoding="utf-8")
+    r = run("bsl_lint_names.py", bad)
+    assert r.returncode == 1 and "ключей 3, значений 2" in r.stdout, r.stdout + r.stderr
+
+    good = tmp_path / "good.bsl"
+    good.write_text('Процедура Т()\n\tС = Новый Структура("А, Б",\n\t\t1, Окр(2, 1));\n\tД = Новый Структура("Х");\nКонецПроцедуры\n',
+                    encoding="utf-8")
+    r = run("bsl_lint_names.py", good)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_names_checker_rejects_method_call_on_new(tmp_path):
+    """Вторая настоящая ошибка из живой 1С (2026-11-08): «Новый Файл(Путь).Существует()» в режиме
+    совместимости 8.2 не компилируется («Ожидается ключевое слово Тогда»)."""
+    bad = tmp_path / "bad.bsl"
+    bad.write_text("Процедура Т(Путь)\n\tЕсли Новый Файл(Путь).Существует() Тогда\n\t\tСообщить(1);\n\tКонецЕсли;\nКонецПроцедуры\n",
+                   encoding="utf-8")
+    r = run("bsl_lint_names.py", bad)
+    assert r.returncode == 1 and "Новый" in r.stdout, r.stdout + r.stderr
+
+    good = tmp_path / "good.bsl"
+    good.write_text("Процедура Т(Путь)\n\tОбъектФайл = Новый Файл(Путь);\n\tЕсли ОбъектФайл.Существует() Тогда\n\t\tСообщить(1);\n\tКонецЕсли;\nКонецПроцедуры\n",
+                    encoding="utf-8")
+    r = run("bsl_lint_names.py", good)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_names_checker_knows_that_system_info_needs_new(tmp_path):
+    """Настоящая ошибка из живой 1С (первый запуск, 2026-11-08): СистемнаяИнформация - это ТИП,
+    без «Новый» у неё нет свойств, платформа отвечает «Переменная не определена»."""
+    bad = tmp_path / "bad.bsl"
+    bad.write_text("Процедура Т()\n\tСообщить(СистемнаяИнформация.ВерсияПриложения);\nКонецПроцедуры\n", encoding="utf-8")
+    r = run("bsl_lint_names.py", bad)
+    assert r.returncode == 1 and "СистемнаяИнформация" in r.stdout, r.stdout + r.stderr
+
+    good = tmp_path / "good.bsl"
+    good.write_text(
+        "Процедура Т()\n\tСисИнфо = Новый СистемнаяИнформация;\n\tСообщить(СисИнфо.ВерсияПриложения);\nКонецПроцедуры\n",
+        encoding="utf-8")
+    r = run("bsl_lint_names.py", good)
+    assert r.returncode == 0, r.stdout + r.stderr
