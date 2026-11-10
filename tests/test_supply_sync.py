@@ -767,3 +767,44 @@ def test_sync_fills_only_empty_fields_from_name(web, mem_db):
     mem_db.expire_all()
     a = mem_db.query(Product).filter_by(external_id="N-1").one()
     assert (a.country_name, a.height_cm) == ("Колумбия", 55)
+
+
+# ───────────────────────── страна и пачка из 1С (раунд 11) ─────────────────────────
+
+def test_explicit_pack_from_1c_updates_an_existing_product_but_a_hint_does_not(web, mem_db):
+    """Размер пачки, присланный явно (строка инвойса или карточка в 1С), главнее: сайт следует за 1С.
+    Подсказка package_size_hint (догадка по виду) существующий товар не меняет."""
+    h = key_header(mem_db)
+    post(web, h, [invoice(items=[line("Роза Русская 60", package_size=25, quantity=500)])])
+    assert item_of(mem_db).product.package_size == 25 and item_of(mem_db).stock == 20
+
+    data = post(web, h, [invoice(items=[line("Роза Русская 60", package_size=10, quantity=500)])]).json()
+    assert any("размер пачки изменён с 25 на 10" in w for w in data["warnings"])
+    one = item_of(mem_db)
+    assert one.product.package_size == 10 and one.stock == 50           # остаток пересчитан в новые пачки
+
+    guess = line("Роза Русская 60", quantity=500)
+    guess.pop("package_size")
+    guess["package_size_hint"] = 25
+    post(web, h, [invoice(items=[guess])])
+    one = item_of(mem_db)
+    assert one.product.package_size == 10 and one.stock == 50
+
+
+def test_card_origin_is_the_country_of_the_product_not_of_the_whole_supply(web, mem_db):
+    """Голландский поставщик привёз и российские розы: «Откуда» у каждой позиции своё."""
+    h = key_header(mem_db)
+    post(web, h, [invoice(status="received", country="Голландия", supplier="MH FLOWERS B.V.",
+                          items=[line("Роза Голландка 60", quantity=250),
+                                 line("Роза Русская 60 РФ", quantity=250, country="Россия")])])
+    dutch = item_of(mem_db, name="Роза Голландка 60")
+    russian = item_of(mem_db, name="Роза Русская 60 РФ")
+    assert dutch.origin == "Голландия" and russian.origin == "Россия"
+    assert dutch.supply.location == "Голландия"                          # у поставки в целом страна одна
+
+    make_user(mem_db, "buyer@test.ru", password="Buyer1234")
+    login(web, "buyer@test.ru", "Buyer1234")
+    page = web.get("/catalog").text
+    assert "Россия" in page and "Голландия" in page
+    detail = web.get(f"/product/{russian.id}").text
+    assert "Россия" in detail

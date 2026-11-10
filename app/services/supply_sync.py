@@ -245,6 +245,13 @@ def _upsert_lines(db: Session, supply: Supply, sp: dict, catalog: Catalog, tax: 
                 protected.add(id(product))
             continue
         if product is not None:
+            explicit = row["package_size"]
+            if explicit and explicit != max(1, product.package_size or 1):
+                # размер пачки прислан ЯВНО (строка инвойса или карточка товара в 1С): 1С главная,
+                # сайт следует за ней. Подсказка (package_size_hint) существующий товар не меняет.
+                result.warnings.append(
+                    f"{where}: размер пачки изменён с {product.package_size or 1} на {explicit} шт по данным 1С")
+                product.package_size = explicit
             pack = max(1, product.package_size or 1)
         else:
             pack = max(1, row["package_size"] or row.get("package_size_hint") or 1)

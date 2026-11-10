@@ -463,7 +463,7 @@
                             <div class="spec-line">
                                 <span class="spec-line__label">Откуда:</span>
                                 <span class="spec-line__value">
-                                    {{ item.supply.location if item.supply else '—' }}
+                                    {{ item.origin or '—' }}
                                 </span>
                             </div>
                             <div class="spec-line">

@@ -332,6 +332,17 @@ class SupplyItem(Base):
         return 1
 
     @property
+    def origin(self) -> str:
+        """«Откуда» для клиента: страна САМОГО товара (из карточки 1С), а если её нет, то откуда вся поставка.
+        В одном инвойсе бывают цветы из разных стран (голландский поставщик привёз и российские розы),
+        поэтому страна поставки в целом клиенту ничего не говорит про конкретную позицию."""
+        name = self.product.country_name if self.product is not None else ""
+        if name:
+            city = ((self.supply.city or "").strip()) if self.supply is not None else ""
+            return f"{name}, {city}" if city else name
+        return self.supply.location if self.supply is not None else ""
+
+    @property
     def total_stems(self) -> int:
         return self.stock * self.pack_size
 
