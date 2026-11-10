@@ -321,6 +321,20 @@ def _options(db: Session, key: str, counts: dict, chosen: list, current: dict) -
     return result
 
 
+def _default_view(db: Session) -> str:
+    """Вид каталога для того, кто его ещё не выбирал. Пока фото есть меньше чем у половины
+    товаров, карточки — это ряды пустых серых плиток (на телефоне два экрана на два товара),
+    а прайс-лист показывает в разы больше позиций и цены с остатками рядом. Появятся фото —
+    карточки снова станут видом по умолчанию. Выбор посетителя (cookie) главнее."""
+    total = db.query(func.count(Product.id)).scalar() or 0
+    if not total:
+        return "cards"
+    with_photo = (db.query(func.count(Product.id))
+                  .filter(Product.image_url.isnot(None), Product.image_url != "")
+                  .scalar() or 0)
+    return "list" if with_photo * 2 < total else "cards"
+
+
 @router.get("/catalog", response_class=HTMLResponse)
 def catalog(
     request: Request,
@@ -351,11 +365,11 @@ def catalog(
     if level not in valid_levels:
         level = "available"
 
-    # Вид: явный ?view= важнее cookie; без обоих — карточки.
+    # Вид: явный ?view= важнее cookie; без обоих — по наличию фото (см. _default_view).
     explicit_view = view.strip() in VIEWS
     view = view.strip() if explicit_view else request.cookies.get(VIEW_COOKIE, "")
     if view not in VIEWS:
-        view = "cards"
+        view = _default_view(db)
 
     query = _base_query(db)
     query = _apply_quantity_filter(query, level)

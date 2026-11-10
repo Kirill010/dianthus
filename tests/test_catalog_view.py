@@ -198,6 +198,7 @@ def test_filter_panel_is_hidden_when_there_are_no_products(web, mem_db):
 
 def test_color_chip_shows_its_circle(web, mem_db):
     seed_item(mem_db, name="Роза Красная", color="Красный")
+    seed_item(mem_db, name="Роза Белая", color="Белый")                # один цвет фильтром не показывается
     mem_db.query(Color).filter(Color.name == "Красный").one().hex = "#c0392b"
     mem_db.commit()
     html = web.get("/catalog").text
@@ -208,9 +209,10 @@ def test_color_chip_shows_its_circle(web, mem_db):
 
 def test_kind_counts_follow_search_and_hide_empty(web, mem_db):
     seed_item(mem_db, name="Роза Красная")
+    seed_item(mem_db, name="Роза Кустовая", kind="Кустовая роза")
     seed_item(mem_db, name="Гвоздика Микс", kind="Гвоздика")
     html = web.get("/catalog?q=Роза").text
-    assert chip(html, "Роза") == 1
+    assert (chip(html, "Роза"), chip(html, "Кустовая роза")) == (1, 1)
     assert chip(html, "Гвоздика") is None                           # по запросу пусто — кнопки нет
     # выбранный вид остаётся на месте, даже если в нём ничего не нашлось
     html = web.get(f"/catalog?q=Роза&kind={ident(mem_db, Kind, 'Гвоздика')}").text
@@ -219,6 +221,7 @@ def test_kind_counts_follow_search_and_hide_empty(web, mem_db):
 
 
 def test_kind_from_1c_outside_the_default_list_gets_its_own_chip(web, mem_db):
+    seed_item(mem_db, name="Роза Красная")
     seed_item(mem_db, name="Эустома Белая", kind="Эустома")
     html = web.get("/catalog").text
     assert chip(html, "Эустома") == 1

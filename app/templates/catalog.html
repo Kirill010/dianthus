@@ -41,7 +41,8 @@
 
             {# ─── ВИД, ЦВЕТ, РОСТ, СТРАНА ─── #}
             {% for title, key, options in filter_groups %}
-            {% if options %}
+            {# фильтр из одного значения («Цвет: Жёлтый 2») ничего не отбирает — не показываем, пока не появится выбор #}
+            {% if options|length > 1 or selected[key] %}
             <details class="filter-group" {% if loop.first or selected[key] %}open{% endif %}>
                 <summary class="filter-group__title">{{ title }}{% if selected[key] %} <span class="filter-group__picked">{{ selected[key]|length }}</span>{% endif %}</summary>
                 <div class="filter-group__list category-scroll">
@@ -263,7 +264,7 @@
             {% set min_packs = product.min_quantity or 1 %}
             {% set min_stems = pack * min_packs %}
 
-            <div class="product-card-v2 {% if is_out %}product-card-v2--out{% endif %}"
+            <div class="product-card-v2 {% if is_out %}product-card-v2--out{% endif %}{% if not photos %} product-card-v2--nophoto{% endif %}"
                  data-step="{{ pack }}"
                  data-min="{{ min_stems }}"
                  data-max="{{ stems }}">
@@ -343,6 +344,7 @@
                         {% else %}
                             {{ item.price|price }} ₽
                         {% endif %}
+                        <span class="price-unit">за шт.</span>
                     </div>
                     {% if my_discount %}
                         <div class="price-note">с вашей скидкой −{{ my_discount|pct }}%</div>
@@ -421,7 +423,7 @@
                 {% set product = item.product %}
                 {% set pack = product.package_size or 1 %}
                 {% set photos = product.all_photos %}
-                <div class="product-card-v2"
+                <div class="product-card-v2{% if not photos %} product-card-v2--nophoto{% endif %}"
                      data-step="{{ pack }}"
                      data-min="{{ pack }}"
                      data-max="{{ pack * preorder_max_packs }}">
@@ -472,7 +474,7 @@
                             </div>
                         </div>
                         <div class="product-card-v2__price">
-                            {{ item.price|price }} ₽
+                            {{ item.price|price }} ₽ <span class="price-unit">за шт.</span>
                         </div>
                         <form action="/add_to_preorder" method="post" class="product-card-v2__cart-form">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

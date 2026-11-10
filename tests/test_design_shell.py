@@ -146,7 +146,7 @@ def test_profile_labels_point_to_their_fields(web, mem_db):
 def test_guest_cards_have_one_register_link_and_no_button_per_card(web, mem_db):
     for n in range(3):
         seed_item(mem_db, name=f"Роза {n}", stock=30)
-    html = web.get("/catalog").text
+    html = web.get("/catalog?view=cards").text
     assert "product-card-v2__out-btn--cta" not in html
     links = re.findall(r'<a href="/register" class="product-card-v2__price-locked"', html)
     assert len(links) == 3

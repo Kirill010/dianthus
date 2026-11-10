@@ -298,8 +298,15 @@ class Supply(Base):
 
     @property
     def location(self) -> str:
+        """«Откуда» для клиентов: страна (и город). Название поставщика клиентам не показываем."""
         country = (self.country or "").strip()
         city = (self.city or "").strip()
+        # Инвойс из 1С без страны: на месте страны сохранено название поставщика («РЫНОК»,
+        # «Азалия ЮГ ООО») или запасная подпись. Сотрудники видят его в админке (поле country),
+        # а клиентам вместо страны лучше ничего, чем имя чужой фирмы.
+        if self.external_id and country and (
+                country == "Поставка из 1С" or f"поставщик {country}" in (self.notes or "")):
+            country = ""
         if country and city:
             return f"{country}, {city}"
         return country or city or ""

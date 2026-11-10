@@ -2651,6 +2651,15 @@ a.product-card-v2__price-locked:hover { background: var(--primary-pale); color: 
     .page-btn { min-width: 44px; min-height: 44px; }
 }
 
+/* Нет фото: вместо большой пустой серой плитки — узкая полоса с значком; карточка вдвое ниже, на экране
+   видно больше товаров. Кнопка «+» остаётся в углу полосы. Как только у товара появится фото, класс не ставится. */
+.product-card-v2--nophoto .product-card-v2__image-wrap { aspect-ratio: auto; height: 58px; }
+.product-card-v2--nophoto .product-card-v2__placeholder { font-size: 1.6rem; }
+.product-card-v2--nophoto .product-card-v2__plus-form { top: 9px; }
+
+/* Цена в карточке — за одну штуку (стебель): подпись, чтобы не путать с ценой пачки */
+.price-unit { font-size: .74rem; font-weight: 600; color: var(--text-muted, #7a7a7a); letter-spacing: .01em; margin-left: 2px; white-space: nowrap; }
+
 /* Узкий телефон (до 420 px — 360 и 375 самые частые): у вошедшего пользователя в шапке было больше значков,
    чем помещается по ширине, «Профиль» уезжал за край, а страница прокручивалась вбок. Сжимаем промежутки и
    название; значки остаются по 44 px, чтобы попадать пальцем. «Корзина» и «Профиль» есть и в нижней панели,
