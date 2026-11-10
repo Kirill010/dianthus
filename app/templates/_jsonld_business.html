@@ -1,0 +1,17 @@
+{# Разметка организации для поисковиков: название, телефон, адрес, часы работы. Страница задаёт biz_address; hours_schema приходит из роутера #}
+<script type="application/ld+json" nonce="{{ csp_nonce }}">
+{
+    "@context": "https://schema.org",
+    "@type": "Florist",
+    "name": {{ config.SHOP_NAME|tojson }},
+    "url": {{ config.APP_URL|tojson }},
+    "logo": {{ (config.APP_URL.rstrip('/') ~ "/static/icons/icon-512.png")|tojson }},
+    "image": {{ (config.APP_URL.rstrip('/') ~ "/static/og-image.jpg")|tojson }},
+    "description": "Оптовые поставки свежих цветов юридическим лицам и ИП: розы, хризантемы, гвоздики, горшечные растения из Эквадора, Кении, Голландии и России",
+    {% if config.SHOP_PHONE %}"telephone": {{ config.SHOP_PHONE|tojson }},{% endif %}
+    {% if shop_inn %}"taxID": {{ shop_inn|tojson }},{% endif %}
+    {% if biz_address %}"address": {"@type": "PostalAddress", "addressCountry": "RU", "addressLocality": "Москва", "streetAddress": {{ biz_address|replace('г. Москва, ', '')|tojson }}},{% endif %}
+    {% if hours_schema %}"openingHours": {{ hours_schema|tojson }},{% endif %}
+    "contactPoint": [{"@type": "ContactPoint", "contactType": "sales", "availableLanguage": ["Russian"]}]
+}
+</script>

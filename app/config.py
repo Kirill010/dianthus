@@ -83,6 +83,9 @@ class Config:
     SHOP_WORKING_HOURS: str = _str_env("SHOP_WORKING_HOURS", "")
     SHOP_MAX_LINK: str = _str_env("SHOP_MAX_LINK", "")
     SHOP_MAP_URL: str = _str_env("SHOP_MAP_URL", "")
+    # Яндекс.Метрика: номер счётчика (только цифры). Пусто — аналитики нет, а значит нет и баннера о cookie.
+    # Счётчик включается только после согласия посетителя; см. base.html и middleware (CSP).
+    YANDEX_METRIKA_ID: str = "".join(ch for ch in _str_env("YANDEX_METRIKA_ID", "") if ch.isdigit())[:12]
 
     INTEGRATION_USER: str = _str_env("INTEGRATION_USER", "1c_dianthus")
     INTEGRATION_PASSWORD: str = (

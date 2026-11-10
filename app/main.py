@@ -33,6 +33,7 @@ from .scheduler import start_scheduler, stop_scheduler
 from .sentry_config import init_sentry
 from . import models, security
 from .security import CsrfError, init_rate_limiter, close_rate_limiter
+from .services import seo, seo_pages
 from .services.legal import ensure_default_legal_docs
 from .templating import render
 from .middleware import ExchangeLogMiddleware, HeadAsGetMiddleware, SecurityHeadersMiddleware
@@ -54,7 +55,7 @@ def _safe_load_routers() -> dict:
     out = {}
     for name in ("admin", "cart", "catalog", "profile", "integration_1c",
                  "integration_admin", "legal", "deadlines", "claims", "staff",
-                 "filters", "password_reset"):
+                 "filters", "password_reset", "seo_pages"):
         try:
             mod = import_module(f".routers.{name}", package="app")
             if not hasattr(mod, "router"):
@@ -363,6 +364,7 @@ def root(request: Request, db: Session = Depends(get_db)):
     return render(
         request, "landing.html", db,
         preview_items=preview, in_stock_count=in_stock, countries_count=countries_count,
+        hours_schema=seo.schema_hours(config.SHOP_WORKING_HOURS),
     )
 
 
@@ -380,12 +382,12 @@ def sitemap(db: Session = Depends(get_db)):
         ("/terms", today, "yearly", "0.3"),
         ("/privacy", today, "yearly", "0.2"),
     ]
-    rows = (
-        db.query(models.SupplyItem.id, models.SupplyItem.created_at)
-        .filter(models.SupplyItem.is_active.is_(True))
-        .all()
-    )
-    for item_id, created_at in rows:
+    # страницы-разделы («розы оптом» и т. п.): в карту — только те, где есть товар в наличии
+    for section in seo_pages.SECTIONS:
+        if seo_pages.collect(db, section)["count"]:
+            urls.append((f"/optom/{section.slug}", today, "daily", "0.8"))
+    # у товара может быть несколько позиций (по поставкам): в карту — одна главная, остальные ссылаются на неё canonical
+    for item_id, created_at in seo.sitemap_items(db):
         lastmod = (created_at.date().isoformat()
                    if created_at else today)
         urls.append((f"/product/{item_id}", lastmod, "weekly", "0.8"))

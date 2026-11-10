@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}{{ section.title }}{% endblock %}
+{% block description %}{{ section.h1 }}{% if data.count %}: {{ data.count }} {{ data.count|plural('позиция', 'позиции', 'позиций') }} в наличии{% if countries_text %} ({{ countries_text }}){% endif %}{% endif %}. Продажа упаковками для юрлиц и ИП, оптовые цены — после регистрации. Диантус, Москва.{% endblock %}
+{% block canonical %}{{ config.APP_URL }}/optom/{{ section.slug }}{% endblock %}
+{# пустой раздел поисковику не нужен: ссылка работает, но в индекс он не попадает #}
+{% block robots %}{% if data.count %}index, follow{% else %}noindex, follow{% endif %}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+<div class="col-lg-10">
+
+{% include "_breadcrumbs.html" %}
+
+<h1 class="catalog-title mb-2">{{ section.h1 }}</h1>
+<p class="lead">{{ section.lead }}</p>
+
+{% if data.count %}
+<ul class="list-unstyled mb-4">
+    <li><strong>В наличии сейчас:</strong> {{ data.count }} {{ data.count|plural('позиция', 'позиции', 'позиций') }}{% if countries_text %} — {{ countries_text }}{% endif %}.</li>
+    {% if data.height_min %}<li><strong>Длина стебля:</strong> {% if data.height_min == data.height_max %}{{ data.height_min }} см{% else %}от {{ data.height_min }} до {{ data.height_max }} см{% endif %}.</li>{% endif %}
+    <li><strong>Упаковка:</strong> {% for n in data.packs %}{{ n }}{% if not loop.last %}, {% endif %}{% endfor %} шт; цена — за одну штуку, после регистрации.</li>
+</ul>
+
+<div class="table-responsive mb-4">
+<table class="table table-sm align-middle">
+    <thead><tr><th>Название</th><th>Страна</th><th>Рост</th><th>В упаковке</th><th>В наличии</th></tr></thead>
+    <tbody>
+    {% for it in data.rows %}
+    <tr>
+        <td><a href="/product/{{ it.id }}">{{ it.product.name }}</a></td>
+        <td>{{ it.product.country_name or '—' }}</td>
+        <td>{% if it.product.height_cm %}{{ it.product.height_cm }} см{% else %}—{% endif %}</td>
+        <td>{{ it.product.package_size or 1 }} шт</td>
+        <td>{{ it.available_stems }} шт</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+{% else %}
+<div class="alert alert-info">Сейчас в этом разделе нет товара в наличии. Посмотрите <a href="/catalog">весь каталог</a> или оставьте заявку на регистрацию: мы сообщим, когда придёт новая поставка.</div>
+{% endif %}
+
+<div class="d-flex gap-2 flex-wrap mb-4">
+    {% if not user %}<a href="/register" class="btn btn-primary"><i class="fas fa-user-plus me-2"></i>Стать оптовиком</a>{% endif %}
+    <a href="/catalog" class="btn btn-outline-primary">Весь каталог</a>
+    <a href="/deadlines" class="btn btn-outline-secondary">Сроки заказа</a>
+</div>
+
+{% for paragraph in section.about %}<p>{{ paragraph }}</p>{% endfor %}
+
+<h2 class="h4 mt-4 mb-3">Вопросы и ответы</h2>
+{% for question, answer in faq %}
+<div class="mb-3">
+    <h3 class="h6 mb-1">{{ question }}</h3>
+    <p class="mb-0">{{ answer }}</p>
+</div>
+{% endfor %}
+
+<h2 class="h5 mt-4 mb-2">Другие разделы</h2>
+<p>{% for s in other_sections %}<a href="/optom/{{ s.slug }}">{{ s.short }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>
+
+</div>
+</div>
+{% endblock %}

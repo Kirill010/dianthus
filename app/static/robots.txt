@@ -9,6 +9,7 @@ Disallow: /preorders
 Disallow: /notifications
 Disallow: /profile
 Allow: /catalog
+Allow: /optom/
 Allow: /product/
 Allow: /contacts
 Allow: /privacy
@@ -17,3 +18,4 @@ Allow: /consent
 Allow: /marketing-consent
 Allow: /deadlines
 Allow: /login
+Clean-param: view&sort&level /catalog

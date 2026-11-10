@@ -3,6 +3,8 @@
 {% block title %}Контакты — Диантус · Оптовый магазин цветов{% endblock %}
 {% block description %}Контакты оптового магазина цветов Диантус: телефон, адрес, часы работы, карта проезда. Поставки цветов для юрлиц и ИП.{% endblock %}
 
+{% block head_extra %}{% set biz_address = shop.address %}{% include "_jsonld_business.html" %}{% endblock %}
+
 {% block content %}
 
 <h1 class="catalog-title mb-4">

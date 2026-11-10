@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block title %}Диантус — оптовые поставки цветов из Эквадора, Кении, Голландии и России{% endblock %}
-{% block description %}Оптовый магазин цветов Диантус: розы, гвоздики, хризантемы, тюльпаны упаковками по ценам импортёра. Прямые поставки, холодовая цепь. Работаем только с юрлицами и ИП.{% endblock %}
+{% block description %}Оптовый магазин цветов Диантус в Москве: розы, кустовые розы, хризантемы, гвоздики, горшечные растения упаковками. Эквадор, Кения, Голландия, Россия. Работаем только с юрлицами и ИП.{% endblock %}
 
 {% block content %}
 {# ═══════════ HERO ═══════════ #}
@@ -35,7 +35,7 @@
                 {% if in_stock_count %}{# пока каталог пуст, «0 позиций» посетителям не показываем #}
                 <li class="landing-stats__item">
                     <span class="landing-stats__value">{{ in_stock_count }}</span>
-                    <span class="landing-stats__label">позиций в наличии</span>
+                    <span class="landing-stats__label">{{ in_stock_count|plural('позиция', 'позиции', 'позиций') }} в наличии</span>
                 </li>
                 {% endif %}
                 <li class="landing-stats__item">
@@ -177,6 +177,14 @@
     </div>
 </section>
 
+{# ═══════════ РАЗДЕЛЫ (внутренние ссылки для поисковиков и людей) ═══════════ #}
+{% if seo_sections %}
+<section class="landing-section container">
+    <h2 class="landing-section__title">Цветы оптом: разделы каталога</h2>
+    <p>{% for s in seo_sections %}<a href="/optom/{{ s.slug }}">{{ s.short }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>
+</section>
+{% endif %}
+
 {# ═══════════ ФИНАЛЬНЫЙ CTA ═══════════ #}
 <section class="landing-cta">
     <div class="landing-cta__inner">
@@ -188,22 +196,7 @@
     </div>
 </section>
 
-{# JSON-LD: организация для SEO #}
-<script type="application/ld+json" nonce="{{ csp_nonce }}">
-{
-    "@context": "https://schema.org",
-    "@type": "Organization",
-    "name": {{ config.SHOP_NAME|tojson }},
-    "url": {{ config.APP_URL|tojson }},
-    "logo": {{ (config.APP_URL + "/static/icons/icon-512.png")|tojson }},
-    "description": "Оптовые поставки свежих цветов из Эквадора, Кении, Голландии и России",
-    {% if config.SHOP_PHONE %}"telephone": {{ config.SHOP_PHONE|tojson }},{% endif %}
-    {% if shop_address %}"address": {{ shop_address|tojson }},{% endif %}
-    "contactPoint": [{
-        "@type": "ContactPoint",
-        "contactType": "sales",
-        "availableLanguage": ["Russian"]
-    }]
-}
-</script>
+{# JSON-LD: организация для SEO (тип Florist, адрес и часы работы) #}
+{% set biz_address = shop_address %}
+{% include "_jsonld_business.html" %}
 {% endblock %}

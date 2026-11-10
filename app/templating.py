@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from .config import config
 from .deps import get_current_user
 from .security import ensure_csrf_token
+from .services import seo_pages
 from .services.preorder_service import preorder_count_db
 from .services.pricing import apply_discount
 from .services.site_settings import get_settings
@@ -212,6 +213,7 @@ def render(request: Request, template: str, db: Session, **context):
         "active_supply": active_supply,
         "csrf_token": csrf_token,
         "config": config,
+        "seo_sections": seo_pages.SECTIONS,
         "unread_count": unread_count,
         "current_year": datetime.now(shop_tz()).year,
         # CSP nonce из SecurityHeadersMiddleware — для встроенных <script>.

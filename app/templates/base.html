@@ -6,13 +6,14 @@
     <title>{% block title %}Диантус · Оптовый магазин цветов{% endblock %}</title>
     {% if csrf_token %}<meta name="csrf-token" content="{{ csrf_token }}">{% endif %}
     <meta name="description" content="{% block description %}Диантус — оптовые поставки цветов из Эквадора, Кении, Голландии и России. Розы, хризантемы, гвоздики, горшечные растения упаковками. Только для юрлиц и ИП.{% endblock %}">
-    <meta name="robots" content="index, follow">
+    <meta name="robots" content="{% block robots %}index, follow{% endblock %}">
     <link rel="canonical" href="{% block canonical %}{{ config.APP_URL }}{{ request.url.path }}{% endblock %}">
 
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Диантус">
-    <meta property="og:title" content="{% block og_title %}Диантус · Оптовый магазин цветов{% endblock %}">
-    <meta property="og:description" content="{% block og_description %}Оптовые поставки свежих цветов из Эквадора, Кении, Голландии и России. Только для юрлиц и ИП.{% endblock %}">
+    {# по умолчанию картинка-превью повторяет заголовок и описание самой страницы, а не одну общую подпись на весь сайт #}
+    <meta property="og:title" content="{% block og_title %}{{ self.title() }}{% endblock %}">
+    <meta property="og:description" content="{% block og_description %}{{ self.description() }}{% endblock %}">
     <meta property="og:url" content="{{ config.APP_URL }}{{ request.url.path }}">
     <meta property="og:image" content="{{ config.APP_URL }}/static/og-image.jpg">
     <meta property="og:image:width" content="1200">
@@ -27,13 +28,21 @@
     <link rel="preload" href="/static/fonts/playfair-display-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
     <link href="/static/vendor/bootstrap.min.css?v=7" rel="stylesheet">
     <link href="/static/vendor/fontawesome/css/all.min.css?v=7" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=15">
+    <link rel="stylesheet" href="/static/style.css?v=16">
     <link rel="manifest" href="/static/manifest.json">
     <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
     <meta name="theme-color" content="#4a6741">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="Диантус">
+    {% if breadcrumbs %}
+    <script type="application/ld+json" nonce="{{ csp_nonce }}">
+    {"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [
+    {% for name, url in breadcrumbs %}{"@type": "ListItem", "position": {{ loop.index }}, "name": {{ name|tojson }}, "item": {{ (config.APP_URL.rstrip('/') ~ url)|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}
+    ]}
+    </script>
+    {% endif %}
+    {% block head_extra %}{% endblock %}
 </head>
 <body class="{% if user and not hide_bottom_nav %}has-bottom-nav{% endif %}">
 <a class="skip-link" href="#main">Перейти к содержимому</a>
@@ -175,6 +184,12 @@
             <a href="/terms">Условия работы</a>
             <a href="/contacts">Контакты</a>
         </nav>
+        {% if seo_sections %}
+        <nav class="app-footer__col" aria-label="Цветы оптом">
+            <span class="app-footer__title">Цветы оптом</span>
+            {% for s in seo_sections[:6] %}<a href="/optom/{{ s.slug }}">{{ s.short }}</a>{% endfor %}
+        </nav>
+        {% endif %}
         <nav class="app-footer__col" aria-label="Документы">
             <span class="app-footer__title">Документы</span>
             <a href="/privacy">Политика конфиденциальности</a>
@@ -189,6 +204,43 @@
     </p>
 </footer>
 
+{% if config.YANDEX_METRIKA_ID %}
+{# Аналитика включается только после согласия: выбор помнит браузер (localStorage), без согласия счётчик не загружается #}
+<div class="cookie-notice" id="cookie-notice" role="dialog" aria-label="Cookie и аналитика" hidden>
+    <p class="cookie-notice__text">Сайт использует cookie для входа и корзины, а с вашего согласия — Яндекс.Метрику: она помогает понять, какие страницы полезны. Подробнее — в <a href="/privacy">политике</a>.</p>
+    <div class="cookie-notice__actions">
+        <button type="button" class="btn btn-primary btn-sm" data-cookie-choice="yes">Согласен</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-cookie-choice="no">Отказаться</button>
+    </div>
+</div>
+<script nonce="{{ csp_nonce }}">
+(function () {
+    var ID = {{ config.YANDEX_METRIKA_ID|tojson }}, KEY = 'dianthus_analytics', box = document.getElementById('cookie-notice');
+    function stored() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
+    function save(v) { try { localStorage.setItem(KEY, v); } catch (e) {} }
+    function start() {
+        (function (m, e, t, r, i, k, a) {
+            m[i] = m[i] || function () { (m[i].a = m[i].a || []).push(arguments); };
+            m[i].l = 1 * new Date();
+            k = e.createElement(t); a = e.getElementsByTagName(t)[0]; k.async = 1; k.src = r; a.parentNode.insertBefore(k, a);
+        })(window, document, 'script', 'https://mc.yandex.ru/metrika/tag.js', 'ym');
+        window.ym(ID, 'init', {clickmap: true, trackLinks: true, accurateTrackBounce: true});
+    }
+    var choice = stored();
+    if (choice === 'yes') { start(); }
+    else if (choice !== 'no' && box) { box.hidden = false; }
+    if (box) {
+        box.addEventListener('click', function (e) {
+            var b = e.target.closest('[data-cookie-choice]');
+            if (!b) return;
+            var v = b.getAttribute('data-cookie-choice');
+            save(v); box.hidden = true;
+            if (v === 'yes') start();
+        });
+    }
+})();
+</script>
+{% endif %}
 <script src="/static/vendor/bootstrap.bundle.min.js" nonce="{{ csp_nonce }}"></script>
 <script src="/static/pwa.js" nonce="{{ csp_nonce }}" defer></script>
 

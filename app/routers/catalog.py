@@ -21,7 +21,7 @@ from ..models import (
     Color, Country, Height, Kind, Product, Supply, SupplyItem,
 )
 from ..security import check_rate_limit
-from ..services import exchange_log
+from ..services import exchange_log, seo
 from ..services.preorder_service import MAX_PREORDER_PACKS
 from ..templating import render
 from ..web import LIKE_ESCAPE, contains_pattern
@@ -535,9 +535,13 @@ def product_detail(
         else:
             raise HTTPException(status_code=404, detail="Товар не найден")
 
+    # у товара может быть несколько позиций (по поставкам): поисковику показываем одну главную
+    canonical_url = f"{config.APP_URL.rstrip('/')}/product/{seo.canonical_item_id(db, item)}"
     return render(
         request, "product_detail.html", db,
         user=user, public=public, item=item, product=item.product,
         quantity_levels=QUANTITY_LEVELS, preorder_mode=preorder_mode,
         preorder_max_packs=MAX_PREORDER_PACKS,
+        canonical_url=canonical_url,
+        breadcrumbs=[("Главная", "/"), ("Каталог", "/catalog"), (item.product.name, f"/product/{item.id}")],
     )

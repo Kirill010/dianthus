@@ -2673,3 +2673,12 @@ a.product-card-v2__price-locked:hover { background: var(--primary-pale); color: 
     .app-header__right { gap: 4px; }
     .app-header__icon--phone { display: none; }
 }
+
+/* ─── Уведомление о cookie и аналитике (показывается только если задан YANDEX_METRIKA_ID) ─── */
+.cookie-notice { position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 1080; display: flex; flex-wrap: wrap;
+    gap: 10px 16px; align-items: center; justify-content: space-between; max-width: 920px; margin: 0 auto;
+    padding: 12px 16px; background: #fff; border: 1px solid rgba(0,0,0,.12); border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.18); }
+.cookie-notice[hidden] { display: none; }
+.cookie-notice__text { margin: 0; flex: 1 1 320px; font-size: .9rem; }
+.cookie-notice__actions { display: flex; gap: 8px; }
+@media (max-width: 767px) { .has-bottom-nav .cookie-notice { bottom: 76px; } }

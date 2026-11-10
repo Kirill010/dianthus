@@ -159,6 +159,7 @@ def test_static_fonts_and_webp_pictures_have_correct_types(web):
 
 
 def test_landing_hides_the_stock_counter_while_the_catalog_is_empty(web, mem_db):
-    assert "позиций в наличии" not in web.get("/").text
+    empty = web.get("/").text
+    assert "позиций в наличии" not in empty and "позиция в наличии" not in empty
     seed_item(mem_db, name="Роза Красная", stock=40)
-    assert "позиций в наличии" in web.get("/").text
+    assert "позиция в наличии" in web.get("/").text             # одна позиция: число и слово согласованы

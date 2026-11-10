@@ -1,0 +1,8 @@
+{# Хлебные крошки: страница задаёт breadcrumbs = [("Главная", "/"), ("Каталог", "/catalog"), ("Название", "/адрес")] #}
+{% if breadcrumbs %}
+<nav aria-label="Хлебные крошки" class="small text-muted mb-3">
+    {% for name, url in breadcrumbs %}
+        {% if loop.last %}<span aria-current="page">{{ name }}</span>{% else %}<a href="{{ url }}">{{ name }}</a> <span aria-hidden="true">›</span> {% endif %}
+    {% endfor %}
+</nav>
+{% endif %}

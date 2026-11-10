@@ -16,7 +16,7 @@ from tests.helpers import login, make_order, make_user, seed_item
 
 EXPECTED_ROUTERS = {
     "admin", "cart", "catalog", "profile", "integration_1c", "integration_admin",
-    "legal", "deadlines", "claims", "staff", "filters", "password_reset",
+    "legal", "deadlines", "claims", "staff", "filters", "password_reset", "seo_pages",
 }
 
 # Адреса, которые открыты без входа
@@ -24,7 +24,7 @@ PUBLIC = {
     "/", "/login", "/register", "/registration_pending", "/catalog", "/contacts",
     "/deadlines", "/terms", "/privacy", "/consent", "/marketing-consent", "/forgot",
     "/1c-docs", "/1c-docs.md", "/1c-docs.json", "/sitemap.xml", "/health", "/sw.js",
-    "/api/search-suggest", "/product/{item_id}", "/reset/{token}",
+    "/api/search-suggest", "/product/{item_id}", "/reset/{token}", "/optom/{section}",
 }
 # Только для владельца (менеджеру — отказ)
 OWNER_ONLY_PREFIXES = (
@@ -64,6 +64,7 @@ def seed(db):
         "item_id": item.id, "product_id": item.product_id, "supply_id": item.supply_id,
         "order_id": order.id, "claim_id": claim.id, "user_id": client.id,
         "slug": slug, "token": "no-such-token", "transit_id": transit.id,
+        "section": "rozy",
     }
 
 

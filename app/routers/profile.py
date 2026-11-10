@@ -10,7 +10,7 @@ from ..config import config
 from ..database import get_db
 from ..deps import get_current_user
 from ..security import check_csrf
-from ..services import legal, totp
+from ..services import legal, seo, totp
 from ..services.site_settings import shop_address
 from ..templating import render
 from ..web import safe_back
@@ -315,4 +315,5 @@ def contacts_page(request: Request, db: Session = Depends(get_db)):
         "max_link": config.SHOP_MAX_LINK,
         "map_url": config.SHOP_MAP_URL,
     }
-    return render(request, "contacts.html", db, user=user, shop=shop)
+    return render(request, "contacts.html", db, user=user, shop=shop,
+                  hours_schema=seo.schema_hours(config.SHOP_WORKING_HOURS))

@@ -117,13 +117,17 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # CSP. В script-src БОЛЬШЕ НЕТ 'unsafe-inline': выполняются только
         # скрипты с нашим nonce или из наших же файлов. Это главная
         # страховка от хранимого/отражённого XSS.
+        # Яндекс.Метрика (только если задан счётчик): её скрипт и отправка данных идут на mc.yandex.ru.
+        metrika = bool(config.YANDEX_METRIKA_ID)
+        script_extra = " https://mc.yandex.ru https://yastatic.net" if metrika else ""
+        connect_extra = " https://mc.yandex.ru wss://mc.yandex.ru" if metrika else ""
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            f"script-src 'self' 'nonce-{nonce}'; "
+            f"script-src 'self' 'nonce-{nonce}'{script_extra}; "
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: https:; "
             "font-src 'self'; "
-            "connect-src 'self'; "
+            f"connect-src 'self'{connect_extra}; "
             # Карта Яндекса на странице «Контакты» (iframe).
             # Без frame-src браузер блокирует её из-за default-src 'self'.
             "frame-src 'self' https://yandex.ru https://*.yandex.ru "
