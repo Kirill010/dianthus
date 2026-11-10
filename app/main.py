@@ -14,7 +14,7 @@ from fastapi.responses import (
     FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response,
 )
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session, joinedload
 from starlette.concurrency import run_in_threadpool
 # Именно класс Starlette, а не fastapi.HTTPException: «страница не найдена»
@@ -352,9 +352,17 @@ def root(request: Request, db: Session = Depends(get_db)):
         .filter(models.SupplyItem.is_active.is_(True))
         .count()
     )
+    # сколько разных стран среди товаров в наличии (для плашки на главной: число не пишем руками)
+    countries_count = (
+        db.query(func.count(func.distinct(models.Product.country_id)))
+        .select_from(models.SupplyItem)
+        .join(models.Product, models.SupplyItem.product_id == models.Product.id)
+        .filter(models.SupplyItem.is_active.is_(True), models.Product.country_id.isnot(None))
+        .scalar()
+    ) or 0
     return render(
         request, "landing.html", db,
-        preview_items=preview, in_stock_count=in_stock,
+        preview_items=preview, in_stock_count=in_stock, countries_count=countries_count,
     )
 
 

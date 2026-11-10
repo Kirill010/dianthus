@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Диантус — оптовые поставки цветов напрямую из Эквадора, Колумбии и Голландии{% endblock %}
+{% block title %}Диантус — оптовые поставки цветов из Эквадора, Кении, Голландии и России{% endblock %}
 {% block description %}Оптовый магазин цветов Диантус: розы, гвоздики, хризантемы, тюльпаны упаковками по ценам импортёра. Прямые поставки, холодовая цепь. Работаем только с юрлицами и ИП.{% endblock %}
 
 {% block content %}
@@ -11,11 +11,11 @@
             <span class="landing-hero__badge">
                 <i class="fas fa-briefcase me-1" aria-hidden="true"></i>Оптовая торговля · только юрлица и ИП
             </span>
-            <h1 class="landing-hero__title">Свежие цветы оптом — напрямую от производителя</h1>
+            <h1 class="landing-hero__title">Свежие цветы оптом в Москве — розы, хризантемы, гвоздики</h1>
             <p class="landing-hero__lead">
-                Розы, гвоздики, хризантемы и тюльпаны из Эквадора, Колумбии и Голландии.
-                Цены импортёра, стабильное качество и поставки каждую неделю — для цветочных
-                магазинов, салонов и флористов.
+                Розы, кустовые розы, хризантемы, гвоздики, горшечные растения и флористические
+                аксессуары из Эквадора, Кении, Голландии и России. Оптовые цены, стабильное
+                качество и поставки каждую неделю — для цветочных магазинов, салонов и флористов.
             </p>
             <div class="landing-hero__actions">
                 <a href="/register" class="btn btn-primary btn-lg landing-hero__cta">
@@ -26,10 +26,12 @@
                 </a>
             </div>
             <ul class="landing-stats">
+                {% if countries_count %}{# число стран считается по товарам в наличии, а не пишется руками #}
                 <li class="landing-stats__item">
-                    <span class="landing-stats__value">3</span>
-                    <span class="landing-stats__label">страны-поставщика</span>
+                    <span class="landing-stats__value">{{ countries_count }}</span>
+                    <span class="landing-stats__label">{{ countries_count|plural('страна', 'страны', 'стран') }} происхождения</span>
                 </li>
+                {% endif %}
                 {% if in_stock_count %}{# пока каталог пуст, «0 позиций» посетителям не показываем #}
                 <li class="landing-stats__item">
                     <span class="landing-stats__value">{{ in_stock_count }}</span>
@@ -56,8 +58,8 @@
             <span class="feature-card__icon"><i class="fas fa-plane-departure"></i></span>
             <h3 class="feature-card__title">Прямой импорт</h3>
             <p class="feature-card__text">
-                Закупаем на плантациях Эквадора, Колумбии и Голландии без посредников —
-                поэтому цены ниже, а свежесть выше.
+                Работаем с плантациями и проверенными поставщиками Эквадора, Кении, Голландии
+                и России, сами ведём поставки — поэтому цены оптовые, а свежесть выше.
             </p>
         </div>
         <div class="feature-card">
@@ -194,7 +196,7 @@
     "name": {{ config.SHOP_NAME|tojson }},
     "url": {{ config.APP_URL|tojson }},
     "logo": {{ (config.APP_URL + "/static/icons/icon-512.png")|tojson }},
-    "description": "Оптовые поставки свежих цветов из Эквадора, Колумбии и Голландии",
+    "description": "Оптовые поставки свежих цветов из Эквадора, Кении, Голландии и России",
     {% if config.SHOP_PHONE %}"telephone": {{ config.SHOP_PHONE|tojson }},{% endif %}
     {% if shop_address %}"address": {{ shop_address|tojson }},{% endif %}
     "contactPoint": [{

@@ -127,6 +127,36 @@ templates.env.filters["with_discount"] = lambda price, pct: apply_discount(price
 templates.env.filters["pct"] = lambda v: f"{float(v or 0):g}"
 
 
+def _plural(n, one: str, few: str, many: str) -> str:
+    """{{ 253|plural('позиция', 'позиции', 'позиций') }} → «позиций»; 1 → «позиция», 22 → «позиции»."""
+    try:
+        n = abs(int(n))
+    except (TypeError, ValueError):
+        return many
+    if 11 <= n % 100 <= 14:
+        return many
+    last = n % 10
+    return one if last == 1 else (few if 2 <= last <= 4 else many)
+
+
+# «из <страны>» в родительном падеже для описаний: «Кения» → «Кении», «Эквадор» → «Эквадора».
+# Неизвестное название оставляем как есть (лучше «из ЮАР», чем выдуманное окончание).
+_FROM_COUNTRY = {
+    "кения": "Кении", "эквадор": "Эквадора", "голландия": "Голландии", "россия": "России", "израиль": "Израиля",
+    "колумбия": "Колумбии", "италия": "Италии", "китай": "Китая", "таиланд": "Таиланда", "эфиопия": "Эфиопии",
+    "турция": "Турции", "испания": "Испании", "дания": "Дании", "нидерланды": "Нидерландов",
+}
+
+
+def _from_country(name) -> str:
+    text = str(name or "").strip()
+    return _FROM_COUNTRY.get(text.lower(), text)
+
+
+templates.env.filters["plural"] = _plural
+templates.env.filters["from_country"] = _from_country
+
+
 def render(request: Request, template: str, db: Session, **context):
     user = context.pop("user", None)
     if user is None:
