@@ -405,6 +405,7 @@ def test_each_sync_sets_the_remaining_stock_of_the_batch(web, mem_db):
 
 
 def test_unexported_orders_are_subtracted_when_the_option_is_on(web, mem_db, monkeypatch):
+    monkeypatch.setattr(config, "ONEC_RESERVE_UNEXPORTED", False)
     h = key_header(mem_db)
     post(web, h, [invoice(status="received", items=[line(quantity=500)])])
     item = item_of(mem_db)
@@ -511,13 +512,31 @@ def test_full_list_closes_1c_supplies_that_are_no_longer_sent(web, mem_db):
     assert mem_db.query(Supply).filter_by(external_id="A-1").one().status == "В пути"
     closed = mem_db.query(Supply).filter_by(external_id="B-2").one()
     assert closed.status == "Разгружен" and not any(i.is_active for i in closed.items)
+    assert all(i.stock == 0 for i in closed.items)
     assert mem_db.get(SupplyItem, manual.id).is_active and mem_db.get(SupplyItem, service.id).is_active
+
+    # Статус без состава не возвращает на полку остаток закрытой поставки.
+    post(web, h, [{"id": "B-2", "number": "B-2", "status": "received"}])
+    assert item_of(mem_db, "B-2").stock == 0 and not item_of(mem_db, "B-2").is_active
 
     # пустой «полный список» ничего не закрывает
     post(web, h, [invoice("B-2", status="received", items=[line("Роза Б 60", quantity=500)])])
     empty = web.post("/api/1c/supplies/sync?full=1", json={"supplies": []}, headers=h).json()
     assert empty["closed"] == 0 and empty["warnings"]
     assert item_of(mem_db, "B-2").is_active
+
+    confirmed = web.post("/api/1c/supplies/sync?dry_run=1", headers=h,
+                         json={"supplies": [], "full": True, "allow_empty": True}).json()
+    assert confirmed["closed"] == 2
+    assert item_of(mem_db, "B-2").is_active
+    confirmed = web.post("/api/1c/supplies/sync", headers=h,
+                         json={"supplies": [], "full": True, "allow_empty": True}).json()
+    assert confirmed["closed"] == 2
+    assert all(i.stock == 0 and not i.is_active
+               for i in mem_db.query(SupplyItem).join(Supply)
+               .filter(Supply.external_id != "").all())
+    assert mem_db.get(SupplyItem, manual.id).stock == 5
+    assert mem_db.get(SupplyItem, service.id).stock == 5
 
 
 # ───────────────────────── защита от двойной разгрузки ─────────────────────────
@@ -577,6 +596,7 @@ def test_forgotten_1c_supplies_are_closed_after_three_weeks(web, mem_db):
     assert close_stale_supplies(mem_db) == 1
     mem_db.expire_all()
     assert mem_db.query(Supply).filter_by(external_id="OLD").one().status == "Разгружен"
+    assert all(i.stock == 0 and not i.is_active for i in old.items)
     assert mem_db.query(Supply).filter_by(external_id="FRESH").one().status == "В пути"
     assert mem_db.get(Supply, manual.id).status == "В пути"
 

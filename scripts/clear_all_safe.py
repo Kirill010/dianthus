@@ -1,13 +1,6 @@
-# ПОЛНАЯ очистка сайта с возвратом остатков.
-
-# Порядок:
-#   1. Возвращаем остатки из всех заказов
-#   2. Удаляем заказы, позиции, уведомления
-#   3. Удаляем клиентов (не админов)
-#   4. Удаляем товары и партии
-#   5. Удаляем поставки
-
-# Остаются: только админы.
+# Очистка торговых данных: заказы, клиенты, товары и поставки.
+# Сохраняются администраторы, справочники, ключи, настройки, юридические
+# документы и журналы; пользовательские ссылки в сохранённых записях обнуляются.
 
 import sys
 from pathlib import Path
@@ -24,90 +17,69 @@ from cleanup_utils import (detach_orders_from_claims, drop_preorders,
                            return_stock_for_order_items)
 
 
+def clear_all_data(db) -> dict:
+    """Очищает торговые данные в одной транзакции и возвращает счётчики."""
+    try:
+        items = (db.query(OrderItem).join(Order)
+                 .filter(Order.status != "Отменён").all())
+        stock = return_stock_for_order_items(db, items)
+        notifications = db.query(Notification).delete(synchronize_session=False)
+        detach_orders_from_claims(db)
+        preorders = drop_preorders(db)
+        order_items = db.query(OrderItem).delete(synchronize_session=False)
+        orders = db.query(Order).delete(synchronize_session=False)
+
+        client_ids = [row[0] for row in db.query(User.id).filter(User.is_admin.is_(False)).all()]
+        purge_users(db, client_ids)
+        db.flush()
+        clients = (db.query(User).filter(User.is_admin.is_(False))
+                   .delete(synchronize_session=False))
+
+        supply_items = db.query(SupplyItem).delete(synchronize_session=False)
+        products = db.query(Product).delete(synchronize_session=False)
+        supplies = db.query(Supply).delete(synchronize_session=False)
+        db.commit()
+        return {
+            "stock": stock,
+            "notifications": notifications,
+            "preorders": preorders,
+            "order_items": order_items,
+            "orders": orders,
+            "clients": clients,
+            "supply_items": supply_items,
+            "products": products,
+            "supplies": supplies,
+        }
+    except Exception:
+        db.rollback()
+        raise
+
+
 def clear_all_safe() -> None:
-    print("╔══════════════════════════════════════════════════════════╗")
-    print("║   💥 ПОЛНАЯ ОЧИСТКА (с возвратом остатков)                ║")
-    print("╚══════════════════════════════════════════════════════════╝")
-    print()
-    print("Что будет сделано:")
-    print("  ✅ Остатки из заказов вернутся на склад")
-    print("  ✅ Заказы, позиции, уведомления удалены")
-    print("  ✅ Клиенты (не админы) удалены")
-    print("  ✅ Товары и партии удалены")
-    print("  ✅ Поставки удалены")
-    print()
-    print("Что ОСТАНЕТСЯ:")
-    print("  ✓ Только админы")
-    print()
-    print("⚠️  ЭТО НЕ ОТКАТИТЬ!")
+    print("ПОЛНАЯ ОЧИСТКА ТОРГОВЫХ ДАННЫХ")
+    print("Будут удалены: заказы, предзаказы, рекламации клиентов, уведомления,")
+    print("клиенты, товары и поставки.")
+    print("Сохранятся: администраторы, справочники, ключи, настройки,")
+    print("юридические документы и журналы (без ссылок на удалённых клиентов).")
+    print("ЭТО НЕ ОТКАТИТЬ. Сначала сделайте резервную копию: bash scripts/backup.sh")
     print()
 
-    if input("Точно продолжить? Введи YES: ").strip() != "YES":
+    if input("Точно продолжить? Введите YES: ").strip() != "YES":
         print("Отменено.")
         return
 
     db = SessionLocal()
     try:
-        # 1. Возврат остатков
-        print("\n⏳ Возвращаем остатки на склад...")
-        items = db.query(OrderItem).all()
-        report = return_stock_for_order_items(db, items)
-        print_stock_report(report)
-
-        # 2. Удаляем уведомления
-        print("\n⏳ Удаляем уведомления...")
-        n_notif = db.query(Notification).delete(synchronize_session=False)
-        print(f"   ✅ Удалено: {n_notif}")
-
-        # 3. Удаляем позиции заказов
-        print("\n⏳ Удаляем позиции заказов...")
-        n_items = db.query(OrderItem).delete(synchronize_session=False)
-        print(f"   ✅ Удалено: {n_items}")
-
-        # 4. Удаляем заказы
-        print("\n⏳ Удаляем заказы...")
-        n_orders = db.query(Order).delete(synchronize_session=False)
-        print(f"   ✅ Удалено: {n_orders}")
-
-        # 5. Удаляем клиентов
-        print("\n⏳ Удаляем клиентов (не админов)...")
-        n_clients = (db.query(User)
-                     .filter(User.is_admin == False)  # noqa: E712
-                     .delete(synchronize_session=False))
-        print(f"   ✅ Удалено: {n_clients}")
-
-        # 6. Удаляем партии
-        print("\n⏳ Удаляем партии...")
-        n_si = db.query(SupplyItem).delete(synchronize_session=False)
-        print(f"   ✅ Удалено: {n_si}")
-
-        # 7. Удаляем товары
-        print("\n⏳ Удаляем товары...")
-        n_p = db.query(Product).delete(synchronize_session=False)
-        print(f"   ✅ Удалено: {n_p}")
-
-        # 8. Удаляем поставки
-        print("\n⏳ Удаляем поставки...")
-        n_s = db.query(Supply).delete(synchronize_session=False)
-        print(f"   ✅ Удалено: {n_s}")
-
-        db.commit()
-
-        print()
-        print("╔══════════════════════════════════════════════════════════╗")
-        print("║   ✅ ГОТОВО! Сайт пустой, админы на месте                 ║")
-        print("╚══════════════════════════════════════════════════════════╝")
-        print()
-        print(f"  • Возвращено на склад:  {report['returned_packs']} упаковок")
-        print(f"  • Удалено заказов:      {n_orders}")
-        print(f"  • Удалено клиентов:     {n_clients}")
-        print(f"  • Удалено товаров:      {n_p}")
-        print(f"  • Удалено поставок:     {n_s}")
-
+        result = clear_all_data(db)
+        print_stock_report(result["stock"])
+        print("Готово. Торговые данные удалены, администраторы сохранены.")
+        for key, label in (
+                ("orders", "заказов"), ("clients", "клиентов"),
+                ("products", "товаров"), ("supplies", "поставок")):
+            print(f"  Удалено {label}: {result[key]}")
     except Exception as e:
-        db.rollback()
-        print(f"\n❌ Ошибка: {e}")
-        print("   Изменения откачены. Ничего не удалено.")
+        print(f"Ошибка: {e}")
+        print("Изменения откачены. Ничего не удалено.")
         raise
     finally:
         db.close()

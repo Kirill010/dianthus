@@ -318,7 +318,9 @@ async def sync_supplies(
     quantity — ОСТАТОК партии в штуках) | cancelled.
     Повторная отправка ничего не дублирует: поставка ищется по id инвойса.
     full=1 (или "full": true) — в списке ВСЕ поставки, которые ещё в пути или имеют остаток;
-    остальные поставки из 1С закрываются. dry_run=1 — проверка без сохранения.
+    остальные поставки из 1С закрываются. Пустой полный снимок требует ещё и
+    "allow_empty": true — отдельное подтверждение, что весь товар продан.
+    dry_run=1 — проверка без сохранения.
     """
     body = await request.body()
     if len(body) > MAX_BODY_BYTES:
@@ -330,10 +332,11 @@ async def sync_supplies(
     if len(supplies) > MAX_SUPPLIES_PER_SYNC:
         raise HTTPException(413, f"Слишком много инвойсов за раз (максимум {MAX_SUPPLIES_PER_SYNC}).")
     full_list = bool(full) or payload.get("full") is True
+    allow_empty = full_list and payload.get("allow_empty") is True
     try:
         result = await run_in_threadpool(
             apply_supplies, db, supplies, dry_run=bool(dry_run), full=full_list,
-            reserve_unexported=config.ONEC_RESERVE_UNEXPORTED)
+            allow_empty=allow_empty, reserve_unexported=config.ONEC_RESERVE_UNEXPORTED)
     except SyncCommitError:
         raise HTTPException(500, "Ошибка БД при сохранении инвойсов. Повторите позже.")
     note(request, result.summary() + (", полный список" if full_list else ""))

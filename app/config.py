@@ -93,9 +93,9 @@ class Config:
     # «подтвердила» (POST /api/1c/orders/ack). Закрывает окно, когда клиент
     # оформил заказ уже ПОСЛЕ того, как 1С посчитала остатки: без этого
     # свежая выгрузка вернёт проданные упаковки на полку (перепродажа).
-    # Включайте, только если 1С реально вызывает orders/ack — иначе
-    # подтверждения не придут и остатки будут занижены.
-    ONEC_RESERVE_UNEXPORTED: bool = _bool_env("ONEC_RESERVE_UNEXPORTED", False)
+    # Сотрудник подтверждает заказ только после создания документа и резерва
+    # в 1С. Если оставить заказ неподтверждённым, остаток будет занижен.
+    ONEC_RESERVE_UNEXPORTED: bool = _bool_env("ONEC_RESERVE_UNEXPORTED", True)
 
     SMTP_HOST: str = _str_env("SMTP_HOST", "")
     SMTP_PORT: int = _int_env("SMTP_PORT", 465)

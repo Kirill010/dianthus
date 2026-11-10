@@ -17,9 +17,9 @@
     ничего не дублирует). Строка с остатком 0 снимается с полки.
   * Когда инвойс получает статус «received», клиентам с предзаказом резервируется товар
     этой же строки и уходит уведомление.
-  * Пустой список ничего не закрывает: статус приходит явно, а не «по отсутствию».
-    Чтобы закрыть сразу все поставки, которых 1С больше не присылает, список отправляют
-    с полем full=true.
+  * Чтобы закрыть сразу все поставки, которых 1С больше не присылает, список
+    отправляют с полем full=true. Пустой список по умолчанию ничего не закрывает;
+    полное отсутствие товара подтверждают дополнительно allow_empty=true.
   * Забытые «в пути» (1С давно не присылала инвойс) закрываются сами через 21 день.
 """
 import logging
@@ -386,16 +386,18 @@ def _close(supply: Supply, why: str) -> None:
     supply.status = ARRIVED
     supply.notes = ((supply.notes or "")[:440] + f" ({why})")
     for item in supply.items:
-        item.is_active = False
+        item.stock, item.is_active = 0, False
 
 
 def apply_supplies(db: Session, supplies: list[dict], *, dry_run: bool = False,
-                   full: bool = False, reserve_unexported: bool = False) -> SupplySyncResult:
+                   full: bool = False, allow_empty: bool = False,
+                   reserve_unexported: bool = False) -> SupplySyncResult:
     """Применяет присланные инвойсы. Делает commit (или rollback при dry_run).
 
     full=True — «полный список»: все поставки из 1С, которых в этой выгрузке нет,
-    закрываются (позиции снимаются с полки). Включайте, только когда присылаете ВСЕ
-    поставки, которые ещё в пути или имеют остаток.
+    закрываются (остаток обнуляется, позиции снимаются с полки). Включайте, только
+    когда присылаете ВСЕ поставки, которые ещё в пути или имеют остаток. Пустой
+    снимок применяется только с отдельным allow_empty=True.
     """
     lock_exchange(db)
     result = SupplySyncResult(dry_run=dry_run)
@@ -484,8 +486,8 @@ def apply_supplies(db: Session, supplies: list[dict], *, dry_run: bool = False,
         result.cancelled += 1
 
     if full:
-        if not listed:
-            result.warnings.append("full=true без поставок не применяется (он закрыл бы все поставки)")
+        if not listed and not allow_empty:
+            result.warnings.append("full=true без поставок не применяется: нужен ещё allow_empty=true")
         else:
             for supply in (db.query(Supply)
                            .filter(Supply.external_id != "", Supply.is_service.is_(False),

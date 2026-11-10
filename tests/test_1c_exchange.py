@@ -305,28 +305,41 @@ def test_clients_export_pagination(web, mem_db):
 # ═══════════════════ ЗАЩИТА ОТ ПЕРЕПРОДАЖИ ═══════════════════
 
 def test_reserve_unexported_orders_when_enabled(web, mem_db, monkeypatch):
-    """Опция: свежий заказ, которого 1С ещё не видела, вычитается из остатка 1С —
-    иначе выгрузка вернула бы проданные упаковки на полку."""
+    """Свежий заказ не воскресает при обмене; после ack его учитывает уже 1С."""
     from app.config import config
     sync(web, [row(1, packs=10)])
     item = mem_db.query(SupplyItem).one()
     client = make_user(mem_db, "c@test.ru")
     order = make_order(mem_db, client, item, packs=3)         # остаток на сайте: 7
 
-    # по умолчанию (опция выключена) выгрузка 1С затирает остаток как есть
+    monkeypatch.setattr(config, "ONEC_RESERVE_UNEXPORTED", False)
     sync(web, [row(1, packs=10)])
     mem_db.refresh(item)
-    assert item.stock == 10
+    assert item.stock == 10                                   # небезопасный старый режим
 
     monkeypatch.setattr(config, "ONEC_RESERVE_UNEXPORTED", True)
     sync(web, [row(1, packs=10)])
     mem_db.refresh(item)
-    assert item.stock == 7                                   # 10 − 3 неподтверждённых
+    assert item.stock == 7                                    # 10 − 3 неподтверждённых
+    assert web.get("/api/1c/orders/export?new=1", headers=AUTH).json()["count"] == 1
 
-    web.post("/api/1c/orders/ack", headers=AUTH, json={"numbers": [f"САЙТ-{order.id}"]})
+    ack = web.post("/api/1c/orders/ack", headers=AUTH, json={"orders": [
+        {"number": f"САЙТ-{order.id}", "onec_number": "ЗК-001"}]})
+    assert ack.json()["acked"] == 1
+    assert web.get("/api/1c/orders/export?new=1", headers=AUTH).json()["count"] == 0
+    mem_db.refresh(order)
+    assert order.onec_number == "ЗК-001"
+
     sync(web, [row(1, packs=7)])                              # теперь 1С учла заказ сама
     mem_db.refresh(item)
     assert item.stock == 7
+
+    for expected in (1, 0):
+        r = web.post("/api/1c/orders/status", headers=AUTH, json={"orders": [
+            {"number": f"САЙТ-{order.id}", "status": "Отменён"}]})
+        assert r.json()["updated"] == expected
+        mem_db.refresh(item)
+        assert item.stock == 10                               # повторная отмена не удваивает возврат
 
 
 def test_sync_warns_when_product_is_on_shelf_from_both_1c_and_manual_supply(web, mem_db):

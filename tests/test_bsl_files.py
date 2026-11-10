@@ -48,6 +48,21 @@ def test_both_1c_files_are_present():
     assert [f.name for f in FILES] == ["ObmenSSaitom.bsl", "Proverka.bsl"]
 
 
+def test_1c_exchange_has_full_snapshot_and_order_safety_guards():
+    source = FILES[0].read_text(encoding="utf-8")
+    assert 'Возврат Нас("cap_stock") = "1" И ПустаяСтрока(Нас("invoice_kinds"))' in source
+    assert 'ГДЕ (Д.Проведен Или Д.Дата >= &От)' in source
+    assert 'Инвойсы.Количество() > 200' in source
+    assert '"""full"":true' in source and '"""allow_empty"":true' in source
+    assert 'Инвойсы.Количество() = 0 И СтатИнвойсов.Прочитано = 0' in source
+    assert 'СтатИнвойсов.Пустых = СтатИнвойсов.Пустых + 1' in source
+    assert '/api/1c/orders/ack?numbers=' not in source
+    assert 'Подтверждайте каждый заказ отдельно' in source
+    assert 'Автоматическое подтверждение заказов запрещено' in source
+    assert 'ДействиеЗаказСтатус();' in source
+    assert '/api/1c/orders/status' in source
+
+
 @pytest.mark.parametrize("script", SCRIPTS)
 @pytest.mark.parametrize("bsl", FILES, ids=lambda p: p.name)
 def test_1c_file_has_no_typos(script, bsl):
