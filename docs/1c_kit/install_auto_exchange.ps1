@@ -7,7 +7,7 @@
 #   .\install_auto_exchange.ps1 -OneCUser "Обмен"               # вход по имени пользователя 1С (спросит пароль)
 #   .\install_auto_exchange.ps1 -EveryMinutes 15 -From 07:30 -To 22:00
 #
-# ЧТО ДЕЛАЕТ: каждые N минут в рабочее время запускает 1С без окон: обработка ОбменССайтом_v3.epf с параметром «авто» отправляет
+# ЧТО ДЕЛАЕТ: каждые N минут в рабочее время запускает 1С без окон: обработка ОбменССайтом.epf с параметром «авто» отправляет
 # инвойсы на сайт (если в меню обработки, пункт 12, включена автоматическая отправка инвойсов), пишет отчёт в
 # Документы\Dianthus1C\last_report.txt и историю в auto_log.txt.
 #
@@ -17,7 +17,7 @@
 #  * Скрипт НЕ включает автоматическую отправку: это делает пункт 12 обработки (иначе «авто» ничего не отправит).
 #  * Удалить задачу: Unregister-ScheduledTask -TaskName "Dianthus: обмен 1С с сайтом" -Confirm:$false
 param(
-    [string]$Epf = (Join-Path ([Environment]::GetFolderPath('Desktop')) 'ОбменССайтом_v3.epf'),
+    [string]$Epf = (Join-Path ([Environment]::GetFolderPath('Desktop')) 'ОбменССайтом.epf'),
     [string]$Base = 'Цветы',
     [string]$OneCUser = '',
     [int]$EveryMinutes = 30,

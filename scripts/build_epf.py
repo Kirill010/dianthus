@@ -4,8 +4,8 @@
 Внутри .epf лежит контейнер 1С с текстом модуля объекта. Скрипт берёт готовый рабочий .epf (шаблон), подменяет в нём только текст
 модуля и записывает новый файл. Структура обработки (имя, реквизиты, формы) остаётся от шаблона.
 
-    python scripts/build_epf.py docs/1c_kit/ОбменССайтом_v3.epf docs/1c_kit/ObmenSSaitom.bsl новый.epf
-    python scripts/build_epf.py --check docs/1c_kit/ОбменССайтом_v3.epf docs/1c_kit/ObmenSSaitom.bsl
+    python scripts/build_epf.py docs/1c_kit/ОбменССайтом.epf docs/1c_kit/ObmenSSaitom.bsl новый.epf
+    python scripts/build_epf.py --check docs/1c_kit/ОбменССайтом.epf docs/1c_kit/ObmenSSaitom.bsl
 
 --check ничего не пишет: сверяет, что модуль внутри .epf совпадает с исходным текстом.
 

@@ -5,7 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 KIT = ROOT / "docs" / "1c_kit"
-EPF = KIT / "ОбменССайтом_v3.epf"
+EPF = KIT / "ОбменССайтом.epf"
 BSL = KIT / "ObmenSSaitom.bsl"
 
 
@@ -19,9 +19,9 @@ def _tool():
 def test_committed_epf_is_built_from_the_committed_source():
     tool = _tool()
     same = tool.read_module_text(str(EPF)) == tool.normalize(BSL.read_bytes())
-    assert same, ("ОбменССайтом_v3.epf собран из другого текста, чем ObmenSSaitom.bsl. Пересоберите: "
-                  "python scripts/build_epf.py docs/1c_kit/ОбменССайтом_v3.epf docs/1c_kit/ObmenSSaitom.bsl "
-                  "docs/1c_kit/ОбменССайтом_v3.epf")
+    assert same, ("ОбменССайтом.epf собран из другого текста, чем ObmenSSaitom.bsl. Пересоберите: "
+                  "python scripts/build_epf.py docs/1c_kit/ОбменССайтом.epf docs/1c_kit/ObmenSSaitom.bsl "
+                  "docs/1c_kit/ОбменССайтом.epf")
 
 
 def test_build_replaces_only_the_module_text(tmp_path):
