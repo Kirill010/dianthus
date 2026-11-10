@@ -81,12 +81,19 @@ def formats_json() -> str:
     return _formats_source().replace("{{URL}}", base_url())
 
 
+def _in_quotes(name: str) -> str:
+    """Название в кавычках «…», но только если в нём самом ещё нет кавычек:
+    иначе у «ООО «Диантус»» получились бы две пары."""
+    name = (name or "").strip()
+    return name if any(q in name for q in "«»\"") else f"«{name}»"
+
+
 def message_for_programmer(key: str | None = None) -> str:
     """Готовое письмо, которое владелец пересылает программисту 1С."""
     url = base_url()
     key_line = key if key else "(ключ владелец передаст отдельно)"
     return (
-        f"Здравствуйте! Нужно настроить обмен между 1С и сайтом «{config.SHOP_NAME}» "
+        f"Здравствуйте! Нужно настроить обмен между 1С и сайтом {_in_quotes(config.SHOP_NAME)} "
         f"(оптовые цветы).\n\n"
         f"Работаем по поставкам (инвойсам): вы присылаете инвойсы с товаром, ценой и "
         f"количеством, а заказы сайт возвращает с привязкой к поставке. Во всём обмене "

@@ -169,13 +169,14 @@ def render(request: Request, template: str, db: Session, **context):
         )
 
     # реквизиты для подвала: внесённые в админке главнее .env
-    shop = get_settings(db, ("shop_inn", "shop_ogrn"))
+    shop = get_settings(db, ("shop_inn", "shop_ogrn", "shop_address"))
 
     context.update({
         "user": user,
         "flash": flash,
         "shop_inn": shop["shop_inn"],
         "shop_ogrn": shop["shop_ogrn"],
+        "shop_address": shop["shop_address"],
         "cart_count": cart_count,
         "preorder_count": preorder_total,
         "active_supply": active_supply,

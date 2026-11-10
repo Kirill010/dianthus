@@ -11,6 +11,7 @@ from ..database import get_db
 from ..deps import get_current_user
 from ..security import check_csrf
 from ..services import legal, totp
+from ..services.site_settings import shop_address
 from ..templating import render
 from ..web import safe_back
 from ..validators import (validate_address, validate_company_name,
@@ -308,7 +309,8 @@ def contacts_page(request: Request, db: Session = Depends(get_db)):
         "name": config.SHOP_NAME,
         "phone": config.SHOP_PHONE,
         "phone_2": config.SHOP_PHONE_2,
-        "address": config.SHOP_ADDRESS,
+        "address": shop_address(db),
+        "legal_address": legal.legal_address(db),
         "hours": config.SHOP_WORKING_HOURS,
         "max_link": config.SHOP_MAX_LINK,
         "map_url": config.SHOP_MAP_URL,

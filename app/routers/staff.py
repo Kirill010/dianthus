@@ -249,7 +249,8 @@ def settings_page(request: Request, db: Session = Depends(get_db),
 @router.post("/settings")
 def settings_save(request: Request, payment_terms: str = Form(""), preorder_lead_days: str = Form(""),
                   shop_inn: str = Form(""), shop_ogrn: str = Form(""),
-                  shop_legal_address: str = Form(""), shop_email: str = Form(""),
+                  shop_legal_address: str = Form(""), shop_address: str = Form(""),
+                  shop_email: str = Form(""),
                   shop_pd_responsible: str = Form(""), pd_processors: str = Form(""),
                   db: Session = Depends(get_db), admin=Depends(require_admin),
                   _csrf: None = Depends(check_csrf)):
@@ -269,6 +270,7 @@ def settings_save(request: Request, payment_terms: str = Form(""), preorder_lead
     shop_inn = "".join(shop_inn.split())
     shop_ogrn = "".join(shop_ogrn.split())
     shop_legal_address = " ".join(shop_legal_address.split())[:300]
+    shop_address = " ".join(shop_address.split())[:300]
     shop_email = shop_email.strip().lower()
     shop_pd_responsible = " ".join(shop_pd_responsible.split())[:200]
     pd_processors = pd_processors.replace("\r\n", "\n").strip()[:3000]
@@ -288,7 +290,8 @@ def settings_save(request: Request, payment_terms: str = Form(""), preorder_lead
     set_setting(db, "payment_terms", payment_terms, admin)
     set_setting(db, "preorder_lead_days", ", ".join(f"{n}={d}" for n, d in rules.items()), admin)
     for key, value in (("shop_inn", shop_inn), ("shop_ogrn", shop_ogrn),
-                       ("shop_legal_address", shop_legal_address), ("shop_email", shop_email),
+                       ("shop_legal_address", shop_legal_address), ("shop_address", shop_address),
+                       ("shop_email", shop_email),
                        ("shop_pd_responsible", shop_pd_responsible), ("pd_processors", pd_processors)):
         set_setting(db, key, value, admin)
     log_action(db, request, admin, "settings", "settings", None, "Изменены настройки магазина")

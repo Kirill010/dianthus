@@ -25,7 +25,7 @@ from ..security import _client_ip
 from ..timeutils import fmt_local, utc_iso
 from . import markdown_lite, preorder_rules
 from .legal_texts import DEFAULTS
-from .site_settings import DEFAULT_PROCESSORS, flag_is_set, get_setting
+from .site_settings import DEFAULT_PROCESSORS, flag_is_set, get_setting, shop_address
 from .upload_service import delete_upload
 
 logger = logging.getLogger(__name__)
@@ -104,9 +104,9 @@ def current_version(db: Session, slug: str) -> str:
 
 
 def legal_address(db: Session | None = None) -> str:
-    """Юридический адрес: из админки (если внесён), иначе из .env, иначе адрес магазина."""
+    """Юридический адрес: из админки (если внесён), иначе из .env, иначе фактический адрес магазина."""
     saved = get_setting(db, "shop_legal_address") if db is not None else config.SHOP_LEGAL_ADDRESS
-    return saved or config.SHOP_ADDRESS
+    return saved or shop_address(db)
 
 
 def processors_markdown(db: Session) -> str:

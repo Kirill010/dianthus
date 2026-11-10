@@ -35,7 +35,7 @@ from . import models, security
 from .security import CsrfError, init_rate_limiter, close_rate_limiter
 from .services.legal import ensure_default_legal_docs
 from .templating import render
-from .middleware import ExchangeLogMiddleware, SecurityHeadersMiddleware
+from .middleware import ExchangeLogMiddleware, HeadAsGetMiddleware, SecurityHeadersMiddleware
 from .session import ServerSessionMiddleware
 from .web import safe_back
 
@@ -158,6 +158,8 @@ app.add_middleware(
     cookie_name="dianthus_sid",
     redis_getter=security.get_redis_client,
 )
+# HEAD (проверки доступности, предпросмотр ссылок) отвечает как GET, но без тела
+app.add_middleware(HeadAsGetMiddleware)
 
 # Доверенные Host-заголовки: отсекаем запросы с поддельным Host
 # (Host header poisoning — например, для подмены ссылок в письмах).

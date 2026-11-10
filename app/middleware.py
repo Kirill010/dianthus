@@ -62,6 +62,37 @@ class ExchangeLogMiddleware:
             )
 
 
+class HeadAsGetMiddleware:
+    """HEAD работает как GET, только без тела ответа.
+
+    FastAPI на маршрут `@app.get` отвечает на HEAD кодом 405. Проверки доступности
+    (например, UptimeRobot по умолчанию шлёт именно HEAD) приняли бы это за «сайт лежит».
+    GET-адреса сайта ничего не меняют, поэтому HEAD просто выполняется как GET, а тело
+    отбрасывается; заголовки (в том числе Content-Length) остаются прежними.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope.get("method") != "HEAD":
+            await self.app(scope, receive, send)
+            return
+
+        body_sent = False
+
+        async def send_without_body(message: Message) -> None:
+            nonlocal body_sent
+            if message["type"] == "http.response.body":
+                if body_sent:
+                    return                      # остальные куски потокового ответа не нужны
+                body_sent = True
+                message = {"type": "http.response.body", "body": b"", "more_body": False}
+            await send(message)
+
+        await self.app({**scope, "method": "GET"}, receive, send_without_body)
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # Nonce нужен ДО формирования ответа: его читает templating.render

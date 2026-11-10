@@ -33,8 +33,18 @@
         <div class="contacts-item">
             <i class="fas fa-map-marker-alt"></i>
             <div>
-                <div class="contacts-item__label">Адрес</div>
+                <div class="contacts-item__label">{% if shop.legal_address and shop.legal_address != shop.address %}Фактический адрес{% else %}Адрес{% endif %}</div>
                 <div class="contacts-item__value">{{ shop.address }}</div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if shop.legal_address and shop.legal_address != shop.address %}
+        <div class="contacts-item">
+            <i class="fas fa-building"></i>
+            <div>
+                <div class="contacts-item__label">Юридический адрес</div>
+                <div class="contacts-item__value">{{ shop.legal_address }}</div>
             </div>
         </div>
         {% endif %}

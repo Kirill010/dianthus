@@ -147,12 +147,12 @@
             </div>
         </div>
         {% endif %}
-        {% if config.SHOP_ADDRESS %}
+        {% if shop_address %}
         <div class="landing-contacts__item">
             <i class="fas fa-map-marker-alt"></i>
             <div>
                 <div class="landing-contacts__label">Адрес</div>
-                <span class="landing-contacts__value">{{ config.SHOP_ADDRESS }}</span>
+                <span class="landing-contacts__value">{{ shop_address }}</span>
             </div>
         </div>
         {% endif %}
@@ -196,7 +196,7 @@
     "logo": {{ (config.APP_URL + "/static/icons/icon-512.png")|tojson }},
     "description": "Оптовые поставки свежих цветов из Эквадора, Колумбии и Голландии",
     {% if config.SHOP_PHONE %}"telephone": {{ config.SHOP_PHONE|tojson }},{% endif %}
-    {% if config.SHOP_ADDRESS %}"address": {{ config.SHOP_ADDRESS|tojson }},{% endif %}
+    {% if shop_address %}"address": {{ shop_address|tojson }},{% endif %}
     "contactPoint": [{
         "@type": "ContactPoint",
         "contactType": "sales",

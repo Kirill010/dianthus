@@ -2650,3 +2650,17 @@ a.product-card-v2__price-locked:hover { background: var(--primary-pale); color: 
     .form-check-input { width: 1.5em; height: 1.5em; }
     .page-btn { min-width: 44px; min-height: 44px; }
 }
+
+/* Узкий телефон (до 420 px — 360 и 375 самые частые): у вошедшего пользователя в шапке было больше значков,
+   чем помещается по ширине, «Профиль» уезжал за край, а страница прокручивалась вбок. Сжимаем промежутки и
+   название; значки остаются по 44 px, чтобы попадать пальцем. «Корзина» и «Профиль» есть и в нижней панели,
+   «Контакты» — в подвале каждой страницы, поэтому значок телефона в этой ширине убран (как «Контакты» у гостя). */
+@media (max-width: 420px) {
+    .app-header { padding-left: 12px; padding-right: 12px; }
+    .app-header__inner { gap: 8px; }
+    .app-logo { gap: 6px; }
+    .app-logo__icon { width: 40px; height: 40px; }
+    .app-logo__word { font-size: 1.3rem; }
+    .app-header__right { gap: 4px; }
+    .app-header__icon--phone { display: none; }
+}

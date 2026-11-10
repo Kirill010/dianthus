@@ -44,7 +44,13 @@ EDITABLE: dict[str, tuple[str, str, str]] = {
     "shop_legal_address": (
         "Юридический адрес",
         "",
-        "Как в ЕГРЮЛ. Если оставить пустым, подставится адрес магазина из настроек сервера.",
+        "Как в ЕГРЮЛ: печатается в политике, согласиях и счёте. Если оставить пустым, подставится фактический адрес.",
+    ),
+    "shop_address": (
+        "Фактический адрес (где забирают цветы)",
+        "",
+        "Адрес склада или магазина: показывается клиентам на главной, в «Контактах» и при самовывозе. "
+        "Если оставить пустым, берётся адрес из настроек сервера.",
     ),
     "shop_email": (
         "Почта для обращений клиентов",
@@ -85,6 +91,7 @@ def _now() -> datetime:
 # реквизиты: запасное значение читается из .env в момент обращения (а не при запуске)
 ENV_FALLBACK = {
     "shop_inn": "SHOP_INN", "shop_ogrn": "SHOP_OGRN", "shop_legal_address": "SHOP_LEGAL_ADDRESS",
+    "shop_address": "SHOP_ADDRESS",
     "shop_email": "SHOP_EMAIL", "shop_pd_responsible": "SHOP_PD_RESPONSIBLE",
 }
 
@@ -111,6 +118,11 @@ def get_settings(db: Session, keys) -> dict[str, str]:
     saved = {r.key: r.value for r in
              db.query(SiteSetting).filter(SiteSetting.key.in_(keys)).all()}
     return {k: (saved.get(k) or _fallback(k)) for k in keys}
+
+
+def shop_address(db: Session | None = None) -> str:
+    """Фактический адрес магазина: из админки (если внесён), иначе из .env."""
+    return get_setting(db, "shop_address") if db is not None else (config.SHOP_ADDRESS or "")
 
 
 def set_setting(db: Session, key: str, value: str, admin=None) -> None:

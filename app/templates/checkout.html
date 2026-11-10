@@ -32,7 +32,7 @@
             <div class="form-check">
                 <input class="form-check-input" type="radio" name="delivery_method" id="co-pickup" value="pickup"
                        {% if method == 'pickup' %}checked{% endif %}>
-                <label class="form-check-label" for="co-pickup">Самовывоз{% if config.SHOP_ADDRESS %} — {{ config.SHOP_ADDRESS }}{% endif %}</label>
+                <label class="form-check-label" for="co-pickup">Самовывоз{% if shop_address %} — {{ shop_address }}{% endif %}</label>
             </div>
             <div class="form-check">
                 <input class="form-check-input" type="radio" name="delivery_method" id="co-delivery" value="delivery"
