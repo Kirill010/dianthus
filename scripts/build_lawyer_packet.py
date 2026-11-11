@@ -59,7 +59,7 @@ def main() -> int:
     args = ap.parse_args()
 
     doc = bm.convert(build_markdown(), LEGAL)
-    bm.CSS = bm.CSS.replace("Диантус: сайт и 1С — просто · стр. ", "Пакет для юриста · ООО «Диантус» · стр. ")
+    bm.CSS = bm.CSS.replace("Диантус: сайт и 1С · стр. ", "Пакет для юриста · ООО «Диантус» · стр. ")
     html_text = bm.render(doc)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

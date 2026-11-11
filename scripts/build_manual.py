@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Собирает руководство «Диантус: сайт и 1С — просто» из docs/РУКОВОДСТВО.md в один самодостаточный HTML-файл и (по желанию) в PDF.
+"""Собирает руководство «Диантус: сайт и 1С» из docs/РУКОВОДСТВО.md в один самодостаточный HTML-файл и (по желанию) в PDF.
 
     python scripts/build_manual.py                          # docs/_build/РУКОВОДСТВО.html
     python scripts/build_manual.py --pdf                    # то же + PDF через Chrome или Edge (без интернета)
@@ -30,7 +30,7 @@ mimetypes.add_type("image/webp", ".webp")
 
 CSS = """
 @page { size: A4; margin: 15mm 14mm 17mm 14mm;
-        @bottom-center { content: "Диантус: сайт и 1С — просто · стр. " counter(page); font: 8.5pt 'Segoe UI', Arial, sans-serif; color: #8a8a80; } }
+        @bottom-center { content: "Диантус: сайт и 1С · стр. " counter(page); font: 8.5pt 'Segoe UI', Arial, sans-serif; color: #8a8a80; } }
 @page :first { @bottom-center { content: none; } }
 * { box-sizing: border-box; }
 html { font: 11.4pt/1.55 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; color: #26302a; }
@@ -415,12 +415,12 @@ def main() -> int:
     ap.add_argument("--out-dir", default=str(ROOT / "docs" / "_build"), help="куда положить HTML")
     ap.add_argument("--pdf", nargs="?", const="auto", help="ещё и PDF (без значения — рядом с HTML)")
     ap.add_argument("--source", default=str(SOURCE), help="какой файл .md собрать (по умолчанию docs/РУКОВОДСТВО.md)")
-    ap.add_argument("--footer", help="текст внизу страниц PDF (по умолчанию «Диантус: сайт и 1С — просто»)")
+    ap.add_argument("--footer", help="текст внизу страниц PDF (по умолчанию «Диантус: сайт и 1С»)")
     args = ap.parse_args()
 
     global CSS
     if args.footer:
-        CSS = CSS.replace("Диантус: сайт и 1С — просто · стр. ", args.footer + " · стр. ")
+        CSS = CSS.replace("Диантус: сайт и 1С · стр. ", args.footer + " · стр. ")
     src = Path(args.source)
     doc = convert(src.read_text(encoding="utf-8"), src.parent)
     out_dir = Path(args.out_dir)
