@@ -58,8 +58,23 @@ def test_manual_converts_to_clean_html():
 def test_parts_cover_all_roles_and_appendices():
     heads = [t for _lvl, _sid, t in build.convert(MANUAL.read_text(encoding="utf-8")).toc]
     for needle in ("Часть 1. Покупателю", "Часть 2. Менеджеру", "Часть 3. Владельцу", "Часть 4. Оператору 1С",
-                   "Часть 5. Склад", "Часть 6. Если что-то пошло не так", "Приложение А", "Приложение Б"):
+                   "Часть 5. Склад", "Часть 6. Если что-то пошло не так", "Приложение. Адреса страниц"):
         assert any(h.startswith(needle) for h in heads), needle
+    assert not any("Приложение Б" in h for h in heads)               # колонки журнала 1С убраны по просьбе владельца
+
+
+def test_every_menu_item_of_the_processor_is_described_in_the_manual():
+    """В руководстве есть раздел по каждому из 21 пункта меню обработки 1С (и названия сверены с исходником)."""
+    text = MANUAL.read_text(encoding="utf-8")
+    bsl = (ROOT / "docs" / "1c_kit" / "ObmenSSaitom.bsl").read_text(encoding="utf-8")
+    items = re.findall(r'Список\.Добавить\("(\d+)", "(\d+)\.', bsl)
+    assert sorted(int(n) for n, _ in items) == list(range(1, 22))      # в обработке ровно пункты 1–21
+    covered = set()
+    for m in re.finditer(r"^### Пункты? ([\d, ]+)\.", text, flags=re.M):
+        covered |= {int(x) for x in re.findall(r"\d+", m.group(1))}
+    assert covered == set(range(1, 22)), sorted(set(range(1, 22)) - covered)
+    version = re.search(r'Возврат "([^"]+)";', bsl[bsl.index("Функция ВерсияОбработки"):]).group(1)
+    assert f"сборка {version}" in text                                  # номер сборки в руководстве = в исходнике
 
 
 def test_inline_markup_and_lists_of_the_converter():

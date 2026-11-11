@@ -8,7 +8,9 @@
 #   2. git pull (только «быстрая перемотка», без неожиданных слияний);
 #   3. пересборка образа и перезапуск контейнеров;
 #   4. пересборка конфига nginx из шаблона, если шаблон в git изменился
-#      (с проверкой `nginx -t` и автоматическим откатом при ошибке);
+#      (с проверкой `nginx -t` и автоматическим откатом при ошибке); если изменились файлы
+#      nginx.conf или proxy_params.conf — проверка нового конфига в отдельном контейнере и
+#      перезапуск nginx (иначе контейнер продолжил бы работать по старым настройкам);
 #   5. ждёт, пока приложение станет «healthy», и показывает состояние.
 # ───────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -45,8 +47,34 @@ if [[ -n "$DOMAIN" && -f "$CONF" ]]; then
         fi
     fi
 fi
-# nginx.conf и proxy_params.conf монтируются из репозитория — перечитываем
-docker compose exec -T nginx nginx -s reload || true
+# nginx.conf и proxy_params.conf смонтированы в контейнер ОТДЕЛЬНЫМИ ФАЙЛАМИ. Когда git заменяет такой файл,
+# контейнер продолжает видеть старый (Docker держит файл по номеру, а не по имени), и «nginx -s reload»
+# перечитывает старые настройки: новое сжатие, лимиты и т. п. не применяются. Поэтому сравниваем то, что видит
+# контейнер, с файлами в репозитории; отличаются — проверяем новый конфиг в отдельном контейнере и перезапускаем
+# nginx (перерыв около секунды). Не прошёл проверку — nginx остаётся на прежних настройках, скрипт завершится с ошибкой.
+NGINX_PROBLEM=0
+STALE=0
+for f in nginx.conf proxy_params.conf; do
+    if ! docker compose exec -T nginx cat "/etc/nginx/$f" 2>/dev/null | cmp -s - "nginx/$f"; then
+        STALE=1
+    fi
+done
+if [[ "$STALE" == 1 ]]; then
+    echo "    nginx.conf или proxy_params.conf изменились: проверяю новый конфиг и перезапускаю nginx"
+    if docker compose run --rm --no-deps --entrypoint nginx nginx -t; then
+        if docker compose restart nginx; then
+            echo "    nginx перезапущен с новыми настройками"
+        else
+            echo "❌ Не удалось перезапустить nginx: docker compose logs nginx --tail=40" >&2
+            NGINX_PROBLEM=1
+        fi
+    else
+        echo "❌ Новый nginx.conf не прошёл проверку — nginx оставлен на прежних настройках. Исправьте файл и запустите обновление ещё раз." >&2
+        NGINX_PROBLEM=1
+    fi
+else
+    docker compose exec -T nginx nginx -s reload || true
+fi
 
 echo "==> 5/5 Жду, пока приложение запустится"
 for _ in $(seq 1 30); do
@@ -60,6 +88,10 @@ echo
 docker compose ps
 if [[ "${status:-}" != "healthy" ]]; then
     echo "⚠️  Приложение не стало healthy за 2 минуты. Смотрите: docker compose logs app --tail=80" >&2
+    exit 1
+fi
+if [[ "$NGINX_PROBLEM" == 1 ]]; then
+    echo "⚠️  Код обновлён, но nginx работает по прежним настройкам (см. сообщение выше)." >&2
     exit 1
 fi
 echo "✅ Обновлено до $(git rev-parse --short HEAD)"
