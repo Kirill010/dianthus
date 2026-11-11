@@ -1080,12 +1080,22 @@ hr {
     color: #1c1c1c;
     white-space: nowrap;
 }
-.price-row__lock { font-family: system-ui, sans-serif; font-weight: 500; font-size: .8rem; color: var(--text-muted); text-decoration: none; }
-.price-row__lock:hover { color: var(--primary); }
+.price-row__lock {
+    display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%;
+    background: var(--bg-soft); color: var(--text-muted); font-size: .85rem; text-decoration: none;
+}
+.price-row__lock:hover { background: var(--primary-mist); color: var(--primary); }
 .price-row__none { font-size: .8rem; color: var(--text-soft); }
 .price-row__form { margin: 0; }
 .price-row .qty-row { height: 38px; }
 .price-row .btn-cart-green { width: 38px; }
+
+/* Планшет и небольшой ноутбук: рядом ещё панель фильтров — колонки уже, иначе название зажимается до трёх строк */
+@media (min-width: 768px) and (max-width: 1199.98px) {
+    .price-list__head,
+    .price-row { grid-template-columns: 40px minmax(0, 1fr) 70px 104px 164px; gap: 10px; padding-left: 12px; padding-right: 12px; }
+    .price-row__thumb { width: 40px; height: 40px; }
+}
 
 @media (max-width: 767.98px) {
     .price-list__head { display: none; }
@@ -2353,6 +2363,37 @@ a.landing-contacts__value:hover {
 .todo-tile--hot { background: #fff4e5; border-color: #f0b46c; }
 .todo-tile--hot strong { color: #b4571b; }
 
+/* Главная админки: сверху только дела, цифры дня — одной строкой, меню — одним рядом */
+.dash-today { margin: 0 0 18px; padding: 16px 18px; background: var(--bg-card, #fff); border: 1px solid var(--border-soft, #e5dcc9); border-radius: 16px; }
+.dash-today__title { margin: 0 0 12px; font-size: 1.15rem; font-weight: 700; color: var(--primary-dark, #35492f); }
+.todo-done { margin: 0; padding: 12px 14px; border-radius: 12px; background: #eef6ee; color: #2f6b3a; font-weight: 600; }
+.dash-stats { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border-soft, #e5dcc9); color: #6d675c; font-size: .9rem; }
+.dash-stats strong { color: #35492f; }
+.admin-tabs { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.admin-tabs::-webkit-scrollbar { display: none; }
+.admin-tabs .nav-link { white-space: nowrap; }
+.admin-tabs .dropdown { position: static; }
+.admin-tabs .dropdown-menu { right: 0; left: auto; }
+/* Телефон: вкладки переносятся (чтобы «Ещё» не пряталось за краем), таблицы заказов и клиентов — карточками:
+   без прокрутки вбок, кнопка действия всегда на виду */
+@media (max-width: 767.98px) {
+    .admin-tabs { flex-wrap: wrap; overflow: visible; }
+    .stack-table, .stack-table tbody, .stack-table tr, .stack-table td { display: block; width: 100%; }
+    .stack-table thead { display: none; }
+    .stack-table tr { margin: 0 0 10px; padding: 10px 12px; background: #fff; border: 1px solid var(--border-soft, #e5dcc9); border-radius: 12px; }
+    .stack-table > :not(caption) > * > * { padding: 3px 0; border: 0; box-shadow: none; background: transparent; }
+    .stack-table td[data-label]::before { content: attr(data-label) ": "; color: #6d675c; font-size: .8rem; }
+    .stack-table td.stack-actions { padding-top: 8px; }
+}
+.status-more { position: relative; }
+.status-more > summary { list-style: none; cursor: pointer; }
+.status-more > summary::-webkit-details-marker { display: none; }
+.status-more__form {
+    position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; display: flex; gap: 6px; align-items: center;
+    padding: 8px; background: #fff; border: 1px solid var(--border, #e5dcc9); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.16);
+}
+.status-more__form select { min-width: 130px; }
+
 /* ── Согласия в формах (регистрация, профиль): у каждого документа своя крупная отметка ── */
 .consent-box {
     min-width: 0; margin: 0; padding: 16px 16px 12px;
@@ -2444,6 +2485,10 @@ main:focus { outline: none; }
         font-size: .75rem; font-weight: 700; text-align: center;
     }
     .app-header__icon--phone { display: none; }
+    .app-header__icon--admin { display: none; }        /* на компьютере вместо шестерёнки — слово «Админка» в меню */
+    .app-nav__link--admin { background: var(--primary-dark); color: #fff; }
+    .app-nav__link--admin:hover,
+    .app-nav__link--admin.active { background: var(--primary); color: #fff; box-shadow: none; }
     .app-header__profile { width: auto; max-width: 280px; padding: 0 16px 0 14px; gap: 8px; border-radius: var(--radius-pill); }
     .app-header__profile-name {
         display: inline-block; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -2574,8 +2619,29 @@ main:focus { outline: none; }
 }
 .catalog-aside .filter-group__list {
     display: flex; flex-direction: column; flex-wrap: nowrap; gap: 2px; margin: 0; padding: 0 0 4px;
-    max-height: 288px; overflow: visible auto; scrollbar-width: thin;
+    overflow: visible;            /* без прокрутки внутри прокрутки: длинные списки сворачиваются под «Ещё N» */
 }
+.catalog-aside .filter-more .filter-group__list { padding-bottom: 0; margin-bottom: 0; }
+
+/* «Ещё N»: первые значения фильтра на виду, остальное — под одним нажатием */
+.filter-more { margin: 0 0 4px; }
+.filter-more__sum {
+    display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 10px; cursor: pointer; list-style: none;
+    border-radius: 10px; color: var(--primary); font-size: .9rem; font-weight: 600;
+}
+.filter-more__sum::-webkit-details-marker { display: none; }
+.filter-more__sum::after {
+    content: ''; width: 7px; height: 7px; margin-top: -3px; border: solid currentColor; border-width: 0 2px 2px 0;
+    transform: rotate(45deg); transition: transform .15s ease;
+}
+.filter-more[open] > .filter-more__sum::after { margin-top: 3px; transform: rotate(-135deg); }
+.filter-more__sum:hover { background: var(--primary-mist); }
+.filter-more__close,
+.filter-more[open] > .filter-more__sum .filter-more__open { display: none; }
+.filter-more[open] > .filter-more__sum .filter-more__close { display: inline; }
+.filter-more[open] > .filter-more__sum { order: 2; }
+.filter-more[open] { display: flex; flex-direction: column; }
+.filter-more[open] > .filter-group__list { order: 1; }
 .catalog-aside .category-btn {
     display: flex; align-items: center; justify-content: flex-start; gap: 8px; min-height: 40px; padding: 6px 10px;
     border: 0; border-radius: 10px; background: transparent; color: var(--text);
@@ -2684,10 +2750,13 @@ a.product-card-v2__price-locked:hover { background: var(--primary-pale); color: 
     .catalog-search .input-group-text { display: none; }
     .catalog-search__go { min-width: 56px; }
     .catalog-search .form-control { border-top-left-radius: var(--radius-input); border-bottom-left-radius: var(--radius-input); }
-    .catalog-toolbar { display: grid; grid-template-columns: 1fr auto; }
-    .catalog-toolbar .catalog-sort { grid-column: 1 / -1; margin-left: 0; }
-    .catalog-sort select { width: 100%; }
-    .catalog-filters-btn { justify-content: center; }
+    /* «Фильтры», вид и сортировка — одной строкой: первый товар виден на первом экране, а не после трёх рядов кнопок */
+    .catalog-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 120px); gap: 8px; }
+    .catalog-toolbar .catalog-sort { margin-left: 0; }
+    .catalog-sort select { width: 100%; min-width: 0; padding-left: 10px; padding-right: 24px; }
+    .catalog-filters-btn { justify-content: center; padding: 0 10px; }
+    /* кнопка «Стать оптовиком» уже есть в шапке («Регистрация») — в плашке над списком остаётся одна строка */
+    .catalog-main > .alert-info .btn { display: none; }
     .pwa-banner__text [data-pwa-android] { display: none; }
 }
 @media (min-width: 992px) {

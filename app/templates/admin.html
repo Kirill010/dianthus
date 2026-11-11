@@ -2,86 +2,41 @@
 {% set hide_bottom_nav = true %}
 {% block content %}
 
-<!-- KPI-КАРТОЧКИ -->
-<div class="row g-3 mb-4">
-    <div class="col-6 col-md-3">
-        <div class="card p-3 text-center h-100">
-            <i class="fas fa-shopping-bag fa-2x text-success mb-2"></i>
-            <div style="font-size:1.6rem;font-weight:700;color:#35492f">{{ stats.orders_today }}</div>
-            <div class="text-muted small">Заказов сегодня</div>
-        </div>
-    </div>
-    {% if user.is_admin %}
-    <div class="col-6 col-md-3">
-        <div class="card p-3 text-center h-100">
-            <i class="fas fa-ruble-sign fa-2x text-warning mb-2"></i>
-            <div style="font-size:1.6rem;font-weight:700;color:#35492f">{{ "%.0f"|format(stats.revenue_today) }} ₽</div>
-            <div class="text-muted small">Выручка за день</div>
-        </div>
-    </div>
-    <div class="col-6 col-md-3">
-        <div class="card p-3 text-center h-100">
-            <i class="fas fa-chart-line fa-2x mb-2" style="color:#c97b4a"></i>
-            <div style="font-size:1.6rem;font-weight:700;color:#35492f">{{ "%.0f"|format(stats.revenue_week) }} ₽</div>
-            <div class="text-muted small">Выручка за неделю</div>
-        </div>
+{# ═══════ ЧТО СДЕЛАТЬ СЕГОДНЯ: только то, что требует действия. Нулевые плитки не показываем —
+       когда дел нет, так и написано. Цифры дня — одной строкой под ним, а не десятью плитками. ═══════ #}
+{% set tasks = [] %}
+{% if todo.new_orders %}{% set _ = tasks.append(('/admin?status=Новый', todo.new_orders, 'новых заказов — подтвердить', true)) %}{% endif %}
+{% if todo.urgent_orders %}{% set _ = tasks.append(('/admin?due=1', todo.urgent_orders, 'срочных (нужны сегодня–завтра)', true)) %}{% endif %}
+{% if todo.applications %}{% set _ = tasks.append(('/admin#clients', todo.applications, 'заявок клиентов — одобрить', true)) %}{% endif %}
+{% if todo.claims %}{% set _ = tasks.append(('/admin/claims', todo.claims, 'рекламаций в работе', true)) %}{% endif %}
+{% if user.is_admin and todo.data_requests %}{% set _ = tasks.append(('/admin/data-requests', todo.data_requests, 'запросов на удаление данных', true)) %}{% endif %}
+{% if user.is_admin and todo.waiting_1c %}{% set _ = tasks.append(('/admin/integration', todo.waiting_1c, 'заказов ждут загрузки в 1С', false)) %}{% endif %}
+
+<section class="dash-today" aria-labelledby="dash-today-title">
+    <h1 class="dash-today__title" id="dash-today-title"><i class="fas fa-list-check me-2" aria-hidden="true"></i>Что сделать сегодня{% if not user.is_admin %} <small class="text-muted fs-6">(менеджер)</small>{% endif %}</h1>
+    {% if tasks %}
+    <div class="row g-2 todo-grid">
+        {% for href, n, text, hot in tasks %}
+        <div class="col-6 col-md-4 col-lg-3"><a class="todo-tile {% if hot %}todo-tile--hot{% endif %}" href="{{ href }}"><strong>{{ n }}</strong><span>{{ text }}</span></a></div>
+        {% endfor %}
     </div>
     {% else %}
-    <div class="col-6 col-md-3">
-        <div class="card p-3 text-center h-100">
-            <i class="fas fa-calendar-week fa-2x mb-2" style="color:#c97b4a"></i>
-            <div style="font-size:1.6rem;font-weight:700;color:#35492f">{{ stats.orders_week }}</div>
-            <div class="text-muted small">Заказов за неделю</div>
-        </div>
-    </div>
-    <div class="col-6 col-md-3">
-        <div class="card p-3 text-center h-100">
-            <i class="fas fa-hourglass-half fa-2x text-warning mb-2"></i>
-            <div style="font-size:1.6rem;font-weight:700;color:#35492f">{{ stats.pending_orders }}</div>
-            <div class="text-muted small">Ждут подтверждения</div>
-        </div>
-    </div>
+    <p class="todo-done"><i class="fas fa-circle-check me-2" aria-hidden="true"></i>На сегодня всё сделано: новых заказов, заявок и обращений нет.</p>
     {% endif %}
-    <div class="col-6 col-md-3">
-        <div class="card p-3 text-center h-100">
-            <i class="fas fa-user-plus fa-2x mb-2" style="color:#8ba38c"></i>
-            <div style="font-size:1.6rem;font-weight:700;color:#35492f">{{ stats.new_clients_week }}</div>
-            <div class="text-muted small">Новых клиентов за неделю</div>
-        </div>
-    </div>
-</div>
-
-<!-- ЧТО СДЕЛАТЬ СЕГОДНЯ -->
-<div class="card p-3 mb-4">
-    <h5 class="mb-3"><i class="fas fa-list-check me-2"></i>Что сделать сегодня</h5>
-    <div class="row g-2 todo-grid">
-        <div class="col-6 col-md-3"><a class="todo-tile {% if todo.new_orders %}todo-tile--hot{% endif %}" href="/admin?status=Новый"><strong>{{ todo.new_orders }}</strong><span>новых заказов — подтвердить</span></a></div>
-        <div class="col-6 col-md-3"><a class="todo-tile {% if todo.urgent_orders %}todo-tile--hot{% endif %}" href="/admin?due=1"><strong>{{ todo.urgent_orders }}</strong><span>срочных (нужны сегодня–завтра)</span></a></div>
-        <div class="col-6 col-md-3"><a class="todo-tile {% if todo.applications %}todo-tile--hot{% endif %}" href="/admin#clients"><strong>{{ todo.applications }}</strong><span>заявок клиентов — одобрить</span></a></div>
-        <div class="col-6 col-md-3"><a class="todo-tile {% if todo.claims %}todo-tile--hot{% endif %}" href="/admin/claims"><strong>{{ todo.claims }}</strong><span>рекламаций в работе</span></a></div>
+    <div class="dash-stats" aria-label="Цифры дня">
+        <span><strong>{{ stats.orders_today }}</strong> {{ stats.orders_today|plural('заказ', 'заказа', 'заказов') }} сегодня</span>
         {% if user.is_admin %}
-        <div class="col-6 col-md-3"><a class="todo-tile {% if todo.data_requests %}todo-tile--hot{% endif %}" href="/admin/data-requests"><strong>{{ todo.data_requests }}</strong><span>запросов на удаление данных</span></a></div>
-        <div class="col-6 col-md-3"><a class="todo-tile" href="/admin/integration"><strong>{{ todo.waiting_1c }}</strong><span>заказов ждут загрузки в 1С</span></a></div>
+        <span>Выручка за день <strong>{{ "%.0f"|format(stats.revenue_today) }} ₽</strong></span>
+        <span>Выручка за неделю <strong>{{ "%.0f"|format(stats.revenue_week) }} ₽</strong></span>
+        {% else %}
+        <span><strong>{{ stats.orders_week }}</strong> {{ stats.orders_week|plural('заказ', 'заказа', 'заказов') }} за неделю</span>
         {% endif %}
+        <span><strong>{{ stats.new_clients_week }}</strong> {{ stats.new_clients_week|plural('новый клиент', 'новых клиента', 'новых клиентов') }} за неделю</span>
     </div>
-</div>
+</section>
 
-<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-    <h2 class="mb-0"><i class="fas fa-cog me-2"></i>Админка{% if not user.is_admin %} <small class="text-muted fs-6">(менеджер)</small>{% endif %}</h2>
-    <div class="d-flex gap-2 flex-wrap">
-        <a href="/admin/picking" class="btn btn-outline-primary btn-sm"><i class="fas fa-boxes-packing me-1"></i>Лист сборки</a>
-        <a href="/admin/claims" class="btn btn-outline-secondary btn-sm"><i class="fas fa-triangle-exclamation me-1"></i>Рекламации</a>
-        {% if user.is_admin %}
-        <a href="/admin/filters" class="btn btn-outline-secondary btn-sm"><i class="fas fa-tags me-1"></i>Фильтры каталога</a>
-        <a href="/admin/integration" class="btn btn-outline-secondary btn-sm"><i class="fas fa-plug me-1"></i>Интеграция с 1С</a>
-        <a href="/admin/legal" class="btn btn-outline-secondary btn-sm"><i class="fas fa-scale-balanced me-1"></i>Юридическое</a>
-        <a href="/admin/settings" class="btn btn-outline-secondary btn-sm"><i class="fas fa-sliders me-1"></i>Настройки</a>
-        <a href="/admin/audit" class="btn btn-outline-secondary btn-sm"><i class="fas fa-clipboard-list me-1"></i>Журнал</a>
-        {% endif %}
-    </div>
-</div>
-
-<ul class="nav nav-tabs" role="tablist">
+{# Одно меню вместо двух рядов: рабочие разделы — вкладками, редкие и служебные — под «Ещё» #}
+<ul class="nav nav-tabs admin-tabs" role="tablist">
     <li class="nav-item">
         <a class="nav-link active" data-bs-toggle="tab" href="#orders">
             <i class="fas fa-box me-1"></i>Заказы
@@ -101,7 +56,7 @@
     {% if user.is_admin %}
     <li class="nav-item">
         <a class="nav-link" data-bs-toggle="tab" href="#products">
-            <i class="fas fa-seedling me-1"></i>Справочник
+            <i class="fas fa-seedling me-1"></i>Товары
             <span class="badge bg-secondary ms-1">{{ products_total }}</span>
         </a>
     </li>
@@ -113,19 +68,37 @@
     </li>
     <li class="nav-item">
         <a class="nav-link" data-bs-toggle="tab" href="#active">
-            <i class="fas fa-check-circle me-1"></i>На складе
+            <i class="fas fa-check-circle me-1"></i>В наличии
             <span class="badge bg-success ms-1">{{ active_total }}</span>
         </a>
     </li>
     {% endif %}
+    <li class="nav-item dropdown ms-auto">
+        <a class="nav-link dropdown-toggle" data-bs-toggle="dropdown" href="#" role="button" aria-expanded="false">
+            <i class="fas fa-ellipsis me-1"></i>Ещё
+        </a>
+        <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item" href="/admin/claims"><i class="fas fa-triangle-exclamation me-2"></i>Рекламации</a></li>
+            {% if user.is_admin %}
+            <li><a class="dropdown-item" href="/admin/filters"><i class="fas fa-tags me-2"></i>Фильтры каталога</a></li>
+            <li><a class="dropdown-item" href="/admin/integration"><i class="fas fa-plug me-2"></i>Интеграция с 1С</a></li>
+            <li><a class="dropdown-item" href="/admin/legal"><i class="fas fa-scale-balanced me-2"></i>Юридическое</a></li>
+            <li><a class="dropdown-item" href="/admin/settings"><i class="fas fa-sliders me-2"></i>Настройки</a></li>
+            <li><a class="dropdown-item" href="/admin/audit"><i class="fas fa-clipboard-list me-2"></i>Журнал</a></li>
+            {% endif %}
+        </ul>
+    </li>
 </ul>
 
 <div class="tab-content mt-3">
     <!-- ЗАКАЗЫ -->
     <div class="tab-pane fade show active" id="orders">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <h5 class="mb-0">Заказы</h5>
+            <h2 class="h5 mb-0">Заказы</h2>
             <div class="d-flex gap-2 flex-wrap">
+                <a href="/admin/picking" class="btn btn-primary btn-sm" title="Что собрать и кому отвезти: список по всем открытым заказам">
+                    <i class="fas fa-boxes-packing me-1"></i>Лист сборки
+                </a>
                 <a href="/admin/orders/export" class="btn btn-outline-success btn-sm">
                     <i class="fas fa-file-excel me-1"></i>Заказы (Excel)
                 </a>
@@ -170,7 +143,7 @@
 
         {% if orders %}
         <div class="table-responsive">
-            <table class="table table-hover align-middle">
+            <table class="table table-hover align-middle stack-table">
                 <thead>
                     <tr>
                         <th>№</th>
@@ -179,10 +152,13 @@
                         <th>Сумма</th>
                         <th>Создан</th>
                         <th>Статус</th>
-                        <th>Изменить</th>
+                        <th>Что дальше</th>
                     </tr>
                 </thead>
                 <tbody>
+                {# следующий шаг — одной кнопкой; другой статус (в том числе «Отменён») — под «⋯» #}
+                {% set next_step = {'Новый': ('Подтверждён', 'Подтвердить'), 'Подтверждён': ('В работе', 'В работу'),
+                                    'В работе': ('Отправлен', 'Отправлен'), 'Отправлен': ('Выполнен', 'Выполнен')} %}
                 {% for o in orders %}
                     <tr>
                         <td>
@@ -199,7 +175,7 @@
                                 <span class="text-muted">Гость</span>
                             {% endif %}
                         </td>
-                        <td>
+                        <td data-label="Нужно к">
                             {% if o.desired_date %}
                                 {% set active = o.status not in ['Выполнен', 'Отменён'] %}
                                 <span class="{% if active and o.desired_date < today_dt %}text-danger fw-bold{% elif active and o.desired_date < soon_dt %}text-warning fw-bold{% endif %}">
@@ -210,9 +186,9 @@
                             {% if o.delivery_method == 'delivery' %}<div class="small text-muted"><i class="fas fa-truck"></i> доставка</div>
                             {% elif o.delivery_method == 'pickup' %}<div class="small text-muted"><i class="fas fa-store"></i> самовывоз</div>{% endif %}
                         </td>
-                        <td><strong>{{ "%.0f"|format(o.total_price) }} ₽</strong></td>
-                        <td>{{ o.created_at|localdt }}</td>
-                        <td>
+                        <td data-label="Сумма"><strong>{{ "%.0f"|format(o.total_price) }} ₽</strong></td>
+                        <td data-label="Создан">{{ o.created_at|localdt }}</td>
+                        <td data-label="Статус">
                             {% if o.status == "Выполнен" %}
                                 <span class="badge bg-success">{{ o.status }}</span>
                             {% elif o.status == "Отменён" %}
@@ -225,27 +201,39 @@
                                 <span class="badge bg-secondary">{{ o.status }}</span>
                             {% endif %}
                         </td>
-                        <td>
-                            <div class="d-flex gap-1">
+                        <td class="stack-actions">
+                            <div class="d-flex gap-1 align-items-center">
+                                {% set nxt = next_step.get(o.status) %}
+                                {% if nxt %}
+                                <form action="/admin/update_order_status" method="post" class="d-flex">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <input type="hidden" name="order_id" value="{{ o.id }}">
+                                    <input type="hidden" name="status" value="{{ nxt[0] }}">
+                                    <button class="btn btn-sm btn-primary" title="Перевести заказ №{{ o.id }} в статус «{{ nxt[0] }}»"><i class="fas fa-check me-1" aria-hidden="true"></i>{{ nxt[1] }}</button>
+                                </form>
+                                {% endif %}
                                 <a href="/admin/orders/{{ o.id }}"
                                    class="btn btn-sm btn-outline-primary"
                                    title="Подробнее о заказе" aria-label="Открыть заказ {{ o.id }}">
                                     <i class="fas fa-eye"></i>
                                 </a>
-                                <form action="/admin/update_order_status" method="post"
-          data-confirm="Отменить заказ? Товар вернётся на склад." data-confirm-when="Отменён"
-                                      class="d-flex">
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                    <input type="hidden" name="order_id" value="{{ o.id }}">
-                                    <select name="status" class="form-select form-select-sm me-1" aria-label="Статус заказа {{ o.id }}">
-                                        {% for s in statuses %}
-                                            <option value="{{ s }}" {% if o.status == s %}selected{% endif %}>
-                                                {{ s }}
-                                            </option>
-                                        {% endfor %}
-                                    </select>
-                                    <button class="btn btn-sm btn-primary">ОК</button>
-                                </form>
+                                <details class="status-more">
+                                    <summary class="btn btn-sm btn-outline-secondary" title="Другой статус" aria-label="Другой статус заказа {{ o.id }}"><i class="fas fa-ellipsis" aria-hidden="true"></i></summary>
+                                    <form action="/admin/update_order_status" method="post"
+                                          data-confirm="Отменить заказ? Товар вернётся на склад." data-confirm-when="Отменён"
+                                          class="status-more__form">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                        <input type="hidden" name="order_id" value="{{ o.id }}">
+                                        <select name="status" class="form-select form-select-sm" aria-label="Статус заказа {{ o.id }}">
+                                            {% for s in statuses %}
+                                                <option value="{{ s }}" {% if o.status == s %}selected{% endif %}>
+                                                    {{ s }}
+                                                </option>
+                                            {% endfor %}
+                                        </select>
+                                        <button class="btn btn-sm btn-primary">Сохранить</button>
+                                    </form>
+                                </details>
                             </div>
                         </td>
                     </tr>
@@ -292,7 +280,7 @@
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h5 class="mb-0">Клиенты и заявки</h5>
             <input type="search" id="client-search" aria-label="Поиск по клиентам" class="form-control form-control-sm"
-                   style="max-width: 320px" aria-label="Поиск клиентов"
+                   style="max-width: 320px"
                    placeholder="Поиск: компания, email, имя…">
         </div>
         {% if users_total > list_limit %}
@@ -302,7 +290,7 @@
         {% endif %}
         {% if users %}
         <div class="table-responsive">
-            <table class="table table-hover align-middle">
+            <table class="table table-hover align-middle stack-table">
                 <thead>
                     <tr>
                         <th>Компания</th><th>Контакт</th>
@@ -344,7 +332,7 @@
                             </div>
                             {% endif %}
                         </td>
-                        <td>
+                        <td class="stack-actions">
                             <a href="/admin/clients/{{ u.id }}" class="btn btn-sm btn-outline-secondary mb-1">
                                 <i class="fas fa-id-card me-1"></i>Карточка
                             </a>
@@ -426,7 +414,7 @@
     <!-- СПРАВОЧНИК -->
     <div class="tab-pane fade" id="products">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <h5 class="mb-0">Справочник товаров</h5>
+            <h2 class="h5 mb-0">Товары (все, что есть в 1С)</h2>
             <input type="search" id="product-search" aria-label="Поиск по справочнику товаров" class="form-control form-control-sm"
                    style="max-width: 280px" placeholder="Поиск товара…">
             <div class="d-flex gap-2 flex-wrap">

@@ -40,20 +40,32 @@
             </details>
 
             {# ─── ВИД, ЦВЕТ, РОСТ, СТРАНА ─── #}
+            {% macro filter_option(o, key) -%}
+            <a href="{{ o.url }}" class="category-btn filter-option {% if o.selected %}active{% endif %}"
+               {% if o.selected %}aria-pressed="true"{% endif %}>
+                {% if key == 'color' %}<span class="color-dot {% if not o.hex %}color-dot--none{% endif %}" {% if o.hex %}style="background: {{ o.hex }}"{% endif %}></span>{% endif %}
+                {{ o.name }} <span class="category-btn__n">{{ o.count }}</span>
+            </a>
+            {%- endmacro %}
             {% for title, key, options in filter_groups %}
             {# фильтр из одного значения («Цвет: Жёлтый 2») ничего не отбирает — не показываем, пока не появится выбор #}
             {% if options|length > 1 or selected[key] %}
+            {# первые 8 значений на виду, остальные — под «Ещё N»: в «Виде» их 18, и половина — по одной позиции #}
+            {% set head = options[:8] %}
+            {% set rest = options[8:] %}
             <details class="filter-group" {% if loop.first or selected[key] %}open{% endif %}>
                 <summary class="filter-group__title">{{ title }}{% if selected[key] %} <span class="filter-group__picked">{{ selected[key]|length }}</span>{% endif %}</summary>
                 <div class="filter-group__list category-scroll">
-                    {% for o in options %}
-                    <a href="{{ o.url }}" class="category-btn filter-option {% if o.selected %}active{% endif %}"
-                       {% if o.selected %}aria-pressed="true"{% endif %}>
-                        {% if key == 'color' %}<span class="color-dot {% if not o.hex %}color-dot--none{% endif %}" {% if o.hex %}style="background: {{ o.hex }}"{% endif %}></span>{% endif %}
-                        {{ o.name }} <span class="category-btn__n">{{ o.count }}</span>
-                    </a>
-                    {% endfor %}
+                    {% for o in head %}{{ filter_option(o, key) }}{% endfor %}
                 </div>
+                {% if rest %}
+                <details class="filter-more"{% if rest|selectattr('selected')|list %} open{% endif %}>
+                    <summary class="filter-more__sum"><span class="filter-more__open">Ещё {{ rest|length }}</span><span class="filter-more__close">Свернуть</span></summary>
+                    <div class="filter-group__list category-scroll">
+                        {% for o in rest %}{{ filter_option(o, key) }}{% endfor %}
+                    </div>
+                </details>
+                {% endif %}
             </details>
             {% endif %}
             {% endfor %}
@@ -81,7 +93,7 @@
 
 {% if public %}
 <div class="alert alert-info d-flex align-items-center justify-content-between flex-wrap gap-2 py-2 px-3 mb-3">
-    <span class="small"><i class="fas fa-lock me-1" aria-hidden="true"></i>Вы смотрите открытую витрину. Оптовые цены и заказ — после регистрации.</span>
+    <span class="small"><i class="fas fa-lock me-1" aria-hidden="true"></i>Оптовые цены и заказ — после регистрации.</span>
     <a href="/register" class="btn btn-primary btn-sm">Стать оптовиком</a>
 </div>
 {% endif %}
@@ -210,14 +222,15 @@
                 <div class="price-row__main">
                     <a href="/product/{{ item.id }}" class="price-row__name">{{ product.name }}</a>
                     <span class="price-row__meta">
-                        {% if product.country_name %}{{ product.country_name }} · {% endif %}{% if product.color_name %}{{ product.color_name }} · {% endif %}{% if product.height_cm %}{{ product.height_cm }} см · {% endif %}в упаковке {{ pack }} шт{% if item.supply and item.supply.label %} · поставка {{ item.supply.label }}{% endif %}
+                        {% if product.country_name %}{{ product.country_name }} · {% endif %}{% if product.color_name %}{{ product.color_name }} · {% endif %}{% if product.height_cm %}{{ product.height_cm }} см · {% endif %}в упаковке {{ pack }} шт{% if item.supply and item.supply.client_label %} · <span title="Поставка {{ item.supply.label }}">{{ item.supply.client_label }}</span>{% endif %}
                     </span>
                 </div>
                 <div class="price-row__stock">{{ stems }} шт</div>
                 <div class="price-row__price">
                     {% if public %}
+                        {# 253 раза подряд «после регистрации» — шум: об этом уже сказано над списком; в строке остаётся замочек #}
                         <a href="/register" class="price-row__lock" title="Цена после регистрации">
-                            <i class="fas fa-lock me-1"></i>после регистрации
+                            <i class="fas fa-lock" aria-hidden="true"></i><span class="visually-hidden">Цена после регистрации</span>
                         </a>
                     {% elif my_discount %}
                         <s class="price-old">{{ item.price|price }}</s> {{ item.price|with_discount(my_discount)|price }} ₽
@@ -327,10 +340,10 @@
                                 {{ stems }}шт
                             </span>
                         </div>
-                        {% if item.supply and item.supply.label %}
-                            <div class="spec-line">
-                                <span class="spec-line__label">Поставка:</span>
-                                <span class="spec-line__value">{{ item.supply.label }}</span>
+                        {% if item.supply and item.supply.arrival_short %}
+                            <div class="spec-line" title="Поставка {{ item.supply.label }}">
+                                <span class="spec-line__label">Привоз:</span>
+                                <span class="spec-line__value">{{ item.supply.arrival_short }}</span>
                             </div>
                         {% endif %}
                     </div>

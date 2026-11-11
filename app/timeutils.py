@@ -16,6 +16,20 @@ logger = logging.getLogger(__name__)
 DATETIME_FMT = "%d.%m.%Y %H:%M"
 DATE_FMT = "%d.%m.%Y"
 
+MONTHS_GEN = ("января", "февраля", "марта", "апреля", "мая", "июня",
+              "июля", "августа", "сентября", "октября", "ноября", "декабря")
+
+
+def fmt_day_month(dt: datetime | None, empty: str = "") -> str:
+    """«6 ноября» (для прошлых и будущих лет — «6 ноября 2025»): дата, как её говорят люди.
+
+    Время суток и пояс не трогаем: у поставок хранится именно дата документа.
+    """
+    if dt is None:
+        return empty
+    text = f"{dt.day} {MONTHS_GEN[dt.month - 1]}"
+    return text if dt.year == datetime.now().year else f"{text} {dt.year}"
+
 
 @lru_cache(maxsize=1)
 def shop_tz():

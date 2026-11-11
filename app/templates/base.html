@@ -73,6 +73,7 @@
         </a>
         {# На компьютере меню — в шапке, с подписями; на телефоне его заменяет нижняя панель #}
         <nav class="app-nav" aria-label="Основное меню">
+            {% if user.is_staff %}<a href="/admin" class="app-nav__link app-nav__link--admin{% if path.startswith('/admin') %} active{% endif %}"><i class="fas fa-gauge-high" aria-hidden="true"></i>Админка</a>{% endif %}
             <a href="/catalog" class="app-nav__link{% if path.startswith('/catalog') or path.startswith('/product') %} active{% endif %}">Каталог</a>
             <a href="/orders" class="app-nav__link{% if path == '/orders' %} active{% endif %}">Заказы</a>
             <a href="/preorders" class="app-nav__link{% if path == '/preorders' %} active{% endif %}">Предзаказы{% if preorder_count %}<span class="app-nav__count">{{ preorder_count }}</span>{% endif %}</a>
@@ -81,7 +82,7 @@
         </nav>
         <div class="app-header__right">
             {% if user.is_staff %}
-                <a href="/admin" class="app-header__icon" title="Админка" aria-label="Админка"><i class="fas fa-cog" aria-hidden="true"></i></a>
+                <a href="/admin" class="app-header__icon app-header__icon--admin" title="Админка" aria-label="Админка"><i class="fas fa-cog" aria-hidden="true"></i></a>
             {% endif %}
             <a href="/contacts" class="app-header__icon app-header__icon--phone" title="Контакты" aria-label="Контакты"><i class="fas fa-phone" aria-hidden="true"></i></a>
             <a href="/notifications" class="app-header__icon" title="Уведомления" aria-label="Уведомления{% if unread_count %}: {{ unread_count }} новых{% endif %}">

@@ -569,7 +569,8 @@ def test_admin_dashboard_renders_with_data(web, mem_db):
     make_order(mem_db, client, seed_item(mem_db, stock=10), packs=1)
     r = web.get("/admin")
     assert r.status_code == 200
-    assert "Заказов сегодня" in r.text
+    plain = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", r.text))
+    assert 'class="dash-stats"' in r.text and "1 заказ сегодня" in plain
     assert 'data-confirm="Отменить заказ?' in r.text
 
 

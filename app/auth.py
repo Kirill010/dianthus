@@ -247,8 +247,8 @@ async def login(
         db.rollback()
         logger.warning("last_login_at: %s", e)
 
+    # Без приветствия-плашки: после входа клиенту нужен каталог, а не ещё одно сообщение над ним.
     request.session["user_id"] = user.id
-    request.session["flash"] = f"Добро пожаловать, {user.company_name}!"
     logger.info("Вход: %s", email)
     return RedirectResponse(url="/catalog", status_code=303)
 
