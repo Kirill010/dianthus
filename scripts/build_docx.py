@@ -295,8 +295,8 @@ def svg_to_png(svg: Path) -> Path | None:
     return out
 
 
-def load_image(path: Path):
-    """→ (поток PNG/JPEG, ширина px, высота px) или None."""
+def load_image(path: Path, max_w: int | None = None):
+    """→ (поток PNG/JPEG, ширина px, высота px) или None. max_w: уменьшить, если шире (для логотипа)."""
     if path.suffix.lower() == ".svg":
         png = svg_to_png(path)
         if png is None:
@@ -306,10 +306,13 @@ def load_image(path: Path):
         from PIL import Image
         img = Image.open(path)
         w, h = img.size
-        if path.suffix.lower() in (".png", ".jpg", ".jpeg"):
+        if max_w and w > max_w:
+            img = img.resize((max_w, round(h * max_w / w)), Image.LANCZOS)
+            w, h = img.size
+        elif path.suffix.lower() in (".png", ".jpg", ".jpeg"):
             return io.BytesIO(path.read_bytes()), w, h
         buf = io.BytesIO()
-        img.convert("RGBA").save(buf, "PNG")
+        img.convert("RGBA").save(buf, "PNG", optimize=True)
         buf.seek(0)
         return buf, w, h
     except Exception:                                        # noqa: BLE001
@@ -470,7 +473,9 @@ class Builder:
         spacer.paragraph_format.line_spacing = 0.5
 
     def table(self, head: list[str], rows: list[list[str]], aligns: list[str]):
-        n = len(head)
+        n = max([len(head)] + [len(r) for r in rows])          # в строке бывает больше ячеек, чем в шапке (лишний «|»)
+        head = head + [""] * (n - len(head))
+        rows = [r + [""] * (n - len(r)) for r in rows]
         t = self.doc.add_table(rows=1 + len(rows), cols=n)
         t.style = "Table Grid"
         t.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -575,7 +580,7 @@ class Builder:
         p = self.para()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.space_before = Pt(110)
-        loaded = load_image(logo) if logo.exists() else None
+        loaded = load_image(logo, max_w=480) if logo.exists() else None
         if loaded:
             p.add_run().add_picture(loaded[0], width=Cm(4))
         t = self.doc.add_paragraph()
@@ -872,8 +877,13 @@ def site_legal_to_docx(out_dir: Path, site: str = SITE) -> list[Path]:
         if not h1 or not art:
             raise SystemExit(f"{path}: не нашёл заголовок или текст документа на странице")
         title = re.sub(r"<[^>]+>", "", h1.group(1)).strip()
-        meta = re.search(r"(Редакци[яи][^<]{0,120})", page)
-        md = f"# {title}\n\n{(meta.group(1).strip() if meta else 'Текст, опубликованный на ' + site + path)}\n\n" + html_to_md(art.group(1), site)
+        body = html_to_md(art.group(1), site)
+        first, _, rest = body.partition("\n\n")
+        if first.startswith("Редакци"):                       # «Редакция от … (версия N)» — подзаголовок, не дублируем
+            subtitle, body = first.strip(), rest
+        else:
+            subtitle = f"Текст, опубликованный на {site}{path}"
+        md = f"# {title}\n\n{subtitle}\n\n{body}"
         out = out_dir / "legal" / f"{name}.docx"
         build_docx(md, out, DOCS, footer_title=f"ООО «Диантус» · {title}", cover=False)
         made.append(out)
@@ -902,7 +912,7 @@ def main() -> int:
     if args.all:
         made = []
         for src in sorted(DOCS.glob("*.md")) + sorted((DOCS / "legal").glob("*.md")):
-            if src.name.startswith("_"):
+            if src.name.startswith("_") or src.name == "ПИСЬМО_ЮРИСТУ.md":      # письмо входит в пакет юриста
                 continue
             sub = "legal" if src.parent.name == "legal" else ""
             out = out_dir / sub / (src.stem + ".docx")
