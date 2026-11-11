@@ -414,16 +414,22 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out-dir", default=str(ROOT / "docs" / "_build"), help="куда положить HTML")
     ap.add_argument("--pdf", nargs="?", const="auto", help="ещё и PDF (без значения — рядом с HTML)")
+    ap.add_argument("--source", default=str(SOURCE), help="какой файл .md собрать (по умолчанию docs/РУКОВОДСТВО.md)")
+    ap.add_argument("--footer", help="текст внизу страниц PDF (по умолчанию «Диантус: сайт и 1С — просто»)")
     args = ap.parse_args()
 
-    doc = convert(SOURCE.read_text(encoding="utf-8"))
+    global CSS
+    if args.footer:
+        CSS = CSS.replace("Диантус: сайт и 1С — просто · стр. ", args.footer + " · стр. ")
+    src = Path(args.source)
+    doc = convert(src.read_text(encoding="utf-8"), src.parent)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    html_path = out_dir / "РУКОВОДСТВО.html"
+    html_path = out_dir / (src.stem + ".html")
     html_path.write_text(render(doc), encoding="utf-8")
     print(f"HTML: {html_path} ({html_path.stat().st_size // 1024} КБ), картинок: {len(doc.images)}, разделов: {len(doc.toc)}")
     if args.pdf:
-        pdf_path = out_dir / "РУКОВОДСТВО.pdf" if args.pdf == "auto" else Path(args.pdf)
+        pdf_path = out_dir / (src.stem + ".pdf") if args.pdf == "auto" else Path(args.pdf)
         make_pdf(html_path, pdf_path)
         print(f"PDF:  {pdf_path} ({pdf_path.stat().st_size // 1024} КБ)")
     return 0
