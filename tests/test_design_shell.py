@@ -125,10 +125,26 @@ def test_picked_filters_are_shown_as_removable_chips(web, mem_db):
 
 def test_static_files_are_cached_by_the_browser(web):
     font = web.get("/static/fonts/montserrat-latin-wght-normal.woff2")
-    assert font.status_code == 200 and "max-age=604800" in font.headers["cache-control"]
-    css = web.get("/static/style.css")
+    assert font.status_code == 200 and font.headers["cache-control"] == "public, max-age=31536000, immutable"
+    css = web.get("/static/style.css")                                   # без версии — час и проверка по ETag
     assert css.status_code == 200 and "max-age=3600" in css.headers["cache-control"]
+    css_v = web.get("/static/style.css?v=abc123")                        # с версией — год, файл «не менять»
+    assert css_v.status_code == 200 and css_v.headers["cache-control"] == "public, max-age=31536000, immutable"
+    logo = web.get("/static/emblem.webp")                                # картинка без версии — 30 суток
+    assert logo.status_code == 200 and "max-age=2592000" in logo.headers["cache-control"]
     assert web.get("/static/no-such-file.css").status_code == 404
+
+
+def test_pages_link_assets_with_a_content_fingerprint(web, mem_db):
+    """В адресах стилей и скриптов стоит отпечаток файла (меняется сам при выкладке) — вручную ?v= не правим."""
+    html = web.get("/").text
+    for path in ("vendor/bootstrap.min.css", "vendor/fontawesome/css/all.min.css", "style.css",
+                 "vendor/bootstrap.bundle.min.js", "pwa.js"):
+        assert re.search(r'/static/%s\?v=[0-9a-f]{10}"' % re.escape(path), html), path
+    # и такой адрес отдаётся с годовым кэшем
+    href = re.search(r'href="(/static/style\.css\?v=[0-9a-f]{10})"', html).group(1)
+    r = web.get(href)
+    assert r.status_code == 200 and r.headers["cache-control"] == "public, max-age=31536000, immutable"
 
 
 def test_profile_labels_point_to_their_fields(web, mem_db):

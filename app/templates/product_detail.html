@@ -202,6 +202,20 @@
     </div>
 </div>
 
+{# Короткое описание из характеристик товара и ссылки на разделы каталога: помогает и покупателю, и поисковику #}
+<section class="product-about mt-4" aria-labelledby="product-about-title">
+    <h2 id="product-about-title" class="h5">О товаре</h2>
+    <p class="mb-2">
+        {{ product.name }} —
+        {% set is_pot = (product.kind_name or '')|lower in ('горшечное растение', 'горшечные') %}
+        {% if product.kind_name %}{{ product.kind_name|lower }}{% else %}цветочная продукция{% endif %}{% if product.country_name %} из {{ product.country_name|from_country }}{% endif %}{% if product.height_cm %}, {{ 'высота' if is_pot else 'длина стебля' }} {{ product.height_cm }} см{% endif %}{% if product.color_name %}, цвет — {{ product.color_name|lower }}{% endif %}.
+        Продаётся {% if pack > 1 %}упаковками по {{ pack }} шт{% else %}поштучно{% endif %} юридическим лицам и ИП; самовывоз или доставка — по согласованию при оформлении заказа.
+    </p>
+    <p class="product-about__links small mb-0">
+        {% for s in related_sections %}<a href="/optom/{{ s.slug }}">{{ s.h1 }}</a> · {% endfor %}<a href="/help">Как заказать</a> · <a href="/deadlines">Сроки заказа</a>
+    </p>
+</section>
+
 <script nonce="{{ csp_nonce }}">
 (function () {
     var form = document.getElementById('buy-form');

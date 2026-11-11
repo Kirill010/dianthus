@@ -133,6 +133,25 @@ def collect(db: Session, section: Section) -> dict:
     }
 
 
+def sections_for_product(product) -> list[Section]:
+    """Разделы /optom/…, к которым относится товар: сначала общий по виду («Розы оптом»), затем уточняющие
+    (по стране — «Эквадорские розы», по названию — «Кустовая роза»). Нужны для ссылок с карточки товара."""
+    kind = (product.kind_name or "").strip().lower()
+    country = (product.country_name or "").strip().lower()
+    name = (product.name or "").lower()
+    found = []
+    for s in SECTIONS:
+        if not s.kinds or kind not in {k.lower() for k in s.kinds}:
+            continue
+        if s.country and s.country.lower() != country:
+            continue
+        if s.name_like and s.name_like not in name:
+            continue
+        found.append(s)
+    found.sort(key=lambda s: bool(s.country or s.name_like))     # общий раздел — первым (sort устойчивый)
+    return found[:3]
+
+
 def join_words(words: list[str]) -> str:
     """['Эквадор', 'Кения', 'Россия'] → «Эквадор, Кения и Россия»."""
     words = [w for w in words if w]

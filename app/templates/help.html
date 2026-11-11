@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Как заказать цветы оптом в Москве — пошаговая инструкция | Диантус{% endblock %}
+{% block description %}Как купить цветы оптом: регистрация юрлица или ИП, оптовые цены, заказ упаковками, дата и способ получения, счёт, обращения по качеству. Инструкция и ответы на вопросы.{% endblock %}
+{% block canonical %}{{ config.APP_URL }}/help{% endblock %}
+
+{# те же вопросы и ответы, что видны на странице, — в разметке FAQPage (schema.org) #}
+{% block head_extra %}
+<script type="application/ld+json" nonce="{{ csp_nonce }}">
+{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [
+{% for question, answer in faq %}{"@type": "Question", "name": {{ question|tojson }}, "acceptedAnswer": {"@type": "Answer", "text": {{ answer|tojson }}}}{% if not loop.last %},{% endif %}{% endfor %}
+]}
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+<div class="col-lg-9">
+
+{% include "_breadcrumbs.html" %}
+
+<h1 class="catalog-title mb-2">Как заказать цветы оптом</h1>
+<p class="lead">Пошаговая инструкция для магазинов, салонов и флористов: от регистрации до получения заказа.</p>
+
+<ol class="help-steps">
+{% for title, text, link in steps %}
+    <li class="step-card">
+        <span class="step-card__num" aria-hidden="true">{{ loop.index }}</span>
+        <div>
+            <h2 class="step-card__title h5">{{ title }}</h2>
+            <p class="step-card__text">{{ text }}</p>
+            {% if link %}<a href="{{ link[0] }}">{{ link[1] }} →</a>{% endif %}
+        </div>
+    </li>
+{% endfor %}
+</ol>
+
+<div class="d-flex gap-2 flex-wrap mb-5">
+    {% if not user %}<a href="/register" class="btn btn-primary"><i class="fas fa-user-plus me-2"></i>Стать оптовиком</a>
+    <a href="/login" class="btn btn-outline-primary">Войти</a>{% else %}<a href="/catalog" class="btn btn-primary"><i class="fas fa-store me-2"></i>В каталог</a>{% endif %}
+    <a href="/deadlines" class="btn btn-outline-secondary">Сроки заказа</a>
+    <a href="/contacts" class="btn btn-outline-secondary">Контакты</a>
+</div>
+
+<h2 class="h4 mb-3">Вопросы и ответы</h2>
+{% for question, answer in faq %}
+<div class="mb-3">
+    <h3 class="h6 mb-1">{{ question }}</h3>
+    <p class="mb-0">{{ answer }}</p>
+</div>
+{% endfor %}
+
+<p class="small text-muted mt-4">Полные условия — в разделе <a href="/terms">«Условия работы»</a>. Что мы делаем с вашими данными — в <a href="/privacy">политике обработки персональных данных</a>.</p>
+
+<h2 class="h5 mt-4 mb-2">Цветы оптом: разделы каталога</h2>
+<p>{% for s in seo_sections %}<a href="/optom/{{ s.slug }}">{{ s.short }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>
+
+</div>
+</div>
+{% endblock %}

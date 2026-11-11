@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from importlib import import_module
 from pathlib import Path
+from urllib.parse import parse_qs
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.encoders import jsonable_encoder
@@ -190,17 +191,29 @@ mimetypes.add_type("image/webp", ".webp")
 
 
 class CachedStaticFiles(StaticFiles):
-    """Статика с заголовком Cache-Control: шрифты и картинки браузер хранит неделю (повторные
-    заходы не качают их заново), стили и скрипты — час, а проверяет по ETag. После смены
-    ?v=… в адресе стили подтягиваются сразу."""
+    """Статика с заголовком Cache-Control.
 
-    LONG = (".webp", ".png", ".jpg", ".jpeg", ".ico", ".woff2", ".svg")
+    • Адрес с ?v=… (шаблоны получают его из asset(): отпечаток содержимого файла) и шрифты — на год и
+      «не менять» (immutable): повторные заходы вообще не обращаются к серверу, а выложенная новая версия
+      файла получает новый адрес и подтягивается сразу.
+    • Картинки и значки без версии — 30 суток.
+    • Всё остальное (manifest.json, offline.html и т. п.) — час, дальше проверка по ETag."""
+
+    IMAGES = (".webp", ".png", ".jpg", ".jpeg", ".ico", ".svg")
+    FONTS = (".woff2",)
 
     async def get_response(self, path, scope):
         response = await super().get_response(path, scope)
         if response.status_code == 200:
-            long = path.lower().endswith(self.LONG)
-            response.headers.setdefault("Cache-Control", "public, max-age=604800" if long else "public, max-age=3600")
+            lower = path.lower()
+            versioned = "v" in parse_qs(scope.get("query_string", b"").decode("latin-1"))
+            if versioned or lower.endswith(self.FONTS):
+                value = "public, max-age=31536000, immutable"
+            elif lower.endswith(self.IMAGES):
+                value = "public, max-age=2592000"
+            else:
+                value = "public, max-age=3600"
+            response.headers.setdefault("Cache-Control", value)
         return response
 
 
@@ -379,6 +392,7 @@ def sitemap(db: Session = Depends(get_db)):
         ("/contacts", today, "monthly", "0.6"),
         ("/register", today, "monthly", "0.5"),
         ("/deadlines", today, "monthly", "0.6"),
+        ("/help", today, "monthly", "0.7"),
         ("/terms", today, "yearly", "0.3"),
         ("/privacy", today, "yearly", "0.2"),
     ]

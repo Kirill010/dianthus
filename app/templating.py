@@ -1,5 +1,6 @@
 # app/templating.py (полный код)
 """Общий рендер шаблонов с кэшированием счётчика предзаказов."""
+import hashlib
 import logging
 import os
 import tempfile
@@ -156,6 +157,32 @@ def _from_country(name) -> str:
 
 templates.env.filters["plural"] = _plural
 templates.env.filters["from_country"] = _from_country
+
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+_asset_hashes: dict[str, tuple[int, int, str]] = {}
+
+
+def asset_url(path: str) -> str:
+    """{{ asset('style.css') }} → «/static/style.css?v=3fa9c1d2e0».
+
+    Отпечаток считается по содержимому файла: при выкладке новой версии адрес меняется сам, поэтому
+    браузер может хранить файл с этим адресом год (см. CachedStaticFiles), а свежий стиль подтягивается сразу.
+    Раньше номер версии в ?v=… правился руками и о нём легко было забыть."""
+    rel = str(path).lstrip("/")
+    try:
+        stat = (STATIC_DIR / rel).stat()
+    except OSError:
+        return f"/static/{rel}"
+    cached = _asset_hashes.get(rel)
+    if cached is None or cached[0] != stat.st_mtime_ns or cached[1] != stat.st_size:
+        digest = hashlib.sha256((STATIC_DIR / rel).read_bytes()).hexdigest()[:10]
+        cached = (stat.st_mtime_ns, stat.st_size, digest)
+        _asset_hashes[rel] = cached
+    return f"/static/{rel}?v={cached[2]}"
+
+
+templates.env.globals["asset"] = asset_url
 
 
 def render(request: Request, template: str, db: Session, **context):

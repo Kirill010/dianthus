@@ -26,9 +26,10 @@
     <link rel="preload" href="/static/fonts/montserrat-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/static/fonts/montserrat-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/static/fonts/playfair-display-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-    <link href="/static/vendor/bootstrap.min.css?v=7" rel="stylesheet">
-    <link href="/static/vendor/fontawesome/css/all.min.css?v=7" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=16">
+    {# asset() добавляет к адресу отпечаток файла: версию вручную менять не нужно, а браузер хранит файл год #}
+    <link href="{{ asset('vendor/bootstrap.min.css') }}" rel="stylesheet">
+    <link href="{{ asset('vendor/fontawesome/css/all.min.css') }}" rel="stylesheet">
+    <link rel="stylesheet" href="{{ asset('style.css') }}">
     <link rel="manifest" href="/static/manifest.json">
     <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
     <meta name="theme-color" content="#4a6741">
@@ -132,7 +133,7 @@
     {% if request.url.path in ('/', '/catalog') %}
         {# Показывает pwa.js — только на телефоне, если сайт ещё не установлен #}
         <div class="pwa-banner" id="pwaBanner" hidden>
-            <img src="/static/icons/icon-192.png" alt="" class="pwa-banner__icon" width="40" height="40">
+            <img src="/static/icons/icon-192.png" alt="" class="pwa-banner__icon" width="40" height="40" loading="lazy" decoding="async">
             <div class="pwa-banner__text">
                 <strong>«Диантус» на экране телефона</strong>
                 <span data-pwa-android>Каталог открывается в одно касание.</span>
@@ -180,6 +181,7 @@
         <nav class="app-footer__col" aria-label="Покупателям">
             <span class="app-footer__title">Покупателям</span>
             <a href="/catalog">Каталог</a>
+            <a href="/help">Как заказать</a>
             <a href="/deadlines">Сроки заказа</a>
             <a href="/terms">Условия работы</a>
             <a href="/contacts">Контакты</a>
@@ -241,8 +243,8 @@
 })();
 </script>
 {% endif %}
-<script src="/static/vendor/bootstrap.bundle.min.js" nonce="{{ csp_nonce }}"></script>
-<script src="/static/pwa.js" nonce="{{ csp_nonce }}" defer></script>
+<script src="{{ asset('vendor/bootstrap.bundle.min.js') }}" nonce="{{ csp_nonce }}"></script>
+<script src="{{ asset('pwa.js') }}" nonce="{{ csp_nonce }}" defer></script>
 
 <script nonce="{{ csp_nonce }}">
 /* ─── Подтверждения и «+/−» количества ───

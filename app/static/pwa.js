@@ -38,7 +38,18 @@
   var closeBtn = banner.querySelector('[data-pwa-close]');
   var deferred = null;
 
-  function show() { banner.hidden = false; }
+  // Если на экране вопрос про cookie, плашку показываем после него: две плашки в одном месте закрывали бы друг друга
+  function show() {
+    var notice = document.getElementById('cookie-notice');
+    if (notice && !notice.hidden && window.MutationObserver) {
+      var mo = new MutationObserver(function () {
+        if (notice.hidden) { mo.disconnect(); banner.hidden = false; }
+      });
+      mo.observe(notice, { attributes: true, attributeFilter: ['hidden'] });
+      return;
+    }
+    banner.hidden = false;
+  }
   function hide(days) { banner.hidden = true; snooze(days); }
 
   // Android / Chrome: браузер сам сообщает, что сайт можно установить

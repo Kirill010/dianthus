@@ -21,7 +21,7 @@ from ..models import (
     Color, Country, Height, Kind, Product, Supply, SupplyItem,
 )
 from ..security import check_rate_limit
-from ..services import exchange_log, seo
+from ..services import exchange_log, seo, seo_pages
 from ..services.preorder_service import MAX_PREORDER_PACKS
 from ..templating import render
 from ..web import LIKE_ESCAPE, contains_pattern
@@ -543,5 +543,6 @@ def product_detail(
         quantity_levels=QUANTITY_LEVELS, preorder_mode=preorder_mode,
         preorder_max_packs=MAX_PREORDER_PACKS,
         canonical_url=canonical_url,
+        related_sections=seo_pages.sections_for_product(item.product),
         breadcrumbs=[("Главная", "/"), ("Каталог", "/catalog"), (item.product.name, f"/product/{item.id}")],
     )
