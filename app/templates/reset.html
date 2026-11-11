@@ -14,12 +14,18 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <div class="mb-3">
                         <label class="form-label small fw-bold" for="rs-pass">Новый пароль</label>
-                        <input type="password" id="rs-pass" name="password" class="form-control" minlength="8" maxlength="72" required autocomplete="new-password">
+                        <div class="input-group">
+                            <input type="password" id="rs-pass" name="password" class="form-control" minlength="8" maxlength="72" required autocomplete="new-password">
+                            {% include "_pw_toggle.html" %}
+                        </div>
                         <div class="form-text">Минимум 8 символов, буква и цифра</div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-bold" for="rs-pass2">Повторите пароль</label>
-                        <input type="password" id="rs-pass2" name="password2" class="form-control" minlength="8" maxlength="72" required autocomplete="new-password">
+                        <div class="input-group">
+                            <input type="password" id="rs-pass2" name="password2" class="form-control" minlength="8" maxlength="72" required autocomplete="new-password">
+                            {% include "_pw_toggle.html" %}
+                        </div>
                     </div>
                     <button class="btn btn-primary w-100"><i class="fas fa-check me-2"></i>Сохранить пароль</button>
                 </form>

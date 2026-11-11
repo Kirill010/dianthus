@@ -63,7 +63,10 @@
                 </div>
                 <div class="mb-4">
                     <label class="form-label small fw-bold" for="reg-password">Пароль *</label>
-                    <input type="password" name="password" id="reg-password" class="form-control" minlength="8" maxlength="72" autocomplete="new-password" aria-describedby="reg-password-hint" required>
+                    <div class="input-group">
+                        <input type="password" name="password" id="reg-password" class="form-control" minlength="8" maxlength="72" autocomplete="new-password" aria-describedby="reg-password-hint" required>
+                        {% include "_pw_toggle.html" %}
+                    </div>
                     <div class="form-text" id="reg-password-hint">Минимум 8 символов, буква и цифра</div>
                 </div>
 

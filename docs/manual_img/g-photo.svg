@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1130 470" width="1130" height="470" font-family="'Segoe UI','Helvetica Neue',Arial,sans-serif">
+  <rect width="1130" height="470" rx="18" fill="#f5efe4"/>
+
+  <!-- Рамка-квадрат с пачкой -->
+  <g transform="translate(40,36)">
+    <rect width="380" height="380" rx="10" fill="#ffffff" stroke="#4a6741" stroke-width="4"/>
+    <!-- сетка центра -->
+    <path d="M190 0 V380 M0 190 H380" stroke="#e2e8dc" stroke-width="2" stroke-dasharray="6 6"/>
+    <!-- стебли -->
+    <g stroke="#5f8a4f" stroke-width="7" stroke-linecap="round" fill="none">
+      <path d="M190 330 L140 168"/><path d="M190 330 L170 150"/><path d="M190 330 L210 150"/><path d="M190 330 L240 168"/><path d="M190 330 L190 140"/>
+    </g>
+    <!-- бумага -->
+    <path d="M120 250 L190 340 L260 250 Z" fill="#efe6d2" stroke="#cdbf9f" stroke-width="3" stroke-linejoin="round"/>
+    <!-- листья -->
+    <ellipse cx="150" cy="215" rx="9" ry="22" fill="#6f9a5c" transform="rotate(-38 150 215)"/>
+    <ellipse cx="232" cy="215" rx="9" ry="22" fill="#6f9a5c" transform="rotate(38 232 215)"/>
+    <!-- бутоны -->
+    <g>
+      <circle cx="140" cy="150" r="26" fill="#d8506b"/><circle cx="140" cy="150" r="16" fill="#e8738a"/><circle cx="140" cy="150" r="7" fill="#f6b3c0"/>
+      <circle cx="190" cy="112" r="30" fill="#c93a56"/><circle cx="190" cy="112" r="19" fill="#dd5a74"/><circle cx="190" cy="112" r="8" fill="#f0a0b0"/>
+      <circle cx="240" cy="150" r="26" fill="#d8506b"/><circle cx="240" cy="150" r="16" fill="#e8738a"/><circle cx="240" cy="150" r="7" fill="#f6b3c0"/>
+      <circle cx="166" cy="132" r="22" fill="#f4a9b8"/><circle cx="166" cy="132" r="12" fill="#f9c9d3"/>
+      <circle cx="214" cy="132" r="22" fill="#f4a9b8"/><circle cx="214" cy="132" r="12" fill="#f9c9d3"/>
+    </g>
+    <!-- метка «центр» -->
+    <text x="190" y="372" text-anchor="middle" font-size="15" fill="#8a857a">квадрат 1 : 1, пачка по центру</text>
+  </g>
+  <!-- размерные стрелки -->
+  <g stroke="#b8924f" stroke-width="3" fill="none">
+    <path d="M40 436 H420 M40 428 V444 M420 428 V444"/>
+  </g>
+  <text x="230" y="460" text-anchor="middle" font-size="16" font-weight="700" fill="#7a5d2c">от 1200 × 1200 пикселей (с телефона подойдёт любой кадр)</text>
+
+  <!-- Правила -->
+  <g transform="translate(470,44)">
+    <text x="0" y="22" font-size="23" font-weight="700" fill="#2f4a28">Как снимать</text>
+
+    <g font-size="19" fill="#26302a">
+      <circle cx="16" cy="64" r="15" fill="#4a6741"/><path d="M8 64 l6 7 l12 -14" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="46" y="71">Пачка целиком, видно цветы и упаковку</text>
+
+      <circle cx="16" cy="112" r="15" fill="#4a6741"/><path d="M8 112 l6 7 l12 -14" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="46" y="119">Светлый фон: белый лист или стол</text>
+
+      <circle cx="16" cy="160" r="15" fill="#4a6741"/><path d="M8 160 l6 7 l12 -14" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="46" y="167">Дневной свет, без вспышки, резко</text>
+
+      <circle cx="16" cy="208" r="15" fill="#4a6741"/><path d="M8 208 l6 7 l12 -14" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="46" y="215">Телефон держите ровно, снимайте с расстояния 1 м</text>
+    </g>
+
+    <text x="0" y="276" font-size="23" font-weight="700" fill="#8e2f2f">Чего не делать</text>
+    <g font-size="19" fill="#26302a">
+      <circle cx="16" cy="318" r="15" fill="#b53a3a"/><path d="M9 311 l14 14 M23 311 l-14 14" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+      <text x="46" y="325">Руки, лица, надписи, водяные знаки</text>
+
+      <circle cx="16" cy="366" r="15" fill="#b53a3a"/><path d="M9 359 l14 14 M23 359 l-14 14" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+      <text x="46" y="373">Чужие фото из интернета и с сайтов плантаций</text>
+
+      <circle cx="16" cy="414" r="15" fill="#b53a3a"/><path d="M9 407 l14 14 M23 407 l-14 14" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+      <text x="46" y="421">Фото «розы вообще» вместо вашей пачки</text>
+    </g>
+  </g>
+</svg>

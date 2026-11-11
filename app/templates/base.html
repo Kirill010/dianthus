@@ -290,6 +290,38 @@
     });
 })();
 
+/* ─── «Глаз» у поля пароля: <button data-pw-toggle> в одной группе (input-group) с полем ───
+   Показывает пароль, пока кнопка нажата «включённой»; при отправке формы и при уходе со страницы
+   поле снова становится type="password" (менеджер паролей узнаёт форму, а пароль не остаётся на экране). */
+(function() {
+    function setState(btn, show) {
+        const input = btn.parentElement && btn.parentElement.querySelector('input');
+        if (!input) return null;
+        const label = show ? 'Скрыть пароль' : 'Показать пароль';
+        input.type = show ? 'text' : 'password';
+        btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+        btn.setAttribute('aria-label', label);
+        btn.title = label;
+        const icon = btn.querySelector('i');
+        if (icon) {
+            icon.classList.toggle('fa-eye', !show);
+            icon.classList.toggle('fa-eye-slash', show);
+        }
+        return input;
+    }
+    function hideAll() {
+        document.querySelectorAll('[data-pw-toggle][aria-pressed="true"]').forEach(function(b) { setState(b, false); });
+    }
+    document.addEventListener('click', function(e) {
+        const btn = e.target.closest('[data-pw-toggle]');
+        if (!btn) return;
+        const input = setState(btn, btn.getAttribute('aria-pressed') !== 'true');
+        if (input) input.focus();
+    });
+    document.addEventListener('submit', hideAll, true);
+    window.addEventListener('pagehide', hideAll);
+})();
+
 /* ─── Автоотправка формы: <input data-autosubmit> ───
    Количество в корзине: после паузы 0,8 с (или при уходе из поля) форма уходит сама. */
 (function() {

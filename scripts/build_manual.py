@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Собирает «Руководство по сайту» из docs/РУКОВОДСТВО.md в один самодостаточный HTML-файл и (по желанию) в PDF.
+"""Собирает руководство «Диантус: сайт и 1С — просто» из docs/РУКОВОДСТВО.md в один самодостаточный HTML-файл и (по желанию) в PDF.
 
     python scripts/build_manual.py                          # docs/_build/РУКОВОДСТВО.html
     python scripts/build_manual.py --pdf                    # то же + PDF через Chrome или Edge (без интернета)
@@ -29,46 +29,52 @@ LOGO = ROOT / "app" / "static" / "emblem.webp"
 mimetypes.add_type("image/webp", ".webp")
 
 CSS = """
-@page { size: A4; margin: 16mm 15mm 18mm 15mm;
-        @bottom-center { content: "Руководство по сайту «Диантус» · стр. " counter(page); font: 8pt 'Segoe UI', Arial, sans-serif; color: #8a8a80; } }
+@page { size: A4; margin: 15mm 14mm 17mm 14mm;
+        @bottom-center { content: "Диантус: сайт и 1С — просто · стр. " counter(page); font: 8.5pt 'Segoe UI', Arial, sans-serif; color: #8a8a80; } }
 @page :first { @bottom-center { content: none; } }
 * { box-sizing: border-box; }
-html { font: 10.5pt/1.5 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; color: #26302a; }
+html { font: 11.4pt/1.55 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; color: #26302a; }
 body { margin: 0; }
-h1, h2, h3 { color: #35552f; line-height: 1.25; font-weight: 700; }
-h1 { font-size: 21pt; margin: 0 0 10px; padding-bottom: 6px; border-bottom: 3px solid #c9a56a; break-before: page; break-after: avoid; }
-h2 { font-size: 14.5pt; margin: 22px 0 8px; break-after: avoid; }
-h3 { font-size: 12pt; margin: 16px 0 6px; break-after: avoid; }
-p { margin: 6px 0 8px; orphans: 3; widows: 3; }
+h1, h2, h3 { color: #2f4a28; line-height: 1.2; font-weight: 700; }
+h1 { font-size: 26pt; margin: 0 0 12px; padding: 4px 0 8px; border-bottom: 4px solid #c9a56a; break-before: page; break-after: avoid; }
+h2 { font-size: 18pt; margin: 26px 0 10px; padding-top: 6px; border-top: 2px solid #e3d9c2; break-after: avoid; }
+h1 + h2 { margin-top: 8px; border-top: 0; padding-top: 0; }
+h3 { font-size: 13.5pt; margin: 16px 0 6px; break-after: avoid; }
+p { margin: 7px 0 9px; orphans: 3; widows: 3; }
 p.lead { break-after: avoid; }
-ul, ol { margin: 6px 0 10px; padding-left: 22px; }
-li { margin: 3px 0; break-inside: avoid; }
-li > ul, li > ol { margin: 3px 0 4px; }
+ul { margin: 8px 0 12px; padding-left: 24px; }
+li { margin: 5px 0; }
+/* шаги: крупные номера в кружках */
+ol { list-style: none; counter-reset: step; padding-left: 0; margin: 10px 0 14px; }
+ol > li { counter-increment: step; position: relative; padding-left: 46px; margin: 11px 0; min-height: 32px; break-inside: avoid; }
+ol > li::before { content: counter(step); position: absolute; left: 0; top: -1px; width: 32px; height: 32px; border-radius: 50%; background: #4a6741; color: #fff; font: 700 13.5pt/32px 'Segoe UI', Arial, sans-serif; text-align: center; }
+li > ul { margin: 4px 0 4px; list-style: disc; }
 a { color: #35552f; }
-code { font: 9pt Consolas, 'Courier New', monospace; background: #f0eee6; border-radius: 3px; padding: 0 3px; }
+code { font: 9.6pt Consolas, 'Courier New', monospace; background: #f0eee6; border-radius: 3px; padding: 0 3px; }
+pre { font: 9.4pt/1.45 Consolas, 'Courier New', monospace; background: #f4f1e8; border: 1px solid #d6cfbe; border-radius: 6px; padding: 8px 10px; white-space: pre-wrap; break-inside: avoid; }
 strong { color: #1d2a1b; }
-table { border-collapse: collapse; width: 100%; margin: 8px 0 14px; font-size: 9.3pt; }
+table { border-collapse: collapse; width: 100%; margin: 8px 0 14px; font-size: 10.2pt; }
 th { background: #e8efe2; color: #26402a; text-align: left; }
-th, td { border: 1px solid #cbd5c4; padding: 4px 7px; vertical-align: top; }
+th, td { border: 1px solid #cbd5c4; padding: 5px 8px; vertical-align: top; }
 tr { break-inside: avoid; }
 figure { margin: 10px 0 14px; text-align: center; break-inside: avoid; }
-figure img { max-width: 100%; max-height: 225mm; border: 1px solid #d6cfbe; border-radius: 6px; }
-figcaption { font-size: 8.8pt; color: #6c6c62; margin-top: 3px; }
-.callout { margin: 10px 0 12px; padding: 8px 12px; border-left: 5px solid #6c8a5f; background: #f1f5ee; border-radius: 0 6px 6px 0; break-inside: avoid; }
+figure img { max-width: 100%; max-height: 215mm; border: 1px solid #d6cfbe; border-radius: 6px; }
+figcaption { font-size: 9.2pt; color: #6c6c62; margin-top: 3px; }
+.callout { margin: 12px 0 14px; padding: 9px 14px; border-left: 6px solid #6c8a5f; background: #f1f5ee; border-radius: 0 8px 8px 0; break-inside: avoid; }
 .callout p { margin: 3px 0; }
 .callout.important { border-color: #c0602c; background: #fbf0e8; }
 .callout.tip { border-color: #4e8a5a; background: #edf6ef; }
 .callout.trouble { border-color: #a63a3a; background: #faeded; }
 .cover { height: 250mm; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
 .cover img { width: 62mm; height: auto; margin-bottom: 16mm; border: 0; border-radius: 0; }
-.cover h1 { font-size: 30pt; border: 0; break-before: auto; margin-bottom: 8mm; }
-.cover p { font-size: 13pt; color: #55604f; max-width: 140mm; }
+.cover h1 { font-size: 32pt; border: 0; break-before: auto; margin-bottom: 8mm; }
+.cover p { font-size: 14pt; color: #55604f; max-width: 150mm; }
 .cover .date { margin-top: 14mm; font-size: 10pt; color: #8a8a80; }
 .toc { break-after: page; }
 .toc h1 { break-before: auto; }
 .toc ul { list-style: none; padding-left: 0; }
-.toc li.part { margin-top: 10px; font-weight: 700; }
-.toc li.chapter { margin-left: 16px; font-weight: 400; margin-top: 1px; }
+.toc li.part { margin-top: 12px; font-weight: 700; font-size: 12.5pt; }
+.toc li.chapter { margin-left: 16px; font-weight: 400; margin-top: 2px; font-size: 11pt; }
 .toc a { text-decoration: none; }
 """
 
@@ -148,7 +154,7 @@ def parse_list(lines: list[str], i: int, doc: Doc, base: Path) -> tuple[str, int
             break
         items.append("<li>" + inline(" ".join(body)) + nested + "</li>")
     tag = "ol" if ordered else "ul"
-    attr = f' start="{start}"' if ordered and start != 1 else ""
+    attr = f' start="{start}" style="counter-reset: step {start - 1}"' if ordered and start != 1 else ""
     return f"<{tag}{attr}>" + "".join(items) + f"</{tag}>", i
 
 
@@ -199,6 +205,16 @@ def convert(text: str, base: Path = ROOT / "docs") -> Doc:
             flush()
             i += 1
             continue
+        if stripped.startswith("```"):                      # блок с примером текста (без разметки внутри)
+            flush()
+            i += 1
+            block = []
+            while i < len(lines) and not lines[i].strip().startswith("```"):
+                block.append(lines[i])
+                i += 1
+            i += 1
+            doc.parts.append("<pre>" + html.escape(chr(10).join(block)) + "</pre>")
+            continue
         if stripped.startswith("<!--"):
             flush()
             if "pagebreak" in stripped:
@@ -232,10 +248,16 @@ def convert(text: str, base: Path = ROOT / "docs") -> Doc:
             flush()
             doc.images.append(img.group(2))
             pieces = prepare_image(base / img.group(2))
-            alt = html.escape(img.group(1), quote=True)
+            caption = img.group(1)
+            wm = re.search(r"\s*\{w=(\d+)\}\s*$", caption)
+            style = ""
+            if wm:
+                style = f' style="width:{int(wm.group(1))}%"'
+                caption = caption[:wm.start()]
+            alt = html.escape(caption, quote=True)
             for n, uri in enumerate(pieces, 1):
                 note = "" if len(pieces) == 1 else (" (начало)" if n == 1 else f" (продолжение, часть {n} из {len(pieces)})")
-                doc.parts.append(f'<figure><img src="{uri}" alt="{alt}"><figcaption>{html.escape(img.group(1))}{note}</figcaption></figure>')
+                doc.parts.append(f'<figure><img src="{uri}" alt="{alt}"{style}><figcaption>{html.escape(caption)}{note}</figcaption></figure>')
             i += 1
             continue
         if stripped.startswith(">"):
@@ -307,6 +329,8 @@ def prepare_image(path: Path) -> list[str]:
     if not path.exists():
         raise FileNotFoundError(f"нет картинки {path}")
     mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    if path.suffix.lower() == ".svg":
+        return [data_uri(path.read_bytes(), "image/svg+xml")]
     try:
         import io
 
@@ -320,7 +344,7 @@ def prepare_image(path: Path) -> list[str]:
             if cut:
                 img = img.crop((0, 0, img.width, cut))
         w, h = img.size
-        parts = max(1, -(-h // int(w * 1.22)))              # на сколько частей резать (высота части ≤ 1,22 ширины)
+        parts = max(1, -(-h // int(w * 1.22))) if path.stem[:2].isdigit() else 1   # на сколько частей резать (высота части ≤ 1,22 ширины)
         bounds = [0]
         for k in range(1, parts):
             bounds.append(quiet_row(img, round(h * k / parts), int(h / parts * 0.18)))

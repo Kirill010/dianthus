@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1130 372" width="1130" height="372" font-family="'Segoe UI','Helvetica Neue',Arial,sans-serif">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#b8924f"/>
+    </marker>
+  </defs>
+  <rect width="1130" height="372" rx="18" fill="#f5efe4"/>
+
+  <!-- 1. Клиент -->
+  <g transform="translate(30,34)">
+    <rect width="230" height="276" rx="16" fill="#fffdf8" stroke="#cdbf9f" stroke-width="2"/>
+    <circle cx="30" cy="30" r="17" fill="#4a6741"/><text x="30" y="37" text-anchor="middle" font-size="20" font-weight="700" fill="#fff">1</text>
+    <!-- значок: окно браузера с корзиной -->
+    <rect x="75" y="28" width="90" height="64" rx="8" fill="#fff" stroke="#4a6741" stroke-width="4"/>
+    <rect x="75" y="28" width="90" height="16" rx="8" fill="#4a6741"/>
+    <circle cx="87" cy="36" r="3" fill="#fff"/><circle cx="98" cy="36" r="3" fill="#fff"/><circle cx="109" cy="36" r="3" fill="#fff"/>
+    <path d="M100 58 h46 l-6 20 h-34 z M104 54 l-4 -8" fill="none" stroke="#b8924f" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="108" cy="86" r="4" fill="#b8924f"/><circle cx="134" cy="86" r="4" fill="#b8924f"/>
+    <text x="115" y="140" text-anchor="middle" font-size="21" font-weight="700" fill="#2f4a28">Клиент</text>
+    <text x="115" y="164" text-anchor="middle" font-size="21" font-weight="700" fill="#2f4a28">заказывает</text>
+    <text x="115" y="198" text-anchor="middle" font-size="15.5" fill="#4a4a40">выбирает цветы</text>
+    <text x="115" y="219" text-anchor="middle" font-size="15.5" fill="#4a4a40">на dianthus-opt.ru</text>
+    <text x="115" y="240" text-anchor="middle" font-size="15.5" fill="#4a4a40">и оформляет заказ</text>
+  </g>
+
+  <!-- 2. Сайт -->
+  <g transform="translate(310,34)">
+    <rect width="230" height="276" rx="16" fill="#fffdf8" stroke="#cdbf9f" stroke-width="2"/>
+    <circle cx="30" cy="30" r="17" fill="#4a6741"/><text x="30" y="37" text-anchor="middle" font-size="20" font-weight="700" fill="#fff">2</text>
+    <!-- значок: глобус -->
+    <circle cx="115" cy="60" r="34" fill="#fff" stroke="#4a6741" stroke-width="4"/>
+    <ellipse cx="115" cy="60" rx="14" ry="34" fill="none" stroke="#4a6741" stroke-width="3"/>
+    <path d="M81 60 h68 M86 44 h58 M86 76 h58" stroke="#4a6741" stroke-width="3" fill="none"/>
+    <text x="115" y="140" text-anchor="middle" font-size="21" font-weight="700" fill="#2f4a28">Сайт принимает</text>
+    <text x="115" y="164" text-anchor="middle" font-size="21" font-weight="700" fill="#2f4a28">заказ</text>
+    <text x="115" y="198" text-anchor="middle" font-size="15.5" fill="#4a4a40">номер САЙТ-5, товар</text>
+    <text x="115" y="219" text-anchor="middle" font-size="15.5" fill="#4a4a40">придерживается;</text>
+    <text x="115" y="240" text-anchor="middle" font-size="15.5" fill="#4a4a40">счёт PDF — сразу</text>
+  </g>
+
+  <!-- 3. 1С -->
+  <g transform="translate(590,34)">
+    <rect width="230" height="276" rx="16" fill="#fffdf8" stroke="#cdbf9f" stroke-width="2"/>
+    <circle cx="30" cy="30" r="17" fill="#4a6741"/><text x="30" y="37" text-anchor="middle" font-size="20" font-weight="700" fill="#fff">3</text>
+    <!-- значок: документ -->
+    <path d="M88 24 h46 l22 22 v52 h-68 z" fill="#fff" stroke="#4a6741" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M134 24 v22 h22" fill="none" stroke="#4a6741" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M98 62 h48 M98 76 h48 M98 90 h30" stroke="#b8924f" stroke-width="5" stroke-linecap="round"/>
+    <text x="115" y="140" text-anchor="middle" font-size="21" font-weight="700" fill="#2f4a28">1С оформляет</text>
+    <text x="115" y="164" text-anchor="middle" font-size="21" font-weight="700" fill="#2f4a28">накладную</text>
+    <text x="115" y="198" text-anchor="middle" font-size="15.5" fill="#4a4a40">оператор создаёт документ</text>
+    <text x="115" y="219" text-anchor="middle" font-size="15.5" fill="#4a4a40">«Реализация товаров и</text>
+    <text x="115" y="240" text-anchor="middle" font-size="15.5" fill="#4a4a40">услуг» и жмёт «Подтвердить»</text>
+  </g>
+
+  <!-- 4. Статус -->
+  <g transform="translate(870,34)">
+    <rect width="230" height="276" rx="16" fill="#fffdf8" stroke="#cdbf9f" stroke-width="2"/>
+    <circle cx="30" cy="30" r="17" fill="#4a6741"/><text x="30" y="37" text-anchor="middle" font-size="20" font-weight="700" fill="#fff">4</text>
+    <!-- значок: галочка в круге -->
+    <circle cx="115" cy="60" r="34" fill="#4a6741"/>
+    <path d="M97 61 l12 13 l25 -28" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="115" y="140" text-anchor="middle" font-size="21" font-weight="700" fill="#2f4a28">Клиент видит</text>
+    <text x="115" y="164" text-anchor="middle" font-size="21" font-weight="700" fill="#2f4a28">статус</text>
+    <text x="115" y="198" text-anchor="middle" font-size="15.5" fill="#4a4a40">Подтверждён → В работе</text>
+    <text x="115" y="219" text-anchor="middle" font-size="15.5" fill="#4a4a40">→ Отправлен → Выполнен;</text>
+    <text x="115" y="240" text-anchor="middle" font-size="15.5" fill="#4a4a40">письмо и уведомление</text>
+  </g>
+
+  <!-- стрелки -->
+  <path d="M264 172 H304" stroke="#b8924f" stroke-width="5" fill="none" marker-end="url(#ar)"/>
+  <path d="M544 172 H584" stroke="#b8924f" stroke-width="5" fill="none" marker-end="url(#ar)"/>
+  <path d="M824 172 H864" stroke="#b8924f" stroke-width="5" fill="none" marker-end="url(#ar)"/>
+
+  <!-- кто делает -->
+  <g font-size="15" fill="#6c6c62" text-anchor="middle">
+    <text x="145" y="338">делает клиент</text>
+    <text x="425" y="338">само (менеджер одобряет клиентов)</text>
+    <text x="705" y="338">делает оператор 1С</text>
+    <text x="985" y="338">менеджер или оператор</text>
+  </g>
+</svg>

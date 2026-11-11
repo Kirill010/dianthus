@@ -311,6 +311,22 @@ hr {
 .form-label { color: var(--primary-dark); }
 .form-text  { color: var(--text-soft); font-size: .8rem; }
 
+/* «Глаз» у поля пароля: кнопка справа от поля в одной рамке с ним */
+.input-group > .pw-toggle {
+    min-width: 48px;
+    border: 1.5px solid var(--border);
+    border-radius: 0 12px 12px 0;
+    color: var(--text-muted);
+    background: var(--bg-card);
+}
+.input-group > .pw-toggle:hover,
+.input-group > .pw-toggle:focus-visible,
+.input-group > .pw-toggle[aria-pressed="true"] {
+    background: var(--bg-warm);
+    color: var(--primary-dark);
+    border-color: var(--bronze-light);
+}
+
 
 /* =========================================================
    06. КАРТОЧКИ

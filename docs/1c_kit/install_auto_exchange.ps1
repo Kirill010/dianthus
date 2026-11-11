@@ -15,7 +15,7 @@
 #  * Для входа без окна 1С нужен пользователь 1С БЕЗ интерактивного ввода: либо вход по пользователю Windows, либо имя и пароль
 #    (пароль попадёт в параметры задачи — лучше завести отдельного пользователя 1С «Обмен» с минимальными правами на чтение).
 #  * Скрипт НЕ включает автоматическую отправку: это делает пункт 12 обработки (иначе «авто» ничего не отправит).
-#  * Удалить задачу: Unregister-ScheduledTask -TaskName "Dianthus: обмен 1С с сайтом" -Confirm:$false
+#  * Удалить задачу: Unregister-ScheduledTask -TaskName "Dianthus - обмен 1С с сайтом" -Confirm:$false
 param(
     [string]$Epf = (Join-Path ([Environment]::GetFolderPath('Desktop')) 'ОбменССайтом.epf'),
     [string]$Base = 'Цветы',
@@ -27,7 +27,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$taskName = 'Dianthus: обмен 1С с сайтом'
+$taskName = 'Dianthus - обмен 1С с сайтом'
 
 if (-not (Test-Path $Epf)) { throw "Не найден файл обработки: $Epf" }
 if ($V8 -eq '') {

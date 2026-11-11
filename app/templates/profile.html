@@ -108,19 +108,28 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="mb-3">
             <label class="form-label small fw-bold" for="pf-old_password">Текущий пароль</label>
-            <input id="pf-old_password" type="password" name="old_password" class="form-control"
-                   required autocomplete="current-password">
+            <div class="input-group">
+                <input id="pf-old_password" type="password" name="old_password" class="form-control"
+                       required autocomplete="current-password">
+                {% include "_pw_toggle.html" %}
+            </div>
         </div>
         <div class="mb-3">
             <label class="form-label small fw-bold" for="pf-new_password">Новый пароль</label>
-            <input id="pf-new_password" type="password" name="new_password" class="form-control"
-                   minlength="8" maxlength="72" required autocomplete="new-password">
+            <div class="input-group">
+                <input id="pf-new_password" type="password" name="new_password" class="form-control"
+                       minlength="8" maxlength="72" required autocomplete="new-password">
+                {% include "_pw_toggle.html" %}
+            </div>
             <div class="form-text">Минимум 8 символов, буква и цифра</div>
         </div>
         <div class="mb-3">
             <label class="form-label small fw-bold" for="pf-new_password2">Повторите новый пароль</label>
-            <input id="pf-new_password2" type="password" name="new_password2" class="form-control"
-                   minlength="8" maxlength="72" required autocomplete="new-password">
+            <div class="input-group">
+                <input id="pf-new_password2" type="password" name="new_password2" class="form-control"
+                       minlength="8" maxlength="72" required autocomplete="new-password">
+                {% include "_pw_toggle.html" %}
+            </div>
         </div>
         <button type="submit" class="btn btn-outline-primary">
             <i class="fas fa-key me-1"></i>Сменить пароль
@@ -153,8 +162,11 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="mb-3">
                 <label class="form-label small fw-bold" for="pf-password">Текущий пароль</label>
-                <input id="pf-password" type="password" name="password" class="form-control"
-                       required autocomplete="current-password">
+                <div class="input-group">
+                    <input id="pf-password" type="password" name="password" class="form-control"
+                           required autocomplete="current-password">
+                    {% include "_pw_toggle.html" %}
+                </div>
             </div>
             <button type="submit" class="btn btn-outline-danger">
                 <i class="fas fa-shield me-1"></i>Отключить 2FA

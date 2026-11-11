@@ -32,7 +32,6 @@ tests/
 pytest.ini
 README.md
 DEPLOY.md
-REVIEW.md
 docs/
 requirements-dev.txt
 
