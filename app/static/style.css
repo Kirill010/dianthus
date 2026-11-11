@@ -2369,15 +2369,13 @@ a.landing-contacts__value:hover {
 .todo-done { margin: 0; padding: 12px 14px; border-radius: 12px; background: #eef6ee; color: #2f6b3a; font-weight: 600; }
 .dash-stats { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border-soft, #e5dcc9); color: #6d675c; font-size: .9rem; }
 .dash-stats strong { color: #35492f; }
-.admin-tabs { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
-.admin-tabs::-webkit-scrollbar { display: none; }
+/* Вкладки в один ряд; «Ещё» — сразу за последней вкладкой, а его меню раскрывается прямо под ним (по правому краю кнопки).
+   Раньше ряд прокручивался (overflow) и меню «приклеивалось» к краю окна — на широком экране оно улетало далеко вправо. */
+.admin-tabs { flex-wrap: wrap; }
 .admin-tabs .nav-link { white-space: nowrap; }
-.admin-tabs .dropdown { position: static; }
-.admin-tabs .dropdown-menu { right: 0; left: auto; }
 /* Телефон: вкладки переносятся (чтобы «Ещё» не пряталось за краем), таблицы заказов и клиентов — карточками:
    без прокрутки вбок, кнопка действия всегда на виду */
 @media (max-width: 767.98px) {
-    .admin-tabs { flex-wrap: wrap; overflow: visible; }
     .stack-table, .stack-table tbody, .stack-table tr, .stack-table td { display: block; width: 100%; }
     .stack-table thead { display: none; }
     .stack-table tr { margin: 0 0 10px; padding: 10px 12px; background: #fff; border: 1px solid var(--border-soft, #e5dcc9); border-radius: 12px; }

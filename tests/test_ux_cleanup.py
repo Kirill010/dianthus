@@ -152,6 +152,20 @@ def test_admin_word_is_in_the_menu_for_staff_only(web, mem_db):
     assert "app-nav__link--admin" in web.get("/catalog").text
 
 
+def test_more_menu_stays_next_to_its_button_on_wide_screens(web, mem_db):
+    """Баг 11.11: у ряда вкладок был overflow, и меню «Ещё» «приклеивалось» к краю окна — на широком экране оно
+    раскрывалось в двух тысячах пикселей от кнопки. Кнопка идёт сразу за вкладками, а меню — под ней."""
+    from pathlib import Path
+    css = (Path(__file__).resolve().parent.parent / "app" / "static" / "style.css").read_text(encoding="utf-8")
+    assert ".admin-tabs .dropdown { position: static" not in css
+    tabs_rules = [line for line in css.splitlines() if line.startswith(".admin-tabs {")]
+    assert tabs_rules and all("overflow" not in rule for rule in tabs_rules)
+    _admin(web, mem_db)
+    page = web.get("/admin").text
+    assert '<li class="nav-item dropdown">' in page and "dropdown ms-auto" not in page
+    assert 'class="dropdown-menu dropdown-menu-end"' in page
+
+
 def test_manager_menu_is_one_row_with_more_and_no_owner_links(web, mem_db):
     make_user(mem_db, "m@test.ru", password="Manager123", is_manager=True)
     login(web, "m@test.ru", "Manager123")
