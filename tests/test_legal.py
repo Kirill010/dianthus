@@ -61,7 +61,7 @@ def test_markdown_asterisk_in_url_does_not_break_link():
 def test_legal_pages_are_public_and_show_missing_requisites(web, monkeypatch):
     for attr in ("SHOP_INN", "SHOP_OGRN", "SHOP_PD_RESPONSIBLE"):
         monkeypatch.setattr(config, attr, "")
-    for url in ("/privacy", "/consent", "/marketing-consent", "/terms"):
+    for url in ("/privacy", "/consent", "/marketing-consent", "/terms", "/cookie-policy"):
         assert web.get(url).status_code == 200, url
     assert "[укажите: ИНН]" in web.get("/privacy").text
 
@@ -81,8 +81,18 @@ def test_terms_show_lead_days_from_settings(web):
 
 def test_footer_links_to_legal_pages(web):
     page = web.get("/").text
-    for url in ("/privacy", "/consent", "/terms", "/deadlines"):
+    for url in ("/privacy", "/consent", "/terms", "/cookie-policy", "/deadlines"):
         assert f'href="{url}"' in page
+
+
+def test_cookie_policy_lists_real_technologies_and_analytics_choice(web, monkeypatch):
+    monkeypatch.setattr(config, "SHOP_PD_RESPONSIBLE", "Тестовый Ответственный")
+    page = web.get("/cookie-policy")
+    assert page.status_code == 200
+    for text in ("dianthus_sid", "catalog_view", "pwa_banner_until", "dianthus_analytics",
+                 "Яндекс.Метрик", "Вебвизор", "Ответственный за организацию"):
+        assert text in page.text, text
+    assert "[укажите: ОТВЕТСТВЕННЫЙ]" not in page.text
 
 
 # ───────────────────────── регистрация и согласия ─────────────────────────

@@ -104,9 +104,10 @@ def test_photo_rules_in_the_manual_match_the_site_code():
     text = _text()
     assert f"до {onec_photos.MAX_PHOTO_BYTES // (1024 * 1024)} МБ через 1С" in text
     assert f"до {config.MAX_UPLOAD_SIZE // (1024 * 1024)} МБ, если загружаете через админку" in text
-    assert f"Больше {upload_service.FULL_SIZE[0]} сайт сам уменьшит" in text
+    assert f"{upload_service.FULL_SIZE[0]} × {upload_service.FULL_SIZE[1]}" in text
+    assert "Больший снимок сайт уменьшит" in text
     assert f"до {onec_photos.MAX_PHOTOS_PER_PRODUCT} на один товар" in text
-    assert f"Больше {upload_service.MAX_PIXELS // 1_000_000} мегапикселей сайт не примет" in text
+    assert f"больше {upload_service.MAX_PIXELS // 1_000_000} мегапикселей сайт не примет" in text.lower()
 
 
 def test_order_statuses_in_the_manual_match_the_site():

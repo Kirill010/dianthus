@@ -185,11 +185,14 @@ def test_dry_run_checks_everything_but_saves_nothing(web, mem_db, tmp_path, monk
 def test_big_photo_is_scaled_down_and_phone_rotation_is_applied(web, mem_db, tmp_path, monkeypatch):
     item, h = setup(web, mem_db, tmp_path, monkeypatch)
     big = post_photo(web, h, picture("JPEG", size=(2400, 1800))).json()
-    assert big["width"] == 1600 and big["height"] == 1200                     # вписано в 1600×1600
+    assert big["width"] == 1000 and big["height"] == 750                      # вписано в 1000×1000 без искажения
+
+    square = post_photo(web, h, picture("JPEG", size=(2000, 2000)), n=2).json()
+    assert square["width"] == 1000 and square["height"] == 1000               # квадрат — ровно 1000×1000
 
     exif = Image.Exif()
     exif[0x0112] = 6                                                          # «снято на боку»: повернуть на 90°
-    rotated = post_photo(web, h, picture("JPEG", size=(40, 20), exif=exif), n=2).json()
+    rotated = post_photo(web, h, picture("JPEG", size=(40, 20), exif=exif), n=3).json()
     assert (rotated["width"], rotated["height"]) == (20, 40)
 
 

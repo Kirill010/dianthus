@@ -8,8 +8,12 @@
 
 Запуск:   python scripts/compare_1c_site.py sverka.txt rows.tsv
 Остаток на сайте считается целыми упаковками (остаток меньше упаковки на полку не попадает), цена — за штуку.
+Строка определяется тройкой «номер инвойса, название, цена»: в одном инвойсе бывает две строки с одним названием и
+разной ценой, это две карточки, и обе должны быть на сайте.
 Расхождения в остатках бывают честными: после последней отправки в 1С продали или оприходовали товар. Поэтому
 сверку делают сразу после отправки поставок («1. ПОСТАВКА → Да»), тогда расхождений быть не должно.
+Исключение: название. Сайт при отправке поставок НЕ переименовывает уже существующую карточку, поэтому товар,
+переименованный в 1С, остаётся на сайте со старым названием (это показано отдельной строкой «названия разные»).
 """
 from __future__ import annotations
 
@@ -50,7 +54,8 @@ def parse_report(text: str) -> list[Row1C]:
         left, right = line.split(" || ", 1)
         a = [x.strip() for x in left.split(" | ")]
         b = [x.strip() for x in right.split(" | ")]
-        if len(a) < 9 or len(b) < 21 or not re.match(r"^(\d|д-)", a[0], re.I):
+        # вторая колонка слева — дата «02.05.26»: так отличаем строку данных от шапки таблицы
+        if len(a) < 9 or len(b) < 21 or not re.match(r"^\d{2}\.\d{2}\.\d{2}$", a[1]):
             continue
         # «ИТОГ пачка»: число, а если пачку программа угадала (в строке её нет), после числа стоит «?»
         rows.append(Row1C(invoice=a[0], status=a[8], name=b[0], pack=int(num(b[20].rstrip("?")) or 1), stems=int(num(b[17])),
@@ -58,53 +63,68 @@ def parse_report(text: str) -> list[Row1C]:
     return rows
 
 
-def parse_site(text: str) -> dict[tuple[str, str], dict]:
-    rows = {}
+def key_of(invoice: str, name: str, price: float) -> tuple[str, str, float]:
+    return (invoice, norm(name), round(price, 2))
+
+
+def parse_site(text: str) -> dict[tuple[str, str, float], dict]:
+    rows: dict[tuple[str, str, float], dict] = {}
     for line in text.replace("\r\n", "\n").split("\n"):
         p = line.rstrip("\n").split("\t")
         if len(p) < 7:
             continue
-        rows[(p[0], norm(p[2]))] = {"name": p[2], "pack": int(p[3]), "packs": int(p[4]), "price": float(p[5]), "country": p[6]}
+        k = key_of(p[0], p[2], float(p[5]))
+        if k in rows:                                            # две строки сайта с одним ключом: складываем упаковки
+            rows[k]["packs"] += int(p[4])
+        else:
+            rows[k] = {"name": p[2], "pack": int(p[3]), "packs": int(p[4]), "price": float(p[5]), "country": p[6]}
     return rows
 
 
 def compare(rows_1c: list[Row1C], site: dict) -> dict:
-    expect: dict[tuple[str, str], dict] = {}
+    expect: dict[tuple[str, str, float], dict] = {}
     for r in rows_1c:
         if r.status != "received" or r.stems <= 0 or r.pack <= 0:
             continue
-        e = expect.setdefault((r.invoice, norm(r.name)), {"name": r.name, "stems": 0, "pack": r.pack, "price": r.price, "country": r.country})
+        e = expect.setdefault(key_of(r.invoice, r.name, r.price),
+                              {"name": r.name, "stems": 0, "pack": r.pack, "price": r.price, "country": r.country})
         e["stems"] += r.stems
     expect = {k: dict(v, packs=v["stems"] // v["pack"]) for k, v in expect.items() if v["stems"] // v["pack"] > 0}
 
     missing = [k for k in expect if k not in site]
     extra = [k for k in site if k not in expect]
-    # «пропавшая» и «лишняя» позиции в одном инвойсе с той же ценой и числом упаковок: скорее всего, товар переименовали в 1С
-    renamed, free = [], list(extra)
+
+    # тот же инвойс и то же название, а цена другая: это расхождение цены, а не «пропажа»
+    price: list = []
     for m in list(missing):
-        e = expect[m]
-        twin = next((x for x in free if x[0] == m[0] and abs(site[x]["price"] - e["price"]) < 0.011 and site[x]["pack"] == e["pack"]), None)
+        twin = next((x for x in extra if x[0] == m[0] and x[1] == m[1]), None)
+        if twin is not None:
+            price.append((m, expect[m]["price"], site[twin]["price"]))
+            missing.remove(m)
+            extra.remove(twin)
+
+    # тот же инвойс, та же цена и пачка, а название другое: скорее всего, товар переименовали в 1С
+    renamed: list = []
+    for m in list(missing):
+        twin = next((x for x in extra if x[0] == m[0] and x[2] == m[2] and site[x]["pack"] == expect[m]["pack"]), None)
         if twin is not None:
             renamed.append((m, twin))
-            free.remove(twin)
-    renamed_missing = {m for m, _ in renamed}
-    renamed_extra = {x for _, x in renamed}
-    missing = [m for m in missing if m not in renamed_missing]
-    extra = [x for x in extra if x not in renamed_extra]
-    qty, price, pack, country = [], [], [], []
+            missing.remove(m)
+            extra.remove(twin)
+
+    qty, pack, country = [], [], []
     for k, e in expect.items():
         s = site.get(k)
         if s is None:
             continue
         if s["packs"] != e["packs"]:
             qty.append((k, e["packs"], s["packs"]))
-        if abs(s["price"] - e["price"]) > 0.011:
-            price.append((k, e["price"], s["price"]))
         if s["pack"] != e["pack"]:
             pack.append((k, e["pack"], s["pack"]))
         if norm(s["country"]) != norm(e["country"]):
             country.append((k, e["country"], s["country"]))
-    return {"expect": expect, "missing": missing, "extra": extra, "renamed": renamed, "qty": qty, "price": price, "pack": pack, "country": country,
+    return {"expect": expect, "missing": missing, "extra": extra, "renamed": renamed, "qty": qty, "price": price,
+            "pack": pack, "country": country,
             "invoices_1c": len({r.invoice for r in rows_1c if r.status == "received" and r.stems > 0}),
             "invoices_site": len({k[0] for k in site}),
             "packs_1c": sum(e["packs"] for e in expect.values()), "packs_site": sum(s["packs"] for s in site.values())}
@@ -127,7 +147,7 @@ def main() -> int:
     print(f"Есть на сайте, нет в 1С: {len(r['extra'])}")
     for k in r["extra"][:25]:
         print(f"   {k[0]}  {site[k]['name']}  ({site[k]['packs']} упак.)")
-    print(f"Названия в 1С и на сайте разные (скорее всего, товар переименовали в 1С после последней отправки): {len(r['renamed'])}")
+    print(f"Название в 1С другое (товар переименован в 1С; на сайте прежнее, при отправке поставок оно не меняется): {len(r['renamed'])}")
     for m, x in r["renamed"][:25]:
         print(f"   {m[0]}  в 1С «{r['expect'][m]['name']}», на сайте «{site[x]['name']}»")
     print(f"Остаток отличается: {len(r['qty'])}")
@@ -142,11 +162,12 @@ def main() -> int:
     print(f"Страна отличается: {len(r['country'])}")
     for k, e, s in r["country"][:15]:
         print(f"   {k[0]}  {r['expect'][k]['name']}: в 1С {e}, на сайте {s}")
-    same = len(r["expect"]) - len(r["qty"]) - len(r["missing"]) - len(r["renamed"])
+    matched = len(r["expect"]) - len(r["missing"]) - len(r["renamed"]) - len(r["price"])
+    same = matched - len(r["qty"])
     more_site = sum(1 for _, e, s in r["qty"] if s > e)
-    print(f"\nИТОГ: совпало по остатку {same} из {len(r['expect'])} позиций (на сайте больше, чем в 1С: {more_site}; меньше: {len(r['qty']) - more_site}); "
-          f"нет на сайте {len(r['missing'])}; лишних на сайте {len(r['extra'])}; переименованы {len(r['renamed'])}.")
-    return 0 if not (r["missing"] or r["extra"] or r["price"] or r["pack"] or r["country"]) else 1
+    print(f"\nИТОГ: сопоставлено {matched} из {len(r['expect'])} позиций 1С; остаток совпал у {same} (на сайте больше, чем в 1С: {more_site}; меньше: {len(r['qty']) - more_site}); "
+          f"нет на сайте {len(r['missing'])}; лишних на сайте {len(r['extra'])}; другая цена {len(r['price'])}; переименованы в 1С {len(r['renamed'])}.")
+    return 0 if not (r["missing"] or r["extra"] or r["price"] or r["pack"] or r["country"] or r["qty"]) else 1
 
 
 if __name__ == "__main__":

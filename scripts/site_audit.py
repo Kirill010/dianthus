@@ -30,7 +30,7 @@ UA = "dianthus-site-audit/1.0 (own-site check, read-only)"  # только ла�
 
 # страницы, которые должны быть в поиске / которые должны быть закрыты от поиска
 PUBLIC_PAGES = ["/", "/catalog", "/contacts", "/deadlines", "/privacy", "/terms", "/consent", "/marketing-consent",
-                "/help", "/register"]
+                "/cookie-policy", "/help", "/register"]
 NOINDEX_PAGES = ["/login", "/forgot"]
 SECTION_SLUGS = ["rozy", "kustovye-rozy", "ekvadorskie-rozy", "kenijskie-rozy", "rossijskie-rozy",
                  "hrizantemy", "gvozdiki", "gorshechnye-rasteniya", "zelen"]

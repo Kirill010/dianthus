@@ -26,7 +26,7 @@ ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 # Что на самом деле лежит в файле (расширению и заголовку запроса не верим).
 # MPO — это обычный JPEG с приставкой: так Pillow называет часть снимков с телефонов.
 ALLOWED_FORMATS = {"JPEG", "MPO", "PNG", "WEBP", "GIF"}
-FULL_SIZE = (1600, 1600)
+FULL_SIZE = (1000, 1000)
 
 def _read_file(file: UploadFile) -> bytes:
     try:
@@ -36,7 +36,7 @@ def _read_file(file: UploadFile) -> bytes:
         return b""
 
 def encode_product_image(content: bytes, max_size: int | None = None) -> tuple[bytes, tuple[int, int]]:
-    """Проверяет картинку и готовит её к показу на сайте: WEBP не больше 1600×1600.
+    """Проверяет картинку и готовит её к показу на сайте: WEBP не больше 1000×1000.
 
     Возвращает (байты WEBP, (ширина, высота)). Бросает HTTPException(400) с понятным
     текстом: пустой файл, слишком большой, не картинка, неподходящий формат, гигантские

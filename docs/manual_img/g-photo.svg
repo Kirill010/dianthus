@@ -30,7 +30,7 @@
   <g stroke="#b8924f" stroke-width="3" fill="none">
     <path d="M40 436 H420 M40 428 V444 M420 428 V444"/>
   </g>
-  <text x="230" y="460" text-anchor="middle" font-size="16" font-weight="700" fill="#7a5d2c">от 1200 × 1200 пикселей (с телефона подойдёт любой кадр)</text>
+  <text x="230" y="460" text-anchor="middle" font-size="16" font-weight="700" fill="#7a5d2c">1000 × 1000 пикселей, квадрат 1 : 1</text>
 
   <!-- Правила -->
   <g transform="translate(470,44)">

@@ -36,6 +36,7 @@ DOC_ORDER = [
     ("consent", "/consent"),
     ("marketing", "/marketing-consent"),
     ("terms", "/terms"),
+    ("cookie", "/cookie-policy"),
 ]
 DOC_URL = dict(DOC_ORDER)
 ANON_EMAIL_DOMAIN = "deleted.invalid"

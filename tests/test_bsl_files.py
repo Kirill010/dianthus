@@ -61,6 +61,8 @@ def test_1c_exchange_has_full_snapshot_and_order_safety_guards():
     assert 'Автоматическое подтверждение заказов запрещено' in source
     assert 'ДействиеЗаказСтатус();' in source
     assert '/api/1c/orders/status' in source
+    assert 'Строки с ошибками (все, без обрезки):' in source
+    assert 'Лев(Сред(Текст, Позиция), 1500)' not in source
 
 
 @pytest.mark.parametrize("script", SCRIPTS)

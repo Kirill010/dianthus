@@ -709,3 +709,24 @@ def test_decompression_bomb_photo_is_rejected(web, mem_db, tmp_path, monkeypatch
     product = mem_db.query(Product).filter(Product.name == "Бомба").one()
     assert product.photos == []                                  # фото отклонено
     assert list(tmp_path.glob("*.webp")) == []
+
+
+# ═══════════════════════════ БАННЕР ПОСТАВКИ ═══════════════════════════
+
+
+def test_supply_banner_warns_when_planned_arrival_has_passed(web, mem_db):
+    item = seed_item(mem_db, status="В пути", active=False)
+    item.supply.arrival_date = datetime(2020, 10, 23)
+    mem_db.commit()
+    page = web.get("/").text
+    assert "Поставка задерживается" in page and "новая дата уточняется" in page
+    assert "23.10.2020" not in page
+
+
+def test_supply_banner_shows_future_arrival_normally(web, mem_db):
+    item = seed_item(mem_db, status="В пути", active=False)
+    item.supply.arrival_date = datetime(2099, 10, 23)
+    mem_db.commit()
+    page = web.get("/").text
+    assert "Ждём ваших заказов!" in page and "23.10.2099" in page
+    assert "Поставка задерживается" not in page

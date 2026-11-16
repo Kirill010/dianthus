@@ -55,6 +55,30 @@ def test_item_missing_on_site_and_extra_on_site_and_rename_are_told_apart():
     assert len(result["renamed"]) == 1
 
 
+def test_two_lines_with_one_name_and_different_prices_are_two_cards_and_both_match():
+    report = cmp.parse_report("\n".join([
+        line("00000650", "Фаленопсис микс 1 ст.", 1120, 15, "1"),
+        line("00000650", "Фаленопсис микс 1 ст.", 842, 15, "1"),
+    ]))
+    result = cmp.compare(report, cmp.parse_site(site(
+        ["00000650", "", "Фаленопсис микс 1 ст.", 1, 15, "1120.00", "Эквадор"],
+        ["00000650", "", "Фаленопсис микс 1 ст.", 1, 15, "842.00", "Эквадор"],
+    )))
+    assert not (result["missing"] or result["extra"] or result["qty"] or result["price"] or result["renamed"])
+
+
+def test_other_price_for_the_same_name_is_a_price_difference_not_a_missing_item():
+    report = cmp.parse_report(line("00000001", "Роза Фридом", 50, 100, "10"))
+    result = cmp.compare(report, cmp.parse_site(site(["00000001", "", "Роза Фридом", 10, 10, "42.50", "Эквадор"])))
+    assert len(result["price"]) == 1 and result["price"][0][1:] == (50.0, 42.5)
+    assert not (result["missing"] or result["extra"])
+
+
+def test_invoice_numbers_starting_with_letters_are_read():
+    report = cmp.parse_report(line("ДИ000027", "Дендробиум микс", 144.84, 128, "10"))
+    assert report and report[0].invoice == "ДИ000027" and report[0].stems == 128
+
+
 def test_lines_below_one_pack_and_in_transit_are_not_expected_on_the_site():
     report = cmp.parse_report("\n".join([
         line("00000001", "Остаток меньше пачки", 10, 7, "10"),

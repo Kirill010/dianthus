@@ -395,6 +395,7 @@ def sitemap(db: Session = Depends(get_db)):
         ("/help", today, "monthly", "0.7"),
         ("/terms", today, "yearly", "0.3"),
         ("/privacy", today, "yearly", "0.2"),
+        ("/cookie-policy", today, "yearly", "0.2"),
     ]
     # страницы-разделы («розы оптом» и т. п.): в карту — только те, где есть товар в наличии
     for section in seo_pages.SECTIONS:

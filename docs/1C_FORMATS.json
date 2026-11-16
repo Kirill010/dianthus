@@ -447,8 +447,8 @@
         "position": 1,
         "photos_total": 1,
         "url": "/static/uploads/p12-3fa9c2d41b7e0a55.webp",
-        "width": 1600,
-        "height": 1067
+        "width": 1000,
+        "height": 1000
       },
       "notes": [
         "id — тот же идентификатор товара, что вы присылаете в товарах и поставках. Вместо него можно barcode, sku или name.",

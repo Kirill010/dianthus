@@ -22,7 +22,7 @@ EXPECTED_ROUTERS = {
 # Адреса, которые открыты без входа
 PUBLIC = {
     "/", "/login", "/register", "/registration_pending", "/catalog", "/contacts",
-    "/deadlines", "/terms", "/privacy", "/consent", "/marketing-consent", "/forgot",
+    "/deadlines", "/terms", "/privacy", "/consent", "/marketing-consent", "/cookie-policy", "/forgot",
     "/1c-docs", "/1c-docs.md", "/1c-docs.json", "/sitemap.xml", "/health", "/sw.js",
     "/api/search-suggest", "/product/{item_id}", "/reset/{token}", "/optom/{section}", "/help",
 }
