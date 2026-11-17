@@ -98,6 +98,21 @@ def test_pictures_used_on_every_page_are_light():
     assert (STATIC / "brand-mark.webp").stat().st_size <= 20 * 1024            # лежит в шапке каждой страницы
 
 
+def test_landing_has_search_and_real_square_optimized_photos(web):
+    from PIL import Image
+
+    html = web.get("/").text
+    assert re.search(r'<form[^>]*class="landing-search"[^>]*action="/catalog"', html)
+    assert 'id="landing-search-input"' in html and 'name="q"' in html
+    assert 'class="landing-hero__visual"' in html
+    for name in ("landing-pink-floyd.webp", "landing-vendela.webp", "landing-explorer.webp", "landing-carnation.webp"):
+        path = STATIC / name
+        with Image.open(path) as image:
+            assert image.size == (1000, 1000), name
+        assert path.stat().st_size <= 150 * 1024, name
+        assert f'src="/static/{name}"' in html
+
+
 # ───────────────────────── каталог: фильтры слева / панель на телефоне ─────────────────────────
 
 def test_catalog_filters_are_a_side_panel_that_becomes_a_drawer_on_phones(web, mem_db):

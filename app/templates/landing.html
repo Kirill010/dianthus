@@ -4,35 +4,43 @@
 {% block description %}Оптовый магазин цветов в Москве: розы, кустовые розы, хризантемы, гвоздики, горшечные растения упаковками из Эквадора, Кении, Голландии и России. Только юрлицам и ИП.{% endblock %}
 
 {% block content %}
-{# ═══════════ HERO ═══════════ #}
 <section class="landing-hero">
     <div class="landing-hero__inner">
         <div class="landing-hero__copy">
             <span class="landing-hero__badge">
-                <i class="fas fa-briefcase me-1" aria-hidden="true"></i>Оптовая торговля · только юрлица и ИП
+                <i class="fas fa-briefcase" aria-hidden="true"></i>Для цветочных магазинов и флористов · Москва
             </span>
-            <h1 class="landing-hero__title">Свежие цветы оптом в Москве — розы, хризантемы, гвоздики</h1>
+            <h1 class="landing-hero__title">Свежие цветы оптом в Москве</h1>
             <p class="landing-hero__lead">
-                Розы, кустовые розы, хризантемы, гвоздики, горшечные растения и флористические
-                аксессуары из Эквадора, Кении, Голландии и России. Оптовые цены, стабильное
-                качество и поставки каждую неделю — для цветочных магазинов, салонов и флористов.
+                Розы, хризантемы, гвоздика и зелень из Эквадора, Кении, Голландии и России.
+                Выбирайте по остаткам и заказывайте онлайн в удобное время.
             </p>
+            <form class="landing-search" action="/catalog" method="get" role="search">
+                <label class="visually-hidden" for="landing-search-input">Поиск по сорту, названию или артикулу</label>
+                <i class="fas fa-search" aria-hidden="true"></i>
+                <input id="landing-search-input" type="search" name="q" maxlength="100" required
+                       placeholder="Найти сорт, например Мондиал" autocomplete="off" enterkeyhint="search">
+                <button type="submit">Найти</button>
+            </form>
             <div class="landing-hero__actions">
-                <a href="/register" class="btn btn-primary btn-lg landing-hero__cta">
-                    <i class="fas fa-user-plus me-2" aria-hidden="true"></i>Стать оптовиком
+                <a href="/catalog" class="btn btn-primary btn-lg landing-hero__cta">
+                    Смотреть каталог<i class="fas fa-arrow-right" aria-hidden="true"></i>
                 </a>
-                <a href="/catalog" class="btn btn-outline-primary btn-lg landing-hero__cta2">
-                    Смотреть ассортимент
+                <a href="/register" class="btn btn-outline-primary btn-lg landing-hero__cta2">
+                    Получить оптовые цены
                 </a>
             </div>
+            <p class="landing-hero__note">
+                <i class="fas fa-lock" aria-hidden="true"></i>Только юрлица и ИП · персональные цены после подтверждения
+            </p>
             <ul class="landing-stats">
-                {% if countries_count %}{# число стран считается по товарам в наличии, а не пишется руками #}
+                {% if countries_count %}
                 <li class="landing-stats__item">
                     <span class="landing-stats__value">{{ countries_count }}</span>
                     <span class="landing-stats__label">{{ countries_count|plural('страна', 'страны', 'стран') }} происхождения</span>
                 </li>
                 {% endif %}
-                {% if in_stock_count %}{# пока каталог пуст, «0 позиций» посетителям не показываем #}
+                {% if in_stock_count %}
                 <li class="landing-stats__item">
                     <span class="landing-stats__value">{{ in_stock_count }}</span>
                     <span class="landing-stats__label">{{ in_stock_count|plural('позиция', 'позиции', 'позиций') }} в наличии</span>
@@ -44,54 +52,115 @@
                 </li>
             </ul>
         </div>
-        <div class="landing-hero__art" aria-hidden="true">
-            <img src="/static/emblem.webp" alt="" width="520" height="520" fetchpriority="high" decoding="async">
-        </div>
+        <a class="landing-hero__visual" href="/catalog?q=Пинк%20Флойд" aria-label="Роза Пинк Флойд — найти в каталоге">
+            <img src="/static/landing-pink-floyd.webp" alt="Роза Пинк Флойд — фотография сорта из подборки Диантуса"
+                 width="1000" height="1000" loading="eager" fetchpriority="high">
+            <span class="landing-hero__visual-caption">
+                <span><strong>Роза Пинк Флойд</strong><small>Фотография сорта из нашей подборки</small></span>
+                <i class="fas fa-arrow-right" aria-hidden="true"></i>
+            </span>
+        </a>
     </div>
 </section>
 
-{# ═══════════ ПРЕИМУЩЕСТВА ═══════════ #}
+{% if seo_sections %}
+<nav class="landing-quick" aria-label="Быстрый переход по каталогу">
+    <span class="landing-quick__label">Популярные разделы</span>
+    <div class="landing-quick__links">
+        {% for s in seo_sections[:6] %}<a href="/optom/{{ s.slug }}">{{ s.short }}<i class="fas fa-arrow-right" aria-hidden="true"></i></a>{% endfor %}
+    </div>
+    <a href="/deadlines" class="landing-quick__deadlines"><i class="far fa-calendar-check" aria-hidden="true"></i>Сроки заказа</a>
+</nav>
+{% endif %}
+
 <section class="landing-section container">
-    <h2 class="landing-section__title">Почему закупаются у нас</h2>
+    {% if preview_items %}
+    <div class="landing-section__head">
+        <div>
+            <span class="landing-section__eyebrow">В каталоге сейчас</span>
+            <h2 class="landing-section__title">Цветы из последних поставок</h2>
+        </div>
+        <a href="/catalog" class="btn btn-outline-primary btn-sm">Весь каталог<i class="fas fa-arrow-right" aria-hidden="true"></i></a>
+    </div>
+    <div class="landing-grid">
+        {% for item in preview_items %}
+            {% set product = item.product %}
+            <a href="/product/{{ item.id }}" class="landing-grid__card">
+                <img src="{{ product.all_photos[0] }}" alt="{{ product.name }} — оптом" class="landing-grid__photo" width="300" height="300" loading="lazy" decoding="async">
+                <span class="landing-grid__name">{{ product.name }}</span>
+            </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="landing-section__head">
+        <div>
+            <span class="landing-section__eyebrow">Фотографии сортов</span>
+            <h2 class="landing-section__title">Выбирайте цветы для своего ассортимента</h2>
+            <p class="landing-section__intro">Откройте сорт в каталоге, чтобы посмотреть актуальные поставки и остатки.</p>
+        </div>
+        <a href="/catalog" class="btn btn-outline-primary btn-sm">Весь каталог<i class="fas fa-arrow-right" aria-hidden="true"></i></a>
+    </div>
+    <div class="landing-showcase">
+        <a href="/catalog?q=Пинк%20Флойд" class="landing-showcase__card">
+            <img src="/static/landing-pink-floyd.webp" alt="Роза Пинк Флойд" class="landing-showcase__photo" width="1000" height="1000" loading="lazy" decoding="async">
+            <span class="landing-showcase__body"><strong>Пинк Флойд</strong><span>Роза · 60 см</span><i class="fas fa-arrow-right" aria-hidden="true"></i></span>
+        </a>
+        <a href="/catalog?q=Венделла" class="landing-showcase__card">
+            <img src="/static/landing-vendela.webp" alt="Роза Венделла" class="landing-showcase__photo" width="1000" height="1000" loading="lazy" decoding="async">
+            <span class="landing-showcase__body"><strong>Венделла</strong><span>Роза · 60 см</span><i class="fas fa-arrow-right" aria-hidden="true"></i></span>
+        </a>
+        <a href="/catalog?q=Эксплорер" class="landing-showcase__card">
+            <img src="/static/landing-explorer.webp" alt="Роза Эксплорер" class="landing-showcase__photo" width="1000" height="1000" loading="lazy" decoding="async">
+            <span class="landing-showcase__body"><strong>Эксплорер</strong><span>Роза · 60 см</span><i class="fas fa-arrow-right" aria-hidden="true"></i></span>
+        </a>
+        <a href="/catalog?q=Гвоздика%20микс" class="landing-showcase__card">
+            <img src="/static/landing-carnation.webp" alt="Гвоздика микс" class="landing-showcase__photo" width="1000" height="1000" loading="lazy" decoding="async">
+            <span class="landing-showcase__body"><strong>Гвоздика микс</strong><span>Светлые оттенки</span><i class="fas fa-arrow-right" aria-hidden="true"></i></span>
+        </a>
+    </div>
+    {% endif %}
+    <p class="landing-note mt-3 mb-0"><i class="fas fa-lock" aria-hidden="true"></i>Оптовые цены доступны после регистрации и подтверждения</p>
+</section>
+
+<section class="landing-section container">
+    <div class="landing-section__head">
+        <div>
+            <span class="landing-section__eyebrow">Закупка без лишних звонков</span>
+            <h2 class="landing-section__title">Всё нужное — в личном кабинете</h2>
+        </div>
+    </div>
     <div class="landing-features">
         <div class="feature-card">
-            <span class="feature-card__icon"><i class="fas fa-plane-departure"></i></span>
-            <h3 class="feature-card__title">Прямой импорт</h3>
-            <p class="feature-card__text">
-                Работаем с плантациями и проверенными поставщиками Эквадора, Кении, Голландии
-                и России, сами ведём поставки — поэтому цены оптовые, а свежесть выше.
-            </p>
+            <span class="feature-card__icon"><i class="fas fa-boxes-stacked" aria-hidden="true"></i></span>
+            <h3 class="feature-card__title">Остатки по поставкам</h3>
+            <p class="feature-card__text">Видно конкретную партию, страну, рост стебля и доступное количество — не общий каталог без привязки к складу.</p>
         </div>
         <div class="feature-card">
-            <span class="feature-card__icon"><i class="fas fa-snowflake"></i></span>
-            <h3 class="feature-card__title">Холодовая цепь</h3>
-            <p class="feature-card__text">
-                От срезки на плантации до вашей полки цветы находятся в холоде.
-                Стабильное качество каждой упаковки.
-            </p>
+            <span class="feature-card__icon"><i class="fas fa-tags" aria-hidden="true"></i></span>
+            <h3 class="feature-card__title">Своя цена и скидка</h3>
+            <p class="feature-card__text">После входа видна ваша персональная цена. Постоянным клиентам доступны индивидуальные условия.</p>
         </div>
         <div class="feature-card">
-            <span class="feature-card__icon"><i class="fas fa-tags"></i></span>
-            <h3 class="feature-card__title">Цены импортёра</h3>
-            <p class="feature-card__text">
-                Оптовые цены без наценок. Персональные скидки постоянным клиентам
-                и прозрачные условия для всех.
-            </p>
+            <span class="feature-card__icon"><i class="fas fa-truck-fast" aria-hidden="true"></i></span>
+            <h3 class="feature-card__title">Предзаказ к нужной дате</h3>
+            <p class="feature-card__text">Выбирайте товары в пути, указывайте дату потребности и сверяйте сроки заказа к праздникам.</p>
         </div>
         <div class="feature-card">
-            <span class="feature-card__icon"><i class="fas fa-headset"></i></span>
-            <h3 class="feature-card__title">Персональный менеджер</h3>
-            <p class="feature-card__text">
-                Поможет с заказом, подберёт сорта под ваш ассортимент и согласует
-                доставку. На связи в рабочие часы.
-            </p>
+            <span class="feature-card__icon"><i class="fas fa-file-invoice" aria-hidden="true"></i></span>
+            <h3 class="feature-card__title">Заказ и документы</h3>
+            <p class="feature-card__text">Корзина, этапы выполнения, история заказов и счёт в PDF. Самовывоз или доставка — по согласованию.</p>
         </div>
     </div>
 </section>
 
-{# ═══════════ КАК НАЧАТЬ ═══════════ #}
 <section class="landing-section container">
-    <h2 class="landing-section__title">Как начать закупаться</h2>
+    <div class="landing-section__head">
+        <div>
+            <span class="landing-section__eyebrow">Простое начало</span>
+            <h2 class="landing-section__title">Как начать закупаться</h2>
+        </div>
+        <a href="/help" class="btn btn-outline-primary btn-sm">Как заказать<i class="fas fa-arrow-right" aria-hidden="true"></i></a>
+    </div>
     <ol class="landing-steps">
         <li class="step-card">
             <span class="step-card__num">1</span>
@@ -106,53 +175,26 @@
         <li class="step-card">
             <span class="step-card__num">3</span>
             <h3 class="step-card__title">Заказывайте онлайн</h3>
-            <p class="step-card__text">Живой каталог с остатками в реальном времени, корзина и история заказов.</p>
+            <p class="step-card__text">Выбирайте по остаткам, сохраняйте заказы и отслеживайте их выполнение.</p>
         </li>
     </ol>
-    <p class="mt-3 mb-0"><a href="/help">Подробная инструкция «Как заказать» и ответы на вопросы →</a></p>
 </section>
 
-{# ═══════════ АССОРТИМЕНТ ═══════════ #}
-{% if preview_items %}
 <section class="landing-section container">
-    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-        <h2 class="landing-section__title mb-0">Ассортимент</h2>
-        <a href="/catalog" class="btn btn-outline-primary btn-sm">Весь каталог
-            <i class="fas fa-arrow-right ms-1"></i>
-        </a>
-    </div>
-    <div class="landing-grid">
-        {% for item in preview_items %}
-            {% set product = item.product %}
-            <a href="/product/{{ item.id }}" class="landing-grid__card">
-                <img src="{{ product.all_photos[0] }}" alt="{{ product.name }} — оптом" class="landing-grid__photo" width="300" height="300" loading="lazy" decoding="async">
-                <span class="landing-grid__name">{{ product.name }}</span>
-            </a>
-        {% endfor %}
-    </div>
-    <p class="landing-note text-center mt-3 mb-0">
-        <i class="fas fa-lock me-1"></i>Оптовые цены доступны после регистрации
-    </p>
-</section>
-{% endif %}
-
-{# ═══════════ КОНТАКТЫ ═══════════ #}
-<section class="landing-section container">
-    <h2 class="landing-section__title">Контакты</h2>
+    <div class="landing-section__head"><h2 class="landing-section__title">Контакты и доставка</h2></div>
     <div class="landing-contacts">
         {% if config.SHOP_PHONE %}
         <div class="landing-contacts__item">
-            <i class="fas fa-phone"></i>
+            <i class="fas fa-phone" aria-hidden="true"></i>
             <div>
                 <div class="landing-contacts__label">Телефон</div>
-                <a class="landing-contacts__value"
-                   href="tel:{{ config.SHOP_PHONE|replace(' ', '')|replace('(', '')|replace(')', '')|replace('-', '') }}">{{ config.SHOP_PHONE }}</a>
+                <a class="landing-contacts__value" href="tel:{{ config.SHOP_PHONE|replace(' ', '')|replace('(', '')|replace(')', '')|replace('-', '') }}">{{ config.SHOP_PHONE }}</a>
             </div>
         </div>
         {% endif %}
         {% if shop_address %}
         <div class="landing-contacts__item">
-            <i class="fas fa-map-marker-alt"></i>
+            <i class="fas fa-map-marker-alt" aria-hidden="true"></i>
             <div>
                 <div class="landing-contacts__label">Адрес</div>
                 <span class="landing-contacts__value">{{ shop_address }}</span>
@@ -161,7 +203,7 @@
         {% endif %}
         {% if config.SHOP_WORKING_HOURS %}
         <div class="landing-contacts__item">
-            <i class="fas fa-clock"></i>
+            <i class="fas fa-clock" aria-hidden="true"></i>
             <div>
                 <div class="landing-contacts__label">Часы работы</div>
                 <span class="landing-contacts__value">{{ config.SHOP_WORKING_HOURS }}</span>
@@ -169,7 +211,7 @@
         </div>
         {% endif %}
         <div class="landing-contacts__item">
-            <i class="fas fa-truck-fast"></i>
+            <i class="fas fa-truck-fast" aria-hidden="true"></i>
             <div>
                 <div class="landing-contacts__label">Доставка</div>
                 <span class="landing-contacts__value">По городу и регионам — согласуем с менеджером</span>
@@ -178,26 +220,21 @@
     </div>
 </section>
 
-{# ═══════════ РАЗДЕЛЫ (внутренние ссылки для поисковиков и людей) ═══════════ #}
 {% if seo_sections %}
 <section class="landing-section container">
-    <h2 class="landing-section__title">Цветы оптом: разделы каталога</h2>
-    <p>{% for s in seo_sections %}<a href="/optom/{{ s.slug }}">{{ s.short }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>
+    <h2 class="landing-section__title">Цветы оптом: все разделы</h2>
+    <div class="landing-seo-links">{% for s in seo_sections %}<a href="/optom/{{ s.slug }}">{{ s.short }}</a>{% endfor %}</div>
 </section>
 {% endif %}
 
-{# ═══════════ ФИНАЛЬНЫЙ CTA ═══════════ #}
 <section class="landing-cta">
     <div class="landing-cta__inner">
         <h2 class="landing-cta__title">Готовы закупаться на оптовых условиях?</h2>
-        <p class="landing-cta__text">Оставьте заявку — менеджер свяжется с вами и откроет доступ к ценам.</p>
-        <a href="/register" class="btn btn-light btn-lg">
-            <i class="fas fa-user-plus me-2"></i>Стать оптовиком
-        </a>
+        <p class="landing-cta__text">Оставьте заявку — менеджер свяжется с вами и откроет доступ к вашим ценам.</p>
+        <a href="/register" class="btn btn-light btn-lg"><i class="fas fa-user-plus me-2" aria-hidden="true"></i>Стать оптовиком</a>
     </div>
 </section>
 
-{# JSON-LD: организация для SEO (тип Florist, адрес и часы работы) #}
 {% set biz_address = shop_address %}
 {% include "_jsonld_business.html" %}
 {% endblock %}
